@@ -1,9 +1,10 @@
 #include "ui/graph/graph_render_cache.h"
 
+#include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
-#include <QTextOption>
+#include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
 #include <cmath>
@@ -17,11 +18,9 @@ const CircleSpriteCache::Sprite& CircleSpriteCache::sprite(int radius8, QRgb rgb
 {
     const quint64 key = (quint64(radius8) << 32) | (quint64(phaseX) << 30) | (quint64(phaseY) << 28) | (quint64(phases == 4) << 27)
                         | quint64(rgb & 0xFFFFFFu);
-    auto it = m_sprites.constFind(key);
-    if (it != m_sprites.cend())
-        return *it;
-    if (m_sprites.size() > 8192)
-        m_sprites.clear();
+    auto it = m_sprites.find(key);
+    if (it != m_sprites.end())
+        return it->second;
     const double r = radius8 / 8.0;
     Sprite s;
     s.offset = int(std::ceil(r)) + 1;
@@ -34,19 +33,31 @@ const CircleSpriteCache::Sprite& CircleSpriteCache::sprite(int radius8, QRgb rgb
     p.setBrush(QColor::fromRgb(rgb));
     p.drawEllipse(QPointF(s.offset + double(phaseX) / phases, s.offset + double(phaseY) / phases), r, r);
     p.end();
-    return *m_sprites.insert(key, std::move(s));
+    return m_sprites.emplace(key, std::move(s)).first->second;
+}
+
+void CircleSpriteCache::beginFrame()
+{
+    if (m_sprites.size() > 8192)
+        m_sprites.clear();
 }
 
 void CircleSpriteCache::draw(QPainter& p, double cx, double cy, double r, QRgb rgb)
 {
-    if (!(r > 0))
-        return;
-    if (r > kMaxSpriteRadius) {
+    const Blit b = blit(cx, cy, r, rgb);
+    if (b.image) {
+        p.drawImage(b.pos, *b.image);
+    } else if (r > 0) {
         p.setPen(Qt::NoPen);
         p.setBrush(QColor::fromRgb(rgb));
         p.drawEllipse(QPointF(cx, cy), r, r);
-        return;
     }
+}
+
+CircleSpriteCache::Blit CircleSpriteCache::blit(double cx, double cy, double r, QRgb rgb)
+{
+    if (!(r > 0) || r > kMaxSpriteRadius)
+        return {};
     const int phases = r < 24 ? 4 : 1;
     double fx = std::floor(cx), fy = std::floor(cy);
     int px = int(std::floor((cx - fx) * phases + 0.5));
@@ -60,7 +71,7 @@ void CircleSpriteCache::draw(QPainter& p, double cx, double cy, double r, QRgb r
         fy += 1;
     }
     const Sprite& s = sprite(std::max(1, int(std::lround(r * 8))), rgb, px, py, phases);
-    p.drawImage(QPoint(int(fx) - s.offset, int(fy) - s.offset), s.image);
+    return {&s.image, QPoint(int(fx) - s.offset, int(fy) - s.offset)};
 }
 
 void CircleSpriteCache::clear() { m_sprites.clear(); }
@@ -68,28 +79,63 @@ void CircleSpriteCache::clear() { m_sprites.clear(); }
 // ---------------------------------------------------------------------------------------------
 // LabelCache
 // ---------------------------------------------------------------------------------------------
-const LabelCache::Entry& LabelCache::get(const QString& id, const QString& label, const QString& family, double fontPx, double wrapWidth)
+void LabelCache::setStyle(const QString& family, QRgb color)
 {
-    const Key key{id, int(std::lround(fontPx * 2)), int(std::lround(wrapWidth))};
-    auto it = m_entries.constFind(key);
-    if (it != m_entries.cend())
-        return *it;
-    if (m_entries.size() > 4000)
+    if (family == m_family && color == m_color)
+        return;
+    m_family = family;
+    m_color = color;
+    m_entries.clear();
+}
+
+const QImage* LabelCache::find(const QString& id, int px, int wrap) const
+{
+    const auto it = m_entries.constFind(Key{id, px, wrap});
+    return it == m_entries.cend() ? nullptr : &*it;
+}
+
+QImage LabelCache::render(const QString& text, const QString& family, int px, int wrap, QRgb color)
+{
+    QFont font(family);
+    font.setPixelSize(std::max(1, px));
+    font.setHintingPreference(QFont::PreferNoHinting);
+    const int flags = Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap;
+    const QFontMetricsF fm(font);
+    const QRectF box = fm.boundingRect(QRectF(0, 0, std::max(1, wrap), 1e6), flags, text);
+    // The tight box breaks lines exactly like the wrap width: no line is wider than the box.
+    const QSize size(int(std::ceil(box.width())) + 2, int(std::ceil(box.height())) + 2);
+    QImage img(size, QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    QPainter p(&img);
+    p.setFont(font);
+    p.setPen(QColor::fromRgb(color));
+    p.drawText(QRectF(1, 1, size.width() - 2, size.height() - 2), flags, text);
+    p.end();
+    return img;
+}
+
+void LabelCache::prepare(const std::vector<Request>& requests)
+{
+    std::vector<const Request*> missing;
+    for (const Request& r : requests)
+        if (!m_entries.contains(Key{r.id, r.px, r.wrap}))
+            missing.push_back(&r);
+    if (missing.empty())
+        return;
+    if (m_entries.size() + qsizetype(missing.size()) > 6000)
         m_entries.clear();
-    Entry e;
-    e.font = QFont(family);
-    e.font.setPixelSize(std::max(1, int(std::lround(fontPx))));
-    e.font.setHintingPreference(QFont::PreferNoHinting);
-    e.width = wrapWidth;
-    e.text.setText(label);
-    e.text.setTextFormat(Qt::PlainText);
-    e.text.setTextWidth(wrapWidth);
-    QTextOption option(Qt::AlignHCenter);
-    option.setWrapMode(QTextOption::WordWrap);
-    e.text.setTextOption(option);
-    e.text.setPerformanceHint(QStaticText::AggressiveCaching);
-    e.text.prepare(QTransform(), e.font);
-    return *m_entries.insert(key, std::move(e));
+    const QString family = m_family;
+    const QRgb color = m_color;
+    auto renderOne = [&](const Request* r) { return render(r->label, family, r->px, r->wrap, color); };
+    std::vector<QImage> images;
+    if (missing.size() < 8) {
+        for (const Request* r : missing)
+            images.push_back(renderOne(r));
+    } else {
+        images = QtConcurrent::blockingMapped<std::vector<QImage>>(missing, renderOne);
+    }
+    for (size_t i = 0; i < missing.size(); ++i)
+        m_entries.insert(Key{missing[i]->id, missing[i]->px, missing[i]->wrap}, std::move(images[i]));
 }
 
 void LabelCache::clear() { m_entries.clear(); }

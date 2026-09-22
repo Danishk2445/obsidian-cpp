@@ -7,9 +7,9 @@
 #include <QFont>
 #include <QHash>
 #include <QImage>
-#include <QStaticText>
 #include <QString>
 
+#include <unordered_map>
 #include <vector>
 
 class QPainter;
@@ -20,6 +20,16 @@ namespace oc {
 // 1:1 at integer positions. Small circles get 4×4 sub-pixel phases so motion stays smooth.
 class CircleSpriteCache {
 public:
+    // Where a circle's sprite goes; `image` is null for circles too large for a sprite (draw those
+    // with drawEllipse). Images stay valid until the next beginFrame() or clear(), so blits may run
+    // on other threads.
+    struct Blit {
+        const QImage* image = nullptr;
+        QPoint pos;
+    };
+    // Once per frame, before blit(): trims the cache when it has grown too large.
+    void beginFrame();
+    Blit blit(double cx, double cy, double r, QRgb rgb);
     // Draws a circle of radius r centred at (cx, cy) in the painter's (device-pixel) space.
     void draw(QPainter& p, double cx, double cy, double r, QRgb rgb);
     void clear();
@@ -34,30 +44,43 @@ private:
     };
     const Sprite& sprite(int radius8, QRgb rgb, int phaseX, int phaseY, int phases);
 
-    QHash<quint64, Sprite> m_sprites;
+    std::unordered_map<quint64, Sprite> m_sprites; // node-based: references survive rehashing
 };
 
-// QStaticText per (node id, font pixel size, wrap width), prepared with the label font.
+// Rasterised node labels: one premultiplied image per (node id, font pixel size, wrap width) in the
+// label colour, word-wrapped and centred like Pixi's Text (align center, wordWrapWidth), 1 px of
+// padding around the text box. Missing images are rendered on the thread pool (prepare()); a
+// frame then only blits.
 class LabelCache {
 public:
-    struct Entry {
-        QStaticText text;
-        QFont font;
-        double width = 0; // wrap width used for layout
+    struct Request {
+        QString id;
+        QString label;
+        int px = 0;
+        int wrap = 0;
     };
-    const Entry& get(const QString& id, const QString& label, const QString& family, double fontPx, double wrapWidth);
+    // Sets the family/colour; changing either drops every image.
+    void setStyle(const QString& family, QRgb color);
+    const QImage* find(const QString& id, int px, int wrap) const;
+    // Renders the requests that are not cached yet (in parallel when there are many).
+    void prepare(const std::vector<Request>& requests);
     void clear();
     int size() const { return int(m_entries.size()); }
+
+    // Thread-safe rendering of one label.
+    static QImage render(const QString& text, const QString& family, int px, int wrap, QRgb color);
 
 private:
     struct Key {
         QString id;
-        int px2;   // font px × 2
-        int wrap;  // wrap width (px)
+        int px;   // font px
+        int wrap; // wrap width (px)
         friend bool operator==(const Key&, const Key&) = default;
     };
-    friend size_t qHash(const Key& k, size_t seed) { return qHashMulti(seed, k.id, k.px2, k.wrap); }
-    QHash<Key, Entry> m_entries;
+    friend size_t qHash(const Key& k, size_t seed) { return qHashMulti(seed, k.id, k.px, k.wrap); }
+    QHash<Key, QImage> m_entries;
+    QString m_family;
+    QRgb m_color = 0;
 };
 
 // CSS box-shadow layers (e.g. --shadow-s) rendered around a rounded rectangle.

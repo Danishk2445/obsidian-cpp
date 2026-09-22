@@ -2,6 +2,7 @@
 
 #include "graph/simulation_runner.h"
 #include "render/theme/theme.h"
+#include "ui/graph/graph_raster.h"
 
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -566,11 +567,19 @@ void GraphCanvas::settle(int timeoutMs)
 // ---------------------------------------------------------------------------------------------
 void GraphCanvas::paintEvent(QPaintEvent*)
 {
-    QPainter p(this);
+    // The frame is composed in an offscreen image (drawn straight into, on the thread pool) and
+    // blitted 1:1 in device pixels, like Obsidian's stage.
     const double d = dpr();
     m_deviceSize = (QSizeF(size()) * d).toSize();
-    p.scale(1 / d, 1 / d); // draw in device pixels, like Obsidian's stage
-    render(p, m_deviceSize, true);
+    if (m_frame.size() != m_deviceSize)
+        m_frame = QImage(m_deviceSize, QImage::Format_ARGB32_Premultiplied);
+    {
+        QPainter fp(&m_frame);
+        render(fp, m_deviceSize, true);
+    }
+    QPainter p(this);
+    p.scale(1 / d, 1 / d);
+    p.drawImage(QPoint(0, 0), m_frame);
 }
 
 QImage GraphCanvas::grabFrame(bool transparent)
@@ -591,28 +600,36 @@ void GraphCanvas::render(QPainter& p, const QSize& deviceSize, bool background)
     m_deviceSize = deviceSize;
     m_stats = {};
     p.save();
-    if (background && !m_backgroundToken.isEmpty()) {
+    if (background) {
         const ThemePtr t = currentTheme();
-        p.fillRect(QRect(QPoint(0, 0), deviceSize), t ? t->color(m_backgroundToken, Qt::black) : QColor(Qt::black));
+        const QColor bg = m_backgroundToken.isEmpty() || !t ? QColor(Qt::transparent) : t->color(m_backgroundToken, Qt::black);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.fillRect(QRect(QPoint(0, 0), deviceSize), bg);
+        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
     }
     if (!m_graph || m_x.size() != size_t(m_graph->nodeCount())) {
         p.restore();
         m_deviceSize = savedSize;
         return;
     }
+    // Raw pixel access when painting 1:1 into a 32-bit image (the widget's frame, tests, grabs):
+    // links are rasterised directly, the rest drawn in parallel bands.
+    QImage* direct = nullptr;
+    if (p.device() && p.device()->devType() == QInternal::Image && p.deviceTransform().isIdentity() && !p.hasClipping()) {
+        auto* img = static_cast<QImage*>(p.device());
+        if (graph_raster::supportsDirect(*img) && img->size() == deviceSize)
+            direct = img;
+    }
     const QRectF vp = viewportWorld();
     const double s = m_scale, f = m_nodeScale;
     const double g = m_options.lineSizeMultiplier / s; // line width in world units
     const int hl = highlightIndex();
     p.setRenderHint(QPainter::Antialiasing);
+    QElapsedTimer layerClock;
+    layerClock.start();
 
     // ---- links (batched by colour/alpha; mutual links drawn once) ----
-    struct Bucket {
-        QRgb rgb;
-        int alpha;
-        std::vector<QLineF> lines;
-    };
-    std::vector<Bucket> buckets;
+    std::vector<graph_raster::LineBatch> batches;
     const double lineWidth = m_options.lineSizeMultiplier; // device px
     const double widthAlpha = lineWidth < 1 ? lineWidth : 1; // hairlines: coverage as alpha
     const auto& edges = m_graph->edges();
@@ -635,28 +652,45 @@ void GraphCanvas::render(QPainter& p, const QSize& deviceSize, bool background)
         const double ux = dx / len, uy = dy / len;
         const QPointF a0((x0 + ux * rs) * s + m_panX, (y0 + uy * rs) * s + m_panY);
         const QPointF a1((x0 + ux * (rs + visible)) * s + m_panX, (y0 + uy * (rs + visible)) * s + m_panY);
-        Bucket* b = nullptr;
-        for (Bucket& cand : buckets)
-            if (cand.rgb == st.tint && cand.alpha == a) {
-                b = &cand;
-                break;
-            }
+        graph_raster::LineBatch* b = batches.empty() ? nullptr : &batches.back(); // runs of equal style are common
+        if (!b || b->rgb != st.tint || b->alpha != a) {
+            b = nullptr;
+            for (graph_raster::LineBatch& cand : batches)
+                if (cand.rgb == st.tint && cand.alpha == a) {
+                    b = &cand;
+                    break;
+                }
+        }
         if (!b) {
-            buckets.push_back({st.tint, a, {}});
-            b = &buckets.back();
+            batches.push_back({st.tint, a, {}});
+            b = &batches.back();
         }
         b->lines.emplace_back(a0, a1);
         ++m_stats.links;
     }
-    for (const Bucket& b : buckets) {
-        QPen pen(withAlpha(b.rgb, b.alpha / 255.0), std::max(1.0, lineWidth), Qt::SolidLine, Qt::FlatCap);
-        pen.setCosmetic(true);
-        p.setPen(pen);
-        p.drawLines(b.lines.data(), int(b.lines.size()));
+    if (direct && lineWidth <= 1.25) {
+        graph_raster::drawHairlines(*direct, batches);
+    } else {
+        for (const graph_raster::LineBatch& b : batches) {
+            QPen pen(withAlpha(b.rgb, b.alpha / 255.0), std::max(1.0, lineWidth), Qt::SolidLine, Qt::FlatCap);
+            pen.setCosmetic(true);
+            p.setPen(pen);
+            p.drawLines(b.lines.data(), int(b.lines.size()));
+        }
     }
+    m_stats.linksNs = layerClock.nsecsElapsed();
 
-    // ---- nodes ----
-    p.setPen(Qt::NoPen);
+    // ---- nodes (sprites resolved here, blitted below) ----
+    struct NodeDraw {
+        CircleSpriteCache::Blit blit;
+        QPointF center;
+        double r;
+        QRgb rgb;
+        double alpha;
+    };
+    std::vector<NodeDraw> nodeDraws;
+    nodeDraws.reserve(m_nodes.size());
+    m_sprites.beginFrame();
     for (size_t i = 0; i < m_nodes.size(); ++i) {
         const NodeState& st = m_nodes[i];
         if (!st.rendered)
@@ -665,16 +699,20 @@ void GraphCanvas::render(QPainter& p, const QSize& deviceSize, bool background)
         const double x = m_x[i], y = m_y[i];
         if (int(i) != hl && !intersects(vp, x - r - 1, y - r - 1, x + r + 1, y + r + 1))
             continue;
-        const double alpha = st.fade * fillColor(int(i)).a;
+        const double alpha = std::min(1.0, st.fade * fillColor(int(i)).a);
         if (alpha <= 0.001)
             continue;
-        p.setOpacity(std::min(1.0, alpha));
-        m_sprites.draw(p, x * s + m_panX, y * s + m_panY, r * s, st.tint);
+        const QPointF c(x * s + m_panX, y * s + m_panY);
+        nodeDraws.push_back({m_sprites.blit(c.x(), c.y(), r * s, st.tint), c, r * s, st.tint, alpha});
         ++m_stats.nodes;
     }
-    p.setOpacity(1);
 
     // ---- arrows ----
+    struct Arrow {
+        QPointF poly[4];
+        int alpha;
+    };
+    std::vector<Arrow> arrows;
     if (m_options.showArrow) {
         const double arrowDevice = 2 * std::sqrt(m_options.lineSizeMultiplier); // shape scale in device px
         for (size_t k = 0; k < edges.size(); ++k) {
@@ -692,29 +730,71 @@ void GraphCanvas::render(QPainter& p, const QSize& deviceSize, bool background)
                 continue;
             const double back = m_size[size_t(e.target)] * f + 1;
             const QPointF tip((x1 - dx * back / len) * s + m_panX, (y1 - dy * back / len) * s + m_panY);
+            if (tip.x() < -16 || tip.y() < -16 || tip.x() > deviceSize.width() + 16 || tip.y() > deviceSize.height() + 16)
+                continue;
             const double ux = dx / len, uy = dy / len;
             auto pt = [&](double lx, double ly) {
                 return QPointF(tip.x() + (lx * ux - ly * uy) * arrowDevice, tip.y() + (lx * uy + ly * ux) * arrowDevice);
             };
-            const QPointF poly[4] = {pt(0, 0), pt(-4, -2), pt(-3, 0), pt(-4, 2)};
-            p.setBrush(withAlpha(m_colors.arrow.rgb, st.arrowAlpha));
-            p.drawPolygon(poly, 4);
+            arrows.push_back({{pt(0, 0), pt(-4, -2), pt(-3, 0), pt(-4, 2)}, int(std::lround(std::min(1.0, st.arrowAlpha) * 255))});
             ++m_stats.arrows;
         }
     }
 
-    // ---- hover ring ----
-    if (hl >= 0 && m_nodes[size_t(hl)].rendered) {
-        const double E = std::max(1.0, 1 / s / f);
-        const double r = (m_size[size_t(hl)] + E / 2) * f * s;
-        QPen pen(withAlpha(m_colors.circle.rgb, m_colors.circle.a), E * f * s);
-        p.setPen(pen);
-        p.setBrush(Qt::NoBrush);
-        p.drawEllipse(QPointF(m_x[size_t(hl)] * s + m_panX, m_y[size_t(hl)] * s + m_panY), r, r);
-        p.setPen(Qt::NoPen);
-    }
+    // ---- labels (images rendered here, on the thread pool when many are missing) ----
+    const qint64 beforeLabels = layerClock.nsecsElapsed();
+    const std::vector<LabelDraw> labels = collectLabels(vp);
+    m_stats.labelsNs = layerClock.nsecsElapsed() - beforeLabels;
 
-    paintLabels(p, vp);
+    // ---- draw: circles, arrows, hover ring (z-index 1), then labels (z-index 2) ----
+    const QColor arrowBase = QColor::fromRgb(m_colors.arrow.rgb);
+    const bool ring = hl >= 0 && m_nodes[size_t(hl)].rendered;
+    const double ringWidth = std::max(1.0, 1 / s / f) * f * s;
+    const double ringRadius = ring ? (m_size[size_t(hl)] + std::max(1.0, 1 / s / f) / 2) * f * s : 0;
+    const QPointF ringCenter = ring ? QPointF(m_x[size_t(hl)] * s + m_panX, m_y[size_t(hl)] * s + m_panY) : QPointF();
+    auto drawLayers = [&](QPainter& q, double y0, double y1) {
+        q.setPen(Qt::NoPen);
+        for (const NodeDraw& n : nodeDraws) {
+            if (n.center.y() + n.r + 2 < y0 || n.center.y() - n.r - 2 > y1)
+                continue;
+            q.setOpacity(n.alpha);
+            if (n.blit.image) {
+                q.drawImage(n.blit.pos, *n.blit.image);
+            } else {
+                q.setBrush(QColor::fromRgb(n.rgb));
+                q.drawEllipse(n.center, n.r, n.r);
+            }
+        }
+        q.setOpacity(1);
+        for (const Arrow& a : arrows) {
+            const auto [lo, hi] = std::minmax({a.poly[0].y(), a.poly[1].y(), a.poly[3].y()});
+            if (hi + 1 < y0 || lo - 1 > y1)
+                continue;
+            QColor c = arrowBase;
+            c.setAlpha(a.alpha);
+            q.setBrush(c);
+            q.drawPolygon(a.poly, 4);
+        }
+        if (ring && ringCenter.y() + ringRadius + ringWidth >= y0 && ringCenter.y() - ringRadius - ringWidth <= y1) {
+            q.setPen(QPen(withAlpha(m_colors.circle.rgb, m_colors.circle.a), ringWidth));
+            q.setBrush(Qt::NoBrush);
+            q.drawEllipse(ringCenter, ringRadius, ringRadius);
+            q.setPen(Qt::NoPen);
+        }
+        for (const LabelDraw& l : labels) {
+            if (l.pos.y() + l.image->height() < y0 || l.pos.y() > y1)
+                continue;
+            q.setOpacity(l.alpha);
+            q.drawImage(l.pos, *l.image);
+        }
+        q.setOpacity(1);
+    };
+    if (direct)
+        graph_raster::paintInBands(*direct, [&](QPainter& bp, int y0, int y1) { drawLayers(bp, y0, y1); });
+    else
+        drawLayers(p, -INFINITY, INFINITY);
+    m_stats.layersNs = layerClock.nsecsElapsed() - m_stats.linksNs - m_stats.labelsNs;
+    m_stats.labels = int(labels.size());
 
     // ---- controls panel shadow ----
     if (!m_panelRect.isEmpty() && !m_shadowLayers.empty()) {
@@ -734,11 +814,17 @@ void GraphCanvas::render(QPainter& p, const QSize& deviceSize, bool background)
     m_deviceSize = savedSize;
 }
 
-void GraphCanvas::paintLabels(QPainter& p, const QRectF& vp)
+std::vector<GraphCanvas::LabelDraw> GraphCanvas::collectLabels(const QRectF& vp)
 {
     const int hl = highlightIndex();
     const double s = m_scale, f = m_nodeScale;
-    p.setPen(QColor::fromRgb(m_colors.text.rgb));
+    struct Pending {
+        int node;
+        int px, wrap;
+        double x, top, alpha;
+    };
+    std::vector<Pending> pending;
+    std::vector<LabelCache::Request> requests;
     for (size_t i = 0; i < m_nodes.size(); ++i) {
         NodeState& st = m_nodes[i];
         if (!st.rendered)
@@ -756,20 +842,26 @@ void GraphCanvas::paintLabels(QPainter& p, const QRectF& vp)
         if (!shown)
             continue;
         const double c = m_size[i];
-        const double labelScale = (d && s < 1) ? 1 / s : f;
-        const double px = (14 + c / 4) * labelScale * s;
+        const double labelScale = (d && s < 1) ? 1 / s : f; // the hovered label keeps its size when zoomed out
+        const int px = int(std::lround((14 + c / 4) * labelScale * s));
         if (px < 1)
             continue;
-        const double wrap = 300 * labelScale * s;
+        const int wrap = int(std::lround(300 * labelScale * s));
+        pending.push_back({int(i), px, wrap, x * s + m_panX, y * s + m_panY + (c + 5) * f * s + st.moveText, std::min(1.0, alpha)});
         const graph::GraphNode& node = m_graph->node(int(i));
-        const LabelCache::Entry& entry = m_labels.get(node.id, node.label, m_labelFamily, px, wrap);
-        const double top = y * s + m_panY + (c + 5) * f * s + st.moveText;
-        p.setFont(entry.font);
-        p.setOpacity(std::min(1.0, alpha));
-        p.drawStaticText(QPointF(x * s + m_panX - entry.width / 2, top), entry.text);
-        ++m_stats.labels;
+        requests.push_back({node.id, node.label, px, wrap});
     }
-    p.setOpacity(1);
+    m_labels.setStyle(m_labelFamily, m_colors.text.rgb);
+    m_labels.prepare(requests);
+    std::vector<LabelDraw> out;
+    out.reserve(pending.size());
+    for (const Pending& l : pending) {
+        const QImage* img = m_labels.find(m_graph->node(l.node).id, l.px, l.wrap);
+        if (!img)
+            continue;
+        out.push_back({img, QPoint(int(std::lround(l.x - img->width() / 2.0)), int(std::lround(l.top - 1))), l.alpha});
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------------------------

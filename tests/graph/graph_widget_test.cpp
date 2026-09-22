@@ -364,6 +364,34 @@ TEST_F(Fixture, WidgetFiltersGroupsAndSettings)
     EXPECT_EQ(back, w.settings());
 }
 
+TEST_F(Fixture, WidgetRebuildsOnlyReheatOnTopologyChanges)
+{
+    GraphWidget w;
+    w.resize(600, 400);
+    w.setGraph(smallGraph());
+    w.settle();
+    w.runner()->setFrameRate(0);
+    const quint64 ticks = w.runner()->ticks();
+    ASSERT_GT(ticks, 0u);
+    // Same content in a new object (e.g. a metadata change elsewhere): the layout stays at rest.
+    w.setGraph(smallGraph());
+    ASSERT_TRUE(w.runner()->waitForIdle(5000));
+    EXPECT_EQ(w.runner()->ticks(), ticks);
+    // Colours only (a colour group): still at rest, but the new graph is shown.
+    w.controls()->newGroupButton()->click();
+    w.controls()->setGroupQuery(0, "file:A.md");
+    ASSERT_TRUE(QTest::qWaitFor([&] { return w.shownGraph()->node(w.shownGraph()->indexOf("A.md")).color.has_value(); }, 2000));
+    ASSERT_TRUE(w.runner()->waitForIdle(5000));
+    EXPECT_EQ(w.runner()->ticks(), ticks);
+    // A new link wakes the simulation.
+    auto g = std::make_shared<GraphData>(*smallGraph());
+    g->addEdge("Lonely.md", "Hub.md");
+    g->finalize();
+    w.setGraph(g);
+    ASSERT_TRUE(w.runner()->waitForIdle(20000));
+    EXPECT_GT(w.runner()->ticks(), ticks);
+}
+
 TEST_F(Fixture, WidgetLocalGraphAndTimelapse)
 {
     GraphWidget local(GraphWidget::Mode::Local);
@@ -452,6 +480,41 @@ TEST_F(Fixture, HeadlessScreenshots)
             w.canvas()->resetPan();
             w.settle();
             w.grab().toImage().save(dir + QStringLiteral("/graph-%1-overview.png").arg(scheme));
+            // Every section open, two colour groups (colours from the "New group" sequence).
+            GraphSettings c = s;
+            c.collapseFilter = c.collapseColorGroups = c.collapseDisplay = c.collapseForces = false;
+            c.search = QStringLiteral("path:Projects");
+            c.showTags = true;
+            c.colorGroups = {{QStringLiteral("path:Journal"), {QColor::fromHslF(0, dark ? 0.7f : 0.6f, 0.6f).rgb() & 0xFFFFFFu, 1}},
+                             {QStringLiteral("tag:#work"), {QColor::fromHslF(40.0f / 360, dark ? 0.7f : 0.6f, 0.6f).rgb() & 0xFFFFFFu, 1}}};
+            w.resize(1200, 1300);
+            w.setSettings(c, false);
+            w.canvas()->resetPan();
+            w.settle();
+            w.grab().toImage().save(dir + QStringLiteral("/graph-%1-controls.png").arg(scheme));
+        }
+        if (!dir.isEmpty()) {
+            // The local graph of a note (depth 1) in a narrow, sidebar-like pane.
+            GraphWidget local(GraphWidget::Mode::Local);
+            local.resize(420, 640);
+            local.setInSidebar(true);
+            GraphSettings ls;
+            ls.localJumps = 1;
+            ls.close = true;
+            ls.scale = 0.9;
+            local.setSettings(ls, false);
+            local.setGraph(graph);
+            int hub = 0; // a mid-sized note: its neighbourhood, not the whole vault
+            for (int i = 0; i < graph->nodeCount(); ++i)
+                if (graph->node(i).kind == NodeKind::File && graph->node(i).weight < 9
+                    && (graph->node(hub).weight >= 9 || graph->node(i).weight > graph->node(hub).weight))
+                    hub = i;
+            local.setLocalCenter(graph->node(hub).id);
+            local.setActiveNode(graph->node(hub).id);
+            local.show();
+            ASSERT_TRUE(QTest::qWaitForWindowExposed(&local));
+            local.settle();
+            local.grab().toImage().save(dir + QStringLiteral("/localgraph-%1.png").arg(dark ? QStringLiteral("dark") : QStringLiteral("light")));
         }
     }
     setScheme(true);

@@ -33,7 +33,14 @@ bool isGraphAttachment(const QString& path);
 //  - tags (frontmatter + inline) → Tag nodes ("#tag", in the vault's most frequent spelling)
 //    linked from each file using them.
 // Links from one file are added resolved, unresolved, then tags, each sorted (deterministic).
-// `vault` may be null: the metadata cache's markdown files are used instead.
+struct VaultGraphFile {
+    QString path;
+    qint64 timestamp = 0; // min(ctime, mtime), ms
+};
+graph::GraphData buildVaultGraph(const QList<VaultGraphFile>& files, const QHash<QString, QHash<QString, int>>& resolvedLinks,
+                                 const QHash<QString, QHash<QString, int>>& unresolvedLinks,
+                                 const QHash<QString, QStringList>& tags); // note -> tags with '#', in order
+// The same from a vault and its metadata cache. `vault` may be null: the cache's notes are used.
 graph::GraphData buildVaultGraph(const Vault* vault, const MetadataCache& metadata);
 // buildVaultGraph() for the session's vault and metadata cache (empty without a metadata cache).
 graph::GraphData graphDataFromSession(VaultSession& session);

@@ -2,6 +2,7 @@ oc_add_library(oc_ui
   SOURCES
     graph/graph_canvas.cpp
     graph/graph_controls.cpp
+    graph/graph_raster.cpp
     graph/graph_render_cache.cpp
     graph/graph_vault.cpp
     graph/graph_view.cpp

@@ -128,14 +128,14 @@ void SimulationRunner::post(Command cmd)
     m_cv.notify_all();
 }
 
-quint64 SimulationRunner::setGraph(std::shared_ptr<const GraphData> graph, Placement placement)
+quint64 SimulationRunner::setGraph(std::shared_ptr<const GraphData> graph, Placement placement, bool reheat)
 {
     quint64 version;
     {
         std::lock_guard lk(m_mutex);
         version = ++m_nextVersion;
     }
-    post(SetGraphCmd{std::move(graph), version, placement});
+    post(SetGraphCmd{std::move(graph), version, placement, reheat});
     return version;
 }
 
@@ -220,7 +220,8 @@ void SimulationRunner::threadMain()
             index.insert(g.node(i).id, i);
         graph = std::move(c.graph);
         version = c.version;
-        sim.setAlpha(std::max(sim.alpha(), 0.3));
+        if (c.reheat)
+            sim.setAlpha(std::max(sim.alpha(), 0.3));
     };
 
     // Like the worker, an empty graph never ticks (and keeps its alpha for the first real graph).

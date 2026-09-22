@@ -50,8 +50,10 @@ public:
 
     // ---- commands (thread-safe, non-blocking, applied in order before the next tick) ----
     // Replaces the graph; nodes whose id persists keep position, velocity and pin. Reheats alpha
-    // to >= 0.3 (the first graph starts at alpha 1). Returns the new graph version.
-    quint64 setGraph(std::shared_ptr<const GraphData> graph, Placement placement = Placement::Obsidian);
+    // to >= 0.3 (the first graph starts at alpha 1) unless `reheat` is false — for a graph whose
+    // nodes, links and weights are unchanged (only labels/colours/kinds differ), like Obsidian's
+    // setData() which only wakes the worker when the topology changed. Returns the graph version.
+    quint64 setGraph(std::shared_ptr<const GraphData> graph, Placement placement = Placement::Obsidian, bool reheat = true);
     void setForces(const ForceParams& params); // + reheat 0.3
     void pin(const QString& id, double x, double y); // drag: fx/fy, alpha >= 0.3, alphaTarget 0.3
     void unpin(const QString& id);                   // drag end: free again, alphaTarget 0
@@ -76,6 +78,7 @@ private:
         std::shared_ptr<const GraphData> graph;
         quint64 version;
         Placement placement;
+        bool reheat = true;
     };
     struct SetForcesCmd {
         ForceParams params;

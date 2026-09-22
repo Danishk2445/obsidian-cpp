@@ -28,30 +28,30 @@ bool isGraphAttachment(const QString& path)
            && ext.compare(u"base", Qt::CaseInsensitive) != 0;
 }
 
-graph::GraphData buildVaultGraph(const Vault* vault, const MetadataCache& metadata)
+graph::GraphData buildVaultGraph(const QList<VaultGraphFile>& files, const QHash<QString, QHash<QString, int>>& resolved,
+                                 const QHash<QString, QHash<QString, int>>& unresolved, const QHash<QString, QStringList>& tags)
 {
     using graph::NodeKind;
     graph::GraphData g;
-    if (vault) {
-        QList<TFile*> files = vault->files();
-        std::sort(files.begin(), files.end(), [](const TFile* a, const TFile* b) { return a->path() < b->path(); });
-        for (const TFile* f : std::as_const(files)) {
-            const qint64 ctime = f->ctimeMs() > 0 ? f->ctimeMs() : f->mtimeMs();
-            g.addNode(f->path(), isGraphAttachment(f->path()) ? NodeKind::Attachment : NodeKind::File, {}, std::min(ctime, f->mtimeMs()));
-        }
-    }
-    QStringList sources = metadata.markdownFiles();
+    QList<VaultGraphFile> sortedFiles = files;
+    std::sort(sortedFiles.begin(), sortedFiles.end(), [](const VaultGraphFile& a, const VaultGraphFile& b) { return a.path < b.path; });
+    for (const VaultGraphFile& f : std::as_const(sortedFiles))
+        g.addNode(f.path, isGraphAttachment(f.path) ? NodeKind::Attachment : NodeKind::File, {}, f.timestamp);
+
+    QStringList sources = tags.keys();
+    for (auto it = resolved.cbegin(); it != resolved.cend(); ++it)
+        sources << it.key();
+    for (auto it = unresolved.cbegin(); it != unresolved.cend(); ++it)
+        sources << it.key();
     std::sort(sources.begin(), sources.end());
+    sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
 
     // Obsidian's getTags() spelling: per case-insensitive tag the spelling counted most often (nested
     // tags count towards their parents), the first one seen on ties.
     QHash<QString, QHash<QString, int>> counts;
     QHash<QString, QStringList> seen;
     for (const QString& src : std::as_const(sources)) {
-        const md::CachedMetadata* meta = metadata.fileCache(src);
-        if (!meta)
-            continue;
-        for (QString tag : meta->allTags()) {
+        for (QString tag : tags.value(src)) {
             while (tag.endsWith(QLatin1Char('/')))
                 tag.chop(1);
             for (;;) {
@@ -80,8 +80,6 @@ graph::GraphData buildVaultGraph(const Vault* vault, const MetadataCache& metada
         canonical.insert(it.key(), best);
     }
 
-    const auto& resolved = metadata.resolvedLinks();
-    const auto& unresolved = metadata.unresolvedLinks();
     for (const QString& src : std::as_const(sources)) {
         int s = g.indexOf(src);
         if (s < 0)
@@ -102,18 +100,37 @@ graph::GraphData buildVaultGraph(const Vault* vault, const MetadataCache& metada
             for (const QString& t : std::as_const(targets))
                 g.addEdge(s, g.addNode(t, NodeKind::Unresolved));
         }
-        if (const md::CachedMetadata* meta = metadata.fileCache(src)) {
-            for (const QString& tag : meta->allTags()) {
-                QString id = tag;
-                while (id.endsWith(QLatin1Char('/')))
-                    id.chop(1);
-                id = canonical.value(id.toLower(), id);
-                g.addEdge(s, g.addNode(id, NodeKind::Tag));
-            }
+        for (const QString& tag : tags.value(src)) {
+            QString id = tag;
+            while (id.endsWith(QLatin1Char('/')))
+                id.chop(1);
+            id = canonical.value(id.toLower(), id);
+            g.addEdge(s, g.addNode(id, NodeKind::Tag));
         }
     }
     g.finalize(true);
     return g;
+}
+
+graph::GraphData buildVaultGraph(const Vault* vault, const MetadataCache& metadata)
+{
+    QList<VaultGraphFile> files;
+    const QStringList notes = metadata.markdownFiles();
+    if (vault) {
+        for (const TFile* f : vault->files()) {
+            const qint64 ctime = f->ctimeMs() > 0 ? f->ctimeMs() : f->mtimeMs();
+            files.append({f->path(), std::min(ctime, f->mtimeMs())});
+        }
+    } else {
+        for (const QString& path : notes)
+            files.append({path, 0});
+    }
+    QHash<QString, QStringList> tags;
+    for (const QString& path : notes)
+        if (const md::CachedMetadata* meta = metadata.fileCache(path))
+            if (QStringList t = meta->allTags(); !t.isEmpty())
+                tags.insert(path, std::move(t));
+    return buildVaultGraph(files, metadata.resolvedLinks(), metadata.unresolvedLinks(), tags);
 }
 
 graph::GraphData graphDataFromSession(VaultSession& session)

@@ -45,6 +45,8 @@ public:
         int links = 0;
         int arrows = 0;
         int labels = 0;
+        // Time spent rasterising links, preparing label images, and drawing circles/arrows/ring/labels.
+        qint64 linksNs = 0, labelsNs = 0, layersNs = 0;
     };
 
     explicit GraphCanvas(QWidget* parent = nullptr);
@@ -177,7 +179,12 @@ private:
     QPointF toDevice(const QPointF& widgetPos) const { return widgetPos * dpr(); }
     void rebuildGrid() const;
     void updateCursor();
-    void paintLabels(QPainter& p, const QRectF& vp);
+    struct LabelDraw {
+        const QImage* image;
+        QPoint pos;
+        double alpha;
+    };
+    std::vector<LabelDraw> collectLabels(const QRectF& vp);
 
     QPointer<graph::SimulationRunner> m_runner;
     QMetaObject::Connection m_frameConn;
@@ -238,6 +245,7 @@ private:
     QRectF m_panelRect;
     double m_panelRadius = 8;
     QString m_labelFamily;
+    QImage m_frame; // offscreen frame (device pixels) blitted by paintEvent
     FrameStats m_stats;
 };
 

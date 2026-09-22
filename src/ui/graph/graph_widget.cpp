@@ -10,6 +10,18 @@
 
 namespace oc {
 
+namespace {
+bool sameTopology(const graph::GraphData& a, const graph::GraphData& b)
+{
+    if (a.nodeCount() != b.nodeCount() || a.edgeCount() != b.edgeCount())
+        return false;
+    for (int i = 0; i < a.nodeCount(); ++i)
+        if (a.node(i).id != b.node(i).id || a.node(i).weight != b.node(i).weight)
+            return false;
+    return a.edges() == b.edges();
+}
+} // namespace
+
 GraphWidget::GraphWidget(Mode mode, QWidget* parent, const graph::SimulationConfig& config)
     : QWidget(parent)
     , m_mode(mode)
@@ -217,8 +229,10 @@ void GraphWidget::rebuild()
     } else {
         shown->finalize();
     }
+    // Like Obsidian's setData(): the layout only wakes up when nodes, links or weights changed.
+    const bool reheat = !m_shown || !sameTopology(*m_shown, *shown);
     m_shown = std::move(shown);
-    m_runner->setGraph(m_shown);
+    m_runner->setGraph(m_shown, graph::SimulationRunner::Placement::Obsidian, reheat);
     m_canvas->setFocusedNode(m_activeId);
     emit rebuilt();
 }
