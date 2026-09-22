@@ -3,12 +3,14 @@
 #include "ui/views/markdown/editor_suggest.h"
 #include "ui/views/markdown/page_preview.h"
 
+#include "editor/live_preview_decorator.h"
 #include "editor/spell/spell_checker.h"
 
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
 #include "core/files/file_manager.h"
+#include "core/metadata/link_resolver.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
@@ -90,6 +92,26 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     });
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, [this] { m_editor->setTopWidget(m_title, m_title->bottomMargin()); });
+
+    // Link resolution for rendering: unresolved-link styling and image embeds.
+    if (LivePreviewDecorator* lp = m_editor->livePreview()) {
+        lp->isResolved = [this](const QString& target) {
+            VaultSession* s = session();
+            MetadataCache* mc = s ? s->metadata() : nullptr;
+            const QString path = LinkResolver::splitSubpath(target).first;
+            if (!mc || path.isEmpty())
+                return true;
+            return !mc->resolver().resolve(path, m_file ? m_file->path() : QString()).isEmpty();
+        };
+        lp->resolveAttachment = [this](const QString& linkpath) -> QString {
+            VaultSession* s = session();
+            MetadataCache* mc = s ? s->metadata() : nullptr;
+            if (!mc || !s->vault())
+                return {};
+            const QString dest = mc->resolver().resolve(LinkResolver::splitSubpath(linkpath).first, m_file ? m_file->path() : QString());
+            return dest.isEmpty() ? QString() : s->vault()->absolutePath(dest);
+        };
+    }
 
     // Spellcheck (editing modes only, like Chromium's contenteditable spellcheck).
     m_editor->addDecorationLayer([this](int line, LineDecoration& d) {
@@ -221,6 +243,10 @@ void MarkdownView::loadFile(TFile* file)
         });
     }
     applySettings();
+    if (MetadataCache* mc = session() ? session()->metadata() : nullptr; mc && !m_resolvedConn) {
+        // links may have become (un)resolved: re-decorate the visible lines
+        m_resolvedConn = connect(mc, &MetadataCache::resolved, this, [this] { m_editor->refreshDecorations(); });
+    }
     if (!m_previewAttached) {
         // Page preview: Mod+hover (editing) / hover (reading) over links
         Workspace* ws = workspace();

@@ -87,6 +87,7 @@ private:
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;
     QMetaObject::Connection m_typingConn;
+    QMetaObject::Connection m_resolvedConn;
     bool m_restoringFolds = false;
     bool m_previewAttached = false;
     bool m_spellcheck = false; // vault config "spellcheck" (applySettings)
