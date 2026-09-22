@@ -4,11 +4,14 @@
 #include "core/search/search_snippet.h"
 
 #include <QAbstractScrollArea>
+#include <QCollatorSortKey>
 #include <QElapsedTimer>
 #include <QList>
 #include <QTimer>
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace oc {
@@ -25,18 +28,29 @@ struct SearchResultGroup {
     QList<search::Snippet> snippets;
     int moreMatches = 0;                // content matches not covered by the shown snippets
     bool collapsed = false;
+    std::optional<QCollatorSortKey> sortKey; // of title (the view's name order)
+    // Snippets and moreMatches are built on demand (SearchResultsList::setPreparer) when the group is laid out;
+    // reset `prepared` to rebuild them (e.g. other context options).
+    bool prepared = false;
 
-    // layout cache (valid for layoutWidth; reset it to -1 after changing the title or the snippets)
+    // Layout cache: exact row heights, valid for layoutWidth (reset it to -1 after changing the title or the
+    // snippets). Groups outside the viewport may only carry an estimated height.
     int layoutWidth = -1;
     int titleHeight = 0;
     QList<int> snippetHeights;
     int moreHeight = 0;
     int height = 0;
+    int estimateWidth = -1; // cached height estimate
+    bool estimateCollapsed = false;
+    bool estimatePrepared = false;
+    int estimatedHeight = 0;
 };
 
 // The painted, virtualized result tree of the search view: file title rows (collapse arrow, name, match count)
 // followed by a bordered box of match snippets with highlighted matches, "... and N more matches.", the loading
-// bar and the empty state. Rows use Obsidian's .tree-item-self / .search-result-file-match metrics.
+// bar and the empty state. Rows use Obsidian's .tree-item-self / .search-result-file-match metrics. Only the groups
+// in the viewport are laid out exactly; the others use a cheap height estimate until they scroll into view, so
+// thousands of streamed results stay cheap.
 class SearchResultsList : public QAbstractScrollArea {
     Q_OBJECT
 public:
@@ -55,6 +69,10 @@ public:
     QList<SearchResultGroup>& mutableGroups() { return m_groups; }
     void groupsChanged(); // re-measures invalidated groups, recomputes offsets, repaints
     void clear();
+    // Builds a group's snippets (called for groups about to be laid out); preparedGroup() returns a group with them.
+    void setPreparer(std::function<void(SearchResultGroup&)> preparer);
+    void setSnippetLimit(int limit) { m_snippetLimit = limit; } // for height estimates of unprepared groups
+    const SearchResultGroup& preparedGroup(int group);
 
     void setEmptyText(const QString& text); // shown when there are no groups (e.g. "No matches found.")
     QString emptyText() const { return m_emptyText; }
@@ -63,8 +81,8 @@ public:
 
     Hit hitTest(const QPoint& viewportPos) const;
     // Viewport rectangle of a group's title row (snippet -1), one of its snippets, or its "more matches" row
-    // (snippet == snippets.size()). Empty when collapsed or out of range.
-    QRect itemRect(int group, int snippet = -1) const;
+    // (snippet == snippets.size()). Empty when collapsed or out of range. Lays the group out exactly if needed.
+    QRect itemRect(int group, int snippet = -1);
     int contentHeight() const;
     void scrollToGroup(int group);
 
@@ -103,15 +121,23 @@ protected:
 private:
     void measure(SearchResultGroup& g, int width) const;
     static int totalHeight(const SearchResultGroup& g);
+    int estimateHeight(SearchResultGroup& g, int width) const;
+    void prepare(SearchResultGroup& g) const;
     int innerWidth() const;
+    void recomputeOffsets();
+    bool ensureMeasured(int group);   // exact layout of one group; true when its height changed (offsets updated)
+    bool ensureVisibleMeasured();     // exact layout of the groups in the viewport; true when offsets changed
     void updateScrollRange();
     int groupTop(int group) const { return m_offsets[size_t(group)]; }
     void setHover(const Hit& hit);
-    QList<Hit> focusableRows() const; // titles, and the matches of expanded files, in display order
     void ensureVisible(const QRect& viewportRect);
 
     QList<SearchResultGroup> m_groups;
     std::vector<int> m_offsets; // content y of each group (size = groups + 1)
+    qreal m_titleCharWidth = 7;  // average character widths for height estimates
+    qreal m_matchCharWidth = 6.5;
+    int m_snippetLimit = 10;
+    std::function<void(SearchResultGroup&)> m_preparer;
     QString m_emptyText;
     bool m_loading = false;
     QElapsedTimer m_loadingClock;

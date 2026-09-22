@@ -93,7 +93,7 @@ public:
     bool isIdle() const { return !m_searching && !m_updating && !m_debounce.isActive() && !m_refreshTimer.isActive(); }
     int resultCount() const;
     QStringList resultPaths() const;
-    const SearchResultGroup* result(const QString& path) const;
+    const SearchResultGroup* result(const QString& path); // with its snippets built
     QString resultCountText() const;
     QString explanation() const; // the explain panel's text ("" when hidden)
 
@@ -107,7 +107,7 @@ public:
     // What clicks do (also used by keyboard handling and tests).
     void openResult(int group, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
     void openMatch(int group, int snippet, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
-    QJsonObject matchEState(int group, int snippet) const;
+    QJsonObject matchEState(int group, int snippet);
 
     SearchResultsList* resultsList() const { return m_results; }
     GlobalSearchInput* input() const { return m_input; }
@@ -131,6 +131,7 @@ private:
     void buildSnippets(SearchResultGroup& g) const;
     bool lessThan(const SearchResultGroup& a, const SearchResultGroup& b) const;
     void insertSorted(SearchResultGroup g);
+    void mergeSorted(QList<SearchResultGroup> fresh);
     void resort();
     void onPathChanged(const QString& path);
     void applyPendingChanges();

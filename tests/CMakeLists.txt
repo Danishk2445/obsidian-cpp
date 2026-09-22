@@ -38,4 +38,4 @@ oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Te
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_editor_suggest_test SOURCES ui/editor_suggest_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_page_preview_test SOURCES ui/page_preview_test.cpp DEPS oc_ui Qt6::Test GUI)
-oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_palette_test.cpp ui/search_view_test.cpp ui/navigation_shots_test.cpp ui/navigation_test_support.h DEPS oc_ui Qt6::Test GUI LABELS threads)
+oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_palette_test.cpp ui/search_view_test.cpp ui/navigation_shots_test.cpp ui/navigation_perf_test.cpp ui/navigation_test_support.h DEPS oc_ui Qt6::Test GUI LABELS threads)

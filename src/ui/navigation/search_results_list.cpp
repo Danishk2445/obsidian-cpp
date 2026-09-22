@@ -112,7 +112,11 @@ SearchResultsList::SearchResultsList(QWidget* parent)
     viewport()->setAutoFillBackground(false);
     setAttribute(Qt::WA_TranslucentBackground);
     viewport()->setAttribute(Qt::WA_TranslucentBackground);
-    connect(verticalScrollBar(), &QScrollBar::valueChanged, viewport(), qOverload<>(&QWidget::update));
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+        if (ensureVisibleMeasured())
+            updateScrollRange();
+        viewport()->update();
+    });
     m_offsets.assign(1, kPadTop);
     m_loadingTimer.setInterval(16);
     connect(&m_loadingTimer, &QTimer::timeout, viewport(), qOverload<>(&QWidget::update));
@@ -138,6 +142,7 @@ int SearchResultsList::innerWidth() const { return std::max(40, viewport()->widt
 
 void SearchResultsList::measure(SearchResultGroup& g, int width) const
 {
+    prepare(g);
     if (g.layoutWidth == width)
         return;
     const ThemePtr t = currentTheme();
@@ -168,18 +173,124 @@ int SearchResultsList::totalHeight(const SearchResultGroup& g)
     return h;
 }
 
-void SearchResultsList::groupsChanged()
+int SearchResultsList::estimateHeight(SearchResultGroup& g, int width) const
 {
-    const int width = innerWidth();
+    if (g.estimateWidth == width && g.estimateCollapsed == g.collapsed && g.estimatePrepared == g.prepared)
+        return g.estimatedHeight;
+    const qreal titleLine = kTitleFont * kLineHeight, matchLine = kMatchFont * kLineHeight;
+    const qreal titleW = std::max<qreal>(20, width - kTitlePadLeft - kTitlePadRight - 3 * m_matchCharWidth);
+    const int titleLines = std::max(1, int(std::ceil(g.title.size() * m_titleCharWidth / titleW)));
+    int h = kTitlePadY * 2 + int(std::ceil(titleLines * titleLine)) + kTitleGap;
+    if (!g.collapsed && (g.prepared ? (!g.snippets.isEmpty() || g.moreMatches > 0) : !g.contentMatches.isEmpty())) {
+        const qreal textW = std::max<qreal>(20, width - kMatchPadLeft - kMatchPadRight);
+        int box = 0;
+        if (g.prepared) {
+            for (const search::Snippet& sn : std::as_const(g.snippets)) {
+                int lines = 0;
+                for (QStringView line : QStringView(sn.text).split(u'\n'))
+                    lines += std::max(1, int(std::ceil((line.size() + 6) * m_matchCharWidth / textW)));
+                box += kMatchPadY * 2 + int(std::ceil(lines * matchLine)) + 1;
+            }
+            box += g.moreMatches > 0 ? kMatchPadY * 2 + int(std::ceil(matchLine)) : -1;
+        } else {
+            // snippets not built yet: two lines per match up to the snippet limit, then the "more" row
+            const int n = int(std::min<qsizetype>(g.contentMatches.size(), m_snippetLimit));
+            box = n * (kMatchPadY * 2 + int(std::ceil(2 * matchLine)) + 1);
+            box += g.contentMatches.size() > n ? kMatchPadY * 2 + int(std::ceil(matchLine)) : -1;
+        }
+        h += kBoxMarginTop + box + kBoxMarginBottom;
+    }
+    g.estimateWidth = width;
+    g.estimateCollapsed = g.collapsed;
+    g.estimatePrepared = g.prepared;
+    g.estimatedHeight = h;
+    return h;
+}
+
+void SearchResultsList::recomputeOffsets()
+{
     m_offsets.resize(size_t(m_groups.size()) + 1);
     int y = kPadTop;
     for (int i = 0; i < m_groups.size(); ++i) {
-        measure(m_groups[i], width);
-        m_groups[i].height = totalHeight(m_groups[i]);
         m_offsets[size_t(i)] = y;
         y += m_groups[i].height;
     }
     m_offsets[size_t(m_groups.size())] = y;
+}
+
+void SearchResultsList::setPreparer(std::function<void(SearchResultGroup&)> preparer) { m_preparer = std::move(preparer); }
+
+void SearchResultsList::prepare(SearchResultGroup& g) const
+{
+    if (g.prepared)
+        return;
+    if (m_preparer)
+        m_preparer(g);
+    g.prepared = true;
+    g.layoutWidth = -1;
+}
+
+const SearchResultGroup& SearchResultsList::preparedGroup(int group)
+{
+    prepare(m_groups[group]);
+    return m_groups[group];
+}
+
+bool SearchResultsList::ensureMeasured(int group)
+{
+    if (group < 0 || group >= m_groups.size())
+        return false;
+    SearchResultGroup& g = m_groups[group];
+    const int width = innerWidth();
+    if (g.layoutWidth == width && g.prepared)
+        return false;
+    measure(g, width);
+    const int h = totalHeight(g);
+    if (h == g.height)
+        return false;
+    g.height = h;
+    recomputeOffsets();
+    return true;
+}
+
+bool SearchResultsList::ensureVisibleMeasured()
+{
+    bool changed = false;
+    const int width = innerWidth();
+    for (int pass = 0; pass < 8; ++pass) {
+        const int top = verticalScrollBar()->value();
+        const int bottom = top + viewport()->height();
+        const auto it = std::upper_bound(m_offsets.begin(), m_offsets.end() - 1, top);
+        bool any = false;
+        for (qsizetype gi = std::max<qsizetype>(0, it - m_offsets.begin() - 1); gi < m_groups.size() && m_offsets[size_t(gi)] < bottom; ++gi) {
+            SearchResultGroup& g = m_groups[gi];
+            if (g.layoutWidth == width && g.prepared)
+                continue;
+            measure(g, width);
+            const int h = totalHeight(g);
+            if (h != g.height) {
+                g.height = h;
+                any = true;
+            }
+        }
+        if (!any)
+            break;
+        recomputeOffsets();
+        changed = true;
+    }
+    return changed;
+}
+
+void SearchResultsList::groupsChanged()
+{
+    const int width = innerWidth();
+    const ThemePtr t = currentTheme();
+    m_titleCharWidth = QFontMetricsF(t->interfaceFont(kTitleFont)).averageCharWidth();
+    m_matchCharWidth = QFontMetricsF(t->interfaceFont(kMatchFont)).averageCharWidth();
+    for (SearchResultGroup& g : m_groups)
+        g.height = g.layoutWidth == width && g.prepared ? totalHeight(g) : estimateHeight(g, width);
+    recomputeOffsets();
+    ensureVisibleMeasured();
     if (m_hover.group >= m_groups.size())
         m_hover = {};
     if (m_focus.group >= m_groups.size()
@@ -242,18 +353,24 @@ void SearchResultsList::scrollToGroup(int group)
 {
     if (group < 0 || group >= m_groups.size())
         return;
+    if (ensureMeasured(group))
+        updateScrollRange();
     QScrollBar* sb = verticalScrollBar();
     const int top = groupTop(group), bottom = top + m_groups[group].height;
     if (top < sb->value())
         sb->setValue(top - kPadTop);
     else if (bottom > sb->value() + viewport()->height())
         sb->setValue(bottom - viewport()->height());
+    if (ensureVisibleMeasured())
+        updateScrollRange();
 }
 
-QRect SearchResultsList::itemRect(int group, int snippet) const
+QRect SearchResultsList::itemRect(int group, int snippet)
 {
     if (group < 0 || group >= m_groups.size())
         return {};
+    if (ensureMeasured(group))
+        updateScrollRange();
     const SearchResultGroup& g = m_groups[group];
     const int x = kPadX, w = innerWidth();
     int y = groupTop(group) - verticalScrollBar()->value();
@@ -350,18 +467,6 @@ void SearchResultsList::mousePressEvent(QMouseEvent* e)
     e->accept();
 }
 
-QList<SearchResultsList::Hit> SearchResultsList::focusableRows() const
-{
-    QList<Hit> rows;
-    for (int g = 0; g < m_groups.size(); ++g) {
-        rows.append({g, -1, Part::Title});
-        if (!m_groups[g].collapsed)
-            for (int i = 0; i < m_groups[g].snippets.size(); ++i)
-                rows.append({g, i, Part::Snippet});
-    }
-    return rows;
-}
-
 void SearchResultsList::ensureVisible(const QRect& r)
 {
     if (r.isEmpty())
@@ -377,7 +482,7 @@ void SearchResultsList::setFocusedRow(int group, int snippet)
 {
     if (group < 0 || group >= m_groups.size())
         return;
-    if (snippet >= m_groups[group].snippets.size() || m_groups[group].collapsed)
+    if (snippet >= preparedGroup(group).snippets.size() || m_groups[group].collapsed)
         snippet = -1;
     m_focus = {group, snippet, snippet < 0 ? Part::Title : Part::Snippet};
     ensureVisible(itemRect(group, snippet));
@@ -406,44 +511,51 @@ void SearchResultsList::focusOutEvent(QFocusEvent* e)
 
 void SearchResultsList::keyPressEvent(QKeyEvent* e)
 {
-    const QList<Hit> rows = focusableRows();
-    qsizetype at = -1;
-    for (qsizetype i = 0; i < rows.size(); ++i)
-        if (rows[i].group == m_focus.group && rows[i].snippet == m_focus.snippet)
-            at = i;
     const Qt::KeyboardModifiers mods = e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+    const int g = m_focus.group;
+    const bool valid = g >= 0 && g < m_groups.size();
     switch (e->key()) {
     case Qt::Key_Down:
-        if (!rows.isEmpty())
-            setFocusedRow(rows[std::min(at + 1, rows.size() - 1)].group, rows[std::min(at + 1, rows.size() - 1)].snippet);
+        if (!valid) {
+            if (!m_groups.isEmpty())
+                setFocusedRow(0, -1);
+        } else if (!m_groups[g].collapsed && m_focus.snippet + 1 < preparedGroup(g).snippets.size()) {
+            setFocusedRow(g, m_focus.snippet + 1);
+        } else if (g + 1 < m_groups.size()) {
+            setFocusedRow(g + 1, -1);
+        }
         return;
     case Qt::Key_Up:
-        if (at <= 0) {
+        if (!valid || (g == 0 && m_focus.snippet < 0)) {
             emit exitTop();
-            return;
+        } else if (m_focus.snippet >= 0) {
+            setFocusedRow(g, m_focus.snippet - 1);
+        } else if (!m_groups[g - 1].collapsed && !preparedGroup(g - 1).snippets.isEmpty()) {
+            setFocusedRow(g - 1, int(m_groups[g - 1].snippets.size()) - 1);
+        } else {
+            setFocusedRow(g - 1, -1);
         }
-        setFocusedRow(rows[at - 1].group, rows[at - 1].snippet);
         return;
     case Qt::Key_Left:
-        if (m_focus.group < 0)
+        if (!valid)
             break;
         if (m_focus.snippet >= 0)
-            setFocusedRow(m_focus.group, -1);
-        else if (!m_groups[m_focus.group].collapsed)
-            emit collapseToggled(m_focus.group);
+            setFocusedRow(g, -1);
+        else if (!m_groups[g].collapsed)
+            emit collapseToggled(g);
         return;
     case Qt::Key_Right:
-        if (m_focus.group >= 0 && m_focus.snippet < 0 && m_groups[m_focus.group].collapsed)
-            emit collapseToggled(m_focus.group);
+        if (valid && m_focus.snippet < 0 && m_groups[g].collapsed)
+            emit collapseToggled(g);
         return;
     case Qt::Key_Return:
     case Qt::Key_Enter:
-        if (m_focus.group < 0)
+        if (!valid)
             break;
         if (m_focus.snippet >= 0)
-            emit snippetClicked(m_focus.group, m_focus.snippet, mods);
+            emit snippetClicked(g, m_focus.snippet, mods);
         else
-            emit titleClicked(m_focus.group, mods);
+            emit titleClicked(g, mods);
         return;
     default:
         break;
@@ -482,6 +594,8 @@ void SearchResultsList::mouseReleaseEvent(QMouseEvent* e)
 
 void SearchResultsList::paintEvent(QPaintEvent*)
 {
+    if (ensureVisibleMeasured())
+        updateScrollRange(); // normally done already (scrolling, resizing, new groups)
     QPainter p(viewport());
     p.setRenderHint(QPainter::Antialiasing);
     const ThemePtr t = currentTheme();

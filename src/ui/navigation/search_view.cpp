@@ -192,6 +192,8 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
     v->addWidget(info);
 
     m_results = new SearchResultsList(this);
+    m_results->setSnippetLimit(kMaxSnippets);
+    m_results->setPreparer([this](SearchResultGroup& g) { buildSnippets(g); });
     v->addWidget(m_results, 1);
 
     auto applyFonts = [this] {
@@ -432,9 +434,9 @@ void SearchView::setExtraContext(bool on)
         return;
     m_extraContext = on;
     for (SearchResultGroup& g : m_results->mutableGroups())
-        buildSnippets(g);
+        g.prepared = false; // rebuilt with the new context when laid out
     for (SearchResultGroup& g : m_pending)
-        buildSnippets(g);
+        g.prepared = false;
     m_results->groupsChanged();
     emitStateChanged();
     emit resultsChanged();
@@ -532,17 +534,19 @@ void SearchView::onBatch(const QList<search::SearchResult>& batch, quint64 gener
 {
     if (generation != m_generation || !m_snapshot)
         return;
+    QList<SearchResultGroup> fresh;
+    fresh.reserve(batch.size());
     for (const search::SearchResult& r : batch) {
         if (r.index < 0 || r.index >= m_snapshot->count())
             continue;
         const SearchSnapshot::Entry& e = m_snapshot->entry(r.index);
         const bool collapsed = m_collapsedPaths.contains(e.path) ? !m_collapseAll : m_collapseAll;
-        SearchResultGroup g = makeGroup(r, m_snapshot->document(r.index), e.mtimeMs, e.ctimeMs, collapsed);
-        if (m_refreshing)
-            m_pending.append(std::move(g));
-        else
-            insertSorted(std::move(g));
+        fresh.append(makeGroup(r, m_snapshot->document(r.index), e.mtimeMs, e.ctimeMs, collapsed));
     }
+    if (m_refreshing)
+        m_pending.append(std::move(fresh));
+    else
+        mergeSorted(std::move(fresh));
     if (!m_refreshing) {
         m_results->groupsChanged();
         updateChrome();
@@ -573,6 +577,7 @@ SearchResultGroup SearchView::makeGroup(const search::SearchResult& r, const std
     SearchResultGroup g;
     g.path = r.path;
     g.title = titleFor(r.path);
+    g.sortKey = nameCollator().sortKey(g.title);
     g.mtimeMs = mtimeMs;
     g.ctimeMs = ctimeMs;
     g.doc = doc;
@@ -586,8 +591,7 @@ SearchResultGroup SearchView::makeGroup(const search::SearchResult& r, const std
         if (b > a)
             g.titleMatches.append({a - nameStart, b - nameStart});
     }
-    buildSnippets(g);
-    return g;
+    return g; // snippets are built when the group is laid out (see the results list's preparer)
 }
 
 void SearchView::buildSnippets(SearchResultGroup& g) const
@@ -611,7 +615,7 @@ void SearchView::buildSnippets(SearchResultGroup& g) const
 bool SearchView::lessThan(const SearchResultGroup& a, const SearchResultGroup& b) const
 {
     auto byName = [](const SearchResultGroup& x, const SearchResultGroup& y) {
-        const int c = nameCollator().compare(x.title, y.title);
+        const int c = x.sortKey && y.sortKey ? x.sortKey->compare(*y.sortKey) : nameCollator().compare(x.title, y.title);
         return c != 0 ? c < 0 : x.path < y.path;
     };
     switch (m_sortOrder) {
@@ -630,6 +634,19 @@ void SearchView::insertSorted(SearchResultGroup g)
     auto& groups = m_results->mutableGroups();
     const auto it = std::upper_bound(groups.begin(), groups.end(), g, [this](const SearchResultGroup& x, const SearchResultGroup& y) { return lessThan(x, y); });
     groups.insert(it, std::move(g));
+}
+
+void SearchView::mergeSorted(QList<SearchResultGroup> fresh)
+{
+    // A streamed batch: sort it, then one linear merge (instead of shifting the list for every result).
+    const auto cmp = [this](const SearchResultGroup& a, const SearchResultGroup& b) { return lessThan(a, b); };
+    std::stable_sort(fresh.begin(), fresh.end(), cmp);
+    auto& groups = m_results->mutableGroups();
+    QList<SearchResultGroup> merged;
+    merged.reserve(groups.size() + fresh.size());
+    std::merge(std::make_move_iterator(groups.begin()), std::make_move_iterator(groups.end()), std::make_move_iterator(fresh.begin()),
+               std::make_move_iterator(fresh.end()), std::back_inserter(merged), cmp);
+    groups = std::move(merged);
 }
 
 void SearchView::resort()
@@ -791,11 +808,12 @@ QStringList SearchView::resultPaths() const
     return out;
 }
 
-const SearchResultGroup* SearchView::result(const QString& path) const
+const SearchResultGroup* SearchView::result(const QString& path)
 {
-    for (const SearchResultGroup& g : m_results->groups())
-        if (g.path == path)
-            return &g;
+    const auto& groups = m_results->groups();
+    for (int i = 0; i < groups.size(); ++i)
+        if (groups[i].path == path)
+            return &m_results->preparedGroup(i);
     return nullptr;
 }
 
@@ -850,12 +868,11 @@ void SearchView::copyResults()
         w->notices()->show(tr("Results copied to your clipboard."));
 }
 
-QJsonObject SearchView::matchEState(int group, int snippet) const
+QJsonObject SearchView::matchEState(int group, int snippet)
 {
-    const auto& groups = m_results->groups();
-    if (group < 0 || group >= groups.size())
+    if (group < 0 || group >= m_results->groups().size())
         return {};
-    const SearchResultGroup& g = groups[group];
+    const SearchResultGroup& g = m_results->preparedGroup(group);
     if (!g.doc || snippet < 0 || snippet >= g.snippets.size())
         return {};
     const search::Snippet& s = g.snippets[snippet];
