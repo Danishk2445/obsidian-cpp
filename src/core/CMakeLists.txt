@@ -8,6 +8,8 @@ oc_add_library(oc_core
     config/vault_registry.cpp
     documents/document.cpp
     documents/local_storage.cpp
+    fuzzy/fuzzy.cpp
+    time/moment_format.cpp
     metadata/link_resolver.cpp
     metadata/metadata_cache.cpp
     vault_session.cpp
