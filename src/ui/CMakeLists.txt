@@ -10,16 +10,20 @@ oc_add_library(oc_ui
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
+    plugins/note_plugins_ui.cpp
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
     shell/ribbon.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
+    views/markdown/attachments.cpp
     views/markdown/editor_search_bar.cpp
     views/markdown/inline_title.cpp
     views/markdown/markdown_commands.cpp
+    views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
+    views/markdown/page_preview.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp
     widgets/toggle_switch.cpp

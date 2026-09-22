@@ -129,73 +129,92 @@ protected:
     }
 };
 
-// Footer with "command purpose" pairs.
-class InstructionsBar : public QWidget {
-public:
-    explicit InstructionsBar(QWidget* parent)
-        : QWidget(parent)
-    {
-    }
-    QList<SuggestModal::Instruction> items;
-    QSize sizeHint() const override { return {100, heightForWidth(width())}; }
-    bool hasHeightForWidth() const override { return true; }
-    int heightForWidth(int w) const override { return int(layoutRows(w).size()) * 18 + 16; }
-
-protected:
-    QList<QList<int>> layoutRows(int width) const
-    {
-        const ThemePtr t = currentTheme();
-        QFont f = t->interfaceFont(12);
-        QFont b = f;
-        b.setWeight(QFont::Bold);
-        const QFontMetricsF fm(f), bm(b);
-        QList<QList<int>> rows{QList<int>()};
-        qreal x = 0;
-        for (int i = 0; i < items.size(); ++i) {
-            const qreal w = bm.horizontalAdvance(items[i].command) + 4 + fm.horizontalAdvance(items[i].purpose);
-            if (!rows.last().isEmpty() && x + 12 + w > width - 16) {
-                rows.append(QList<int>());
-                x = 0;
-            }
-            x += (rows.last().isEmpty() ? 0 : 12) + w;
-            rows.last().append(i);
-        }
-        return rows;
-    }
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter p(this);
-        const ThemePtr t = currentTheme();
-        QFont f = t->interfaceFont(12);
-        QFont b = f;
-        b.setWeight(QFont::Bold);
-        const QFontMetricsF fm(f), bm(b);
-        const QColor muted = t->color(QStringLiteral("--text-muted"));
-        p.setPen(muted);
-        int y = 8;
-        for (const QList<int>& row : layoutRows(width())) {
-            qreal total = 0;
-            for (int k = 0; k < row.size(); ++k) {
-                const auto& it = items[row[k]];
-                total += (k ? 12 : 0) + bm.horizontalAdvance(it.command) + 4 + fm.horizontalAdvance(it.purpose);
-            }
-            qreal x = (width() - total) / 2;
-            for (int k = 0; k < row.size(); ++k) {
-                const auto& it = items[row[k]];
-                if (k)
-                    x += 12;
-                p.setFont(b);
-                p.drawText(QPointF(x, y + bm.ascent() + (18 - bm.height()) / 2), it.command);
-                x += bm.horizontalAdvance(it.command) + 4;
-                p.setFont(f);
-                p.drawText(QPointF(x, y + fm.ascent() + (18 - fm.height()) / 2), it.purpose);
-                x += fm.horizontalAdvance(it.purpose);
-            }
-            y += 18;
-        }
-    }
-};
 } // namespace
+
+// ---------------------------------------------------------------------------------------------
+// PromptInstructions
+// ---------------------------------------------------------------------------------------------
+PromptInstructions::PromptInstructions(QWidget* parent)
+    : QWidget(parent)
+{
+}
+
+void PromptInstructions::setItems(const QList<SuggestModal::Instruction>& items)
+{
+    m_items = items;
+    updateGeometry();
+    update();
+}
+
+QSize PromptInstructions::sizeHint() const { return {100, heightForWidth(width())}; }
+
+int PromptInstructions::naturalWidth() const
+{
+    const ThemePtr t = currentTheme();
+    QFont f = t->interfaceFont(12);
+    QFont b = f;
+    b.setWeight(QFont::Bold);
+    const QFontMetricsF fm(f), bm(b);
+    qreal w = 0;
+    for (int i = 0; i < m_items.size(); ++i)
+        w += (i ? 12 : 0) + bm.horizontalAdvance(m_items[i].command) + 4 + fm.horizontalAdvance(m_items[i].purpose);
+    return int(std::ceil(w)) + 16 + 2;
+}
+int PromptInstructions::heightForWidth(int w) const { return int(layoutRows(w).size()) * 18 + 16; }
+
+QList<QList<int>> PromptInstructions::layoutRows(int width) const
+{
+    const ThemePtr t = currentTheme();
+    QFont f = t->interfaceFont(12);
+    QFont b = f;
+    b.setWeight(QFont::Bold);
+    const QFontMetricsF fm(f), bm(b);
+    QList<QList<int>> rows{QList<int>()};
+    qreal x = 0;
+    for (int i = 0; i < m_items.size(); ++i) {
+        const qreal w = bm.horizontalAdvance(m_items[i].command) + 4 + fm.horizontalAdvance(m_items[i].purpose);
+        if (!rows.last().isEmpty() && x + 12 + w > width - 16) {
+            rows.append(QList<int>());
+            x = 0;
+        }
+        x += (rows.last().isEmpty() ? 0 : 12) + w;
+        rows.last().append(i);
+    }
+    return rows;
+}
+
+void PromptInstructions::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+    const ThemePtr t = currentTheme();
+    QFont f = t->interfaceFont(12);
+    QFont b = f;
+    b.setWeight(QFont::Bold);
+    const QFontMetricsF fm(f), bm(b);
+    const QColor muted = t->color(QStringLiteral("--text-muted"));
+    p.setPen(muted);
+    int y = 8;
+    for (const QList<int>& row : layoutRows(width())) {
+        qreal total = 0;
+        for (int k = 0; k < row.size(); ++k) {
+            const auto& it = m_items[row[k]];
+            total += (k ? 12 : 0) + bm.horizontalAdvance(it.command) + 4 + fm.horizontalAdvance(it.purpose);
+        }
+        qreal x = m_centered ? (width() - total) / 2 : 8;
+        for (int k = 0; k < row.size(); ++k) {
+            const auto& it = m_items[row[k]];
+            if (k)
+                x += 12;
+            p.setFont(b);
+            p.drawText(QPointF(x, y + bm.ascent() + (18 - bm.height()) / 2), it.command);
+            x += bm.horizontalAdvance(it.command) + 4;
+            p.setFont(f);
+            p.drawText(QPointF(x, y + fm.ascent() + (18 - fm.height()) / 2), it.purpose);
+            x += fm.horizontalAdvance(it.purpose);
+        }
+        y += 18;
+    }
+}
 
 // ---------------------------------------------------------------------------------------------
 // SuggestModal
@@ -243,7 +262,7 @@ SuggestModal::SuggestModal(OverlayLayer* layer)
 
     m_list = new SuggestionList(prompt);
     v->addWidget(m_list, 1);
-    auto* instr = new InstructionsBar(prompt);
+    auto* instr = new PromptInstructions(prompt);
     m_instructions = instr;
     instr->hide();
     v->addWidget(instr);
@@ -262,8 +281,8 @@ void SuggestModal::setPlaceholder(const QString& text) { m_input->setPlaceholder
 void SuggestModal::setInstructions(const QList<Instruction>& instructions)
 {
     m_instructionList = instructions;
-    auto* bar = static_cast<InstructionsBar*>(m_instructions);
-    bar->items = instructions;
+    auto* bar = static_cast<PromptInstructions*>(m_instructions);
+    bar->setItems(instructions);
     bar->setVisible(!instructions.isEmpty());
     relayout();
 }
@@ -452,6 +471,39 @@ void SuggestionList::setSuggestions(QList<Suggestion> items, const QString& empt
     emit selectedChanged(m_items.isEmpty() ? -1 : 0);
 }
 
+void SuggestionList::clearSelection()
+{
+    if (m_selected == -1)
+        return;
+    m_selected = -1;
+    viewport()->update();
+    emit selectedChanged(-1);
+}
+
+int SuggestionList::preferredWidth() const
+{
+    const ThemePtr t = currentTheme();
+    const QFontMetricsF title(t->interfaceFont(15)), note(t->interfaceFont(12)), small(t->interfaceFont(12)),
+        mono(t->monospaceFont(12));
+    qreal best = 0;
+    const qsizetype n = std::min<qsizetype>(m_items.size(), 200);
+    for (qsizetype i = 0; i < n; ++i) {
+        const Suggestion& s = m_items[i];
+        const QString text = s.prefix.isEmpty() ? s.title : s.prefix + QStringLiteral(": ") + s.title;
+        qreal w = std::max(title.horizontalAdvance(text), note.horizontalAdvance(s.note)) + 24;
+        if (!s.icon.isEmpty())
+            w += 16 + 4 + 12;
+        for (const QString& k : s.hotkeys)
+            w += mono.horizontalAdvance(k) + 12 + 10;
+        if (!s.auxText.isEmpty())
+            w += small.horizontalAdvance(s.auxText) + 12;
+        if (!s.auxIcon.isEmpty())
+            w += 16 + 16;
+        best = std::max(best, w);
+    }
+    return int(std::ceil(best)) + 2 * m_pad;
+}
+
 int SuggestionList::rowHeight(const Suggestion& s, int width) const
 {
     const ThemePtr t = currentTheme();
@@ -499,6 +551,19 @@ int SuggestionList::contentHeight() const
     if (m_items.isEmpty())
         return m_empty.isEmpty() ? 0 : 8 + 12 + 23 + 8;
     return m_rows.isEmpty() ? 0 : m_rows.last().y + m_rows.last().height + m_pad;
+}
+
+int SuggestionList::contentHeightForWidth(int width, int cap) const
+{
+    if (m_items.isEmpty())
+        return m_empty.isEmpty() ? 0 : 8 + 12 + 23 + 8;
+    int y = m_pad;
+    for (const Suggestion& s : m_items) {
+        y += rowHeight(s, width - 2 * m_pad);
+        if (y >= cap)
+            return cap;
+    }
+    return std::min(y + m_pad, cap);
 }
 
 QRect SuggestionList::rowRect(int index) const

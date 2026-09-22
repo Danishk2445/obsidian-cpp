@@ -12,6 +12,8 @@
 
 #include <memory>
 
+class QMenu;
+
 namespace oc {
 
 class SourceDecorator;
@@ -89,6 +91,7 @@ public:
     QPointF docToViewport(const QPointF& docPt) const;
     QPointF viewportToDoc(const QPointF& vp) const;
     QRectF caretRectInViewport() const;
+    QRectF caretRectAt(qsizetype pos) const; // viewport coordinates of a caret at `pos`
     qsizetype positionAt(const QPoint& viewportPos);
 
     // A widget shown above the first line that scrolls with the text (Obsidian's inline title and
@@ -102,6 +105,11 @@ public:
     double contentLeft() const { return m_contentLeft; }
     double contentWidth() const { return m_layout.contentWidth(); }
     double topPadding() const { return m_marginTop; }
+    double documentHeight() const; // margins + all (visible) lines, as currently measured/estimated
+
+    // Show only lines [from, to] (to = -1: to the end), like an embed of a section. Folds still apply.
+    void setVisibleLineRange(int from, int to);
+    QPair<int, int> visibleLineRange() const { return {m_clipFrom, m_clipTo}; }
 
     // Extra decoration layers (search highlights, spellcheck, ...), applied in order to every laid-out
     // line after the mode's own decorations. Call refreshDecorations() when a layer's output changes.
@@ -138,9 +146,13 @@ signals:
     void scrolled(double top);
     void focusChangedIn(bool focused);
     void contextMenuRequestedAt(const QPoint& globalPos, qsizetype docPos);
+    void contextMenuAboutToShow(QMenu* menu, qsizetype docPos); // the menu can still be changed
     // A rendered link was clicked (live preview / reading). kind: 0 wikilink, 1 embed, 2 markdown link,
     // 3 url, 4 tag. newLeaf: Ctrl held.
     void linkActivated(const QString& target, int kind, bool newLeaf);
+    // The mouse moved onto a link (kind as above; rect: its box in viewport coordinates), or off it
+    // (empty target). Drives the page preview popover.
+    void linkHovered(const QString& target, int kind, const QRect& rect);
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -154,6 +166,10 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    void dragEnterEvent(QDragEnterEvent* e) override;
+    void dragMoveEvent(QDragMoveEvent* e) override;
+    void dragLeaveEvent(QDragLeaveEvent* e) override;
+    void dropEvent(QDropEvent* e) override;
     void focusInEvent(QFocusEvent* e) override;
     void focusOutEvent(QFocusEvent* e) override;
     void timerEvent(QTimerEvent* e) override;
@@ -234,6 +250,11 @@ private:
     FoldOptions m_foldOptions;
     QList<FoldRange> m_folds; // sorted by line; may nest
     int m_hoverLine = -1;
+    qsizetype m_dropPos = -1; // drop caret while dragging over the text
+    int m_clipFrom = 0;  // setVisibleLineRange()
+    int m_clipTo = -1;
+    QString m_hoverLink; // linkHovered(): "kind:from:target" of the link under the mouse
+    void updateHoveredLink(const QPoint& viewportPos);
     QList<std::pair<int, DecorationLayer>> m_layers;
     int m_nextLayerId = 1;
 };

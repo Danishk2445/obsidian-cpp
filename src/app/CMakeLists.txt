@@ -1,6 +1,7 @@
 qt_add_executable(obsidian-cpp
   main.cpp
   application.cpp
+  scenario_runner.cpp
   cli.cpp
 )
 target_include_directories(obsidian-cpp PRIVATE "${CMAKE_SOURCE_DIR}/src")
