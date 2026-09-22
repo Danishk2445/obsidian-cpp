@@ -1,5 +1,13 @@
 oc_add_library(oc_ui
   SOURCES
+    navigation/command_palette.cpp
+    navigation/navigation.cpp
+    navigation/navigation_util.cpp
+    navigation/quick_switcher.cpp
+    navigation/search_results_list.cpp
+    navigation/search_view.cpp
+    navigation/search_view_widgets.cpp
+    navigation/vault_search_source.cpp
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp

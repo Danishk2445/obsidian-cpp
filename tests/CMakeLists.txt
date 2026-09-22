@@ -35,3 +35,4 @@ oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GU
 oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_palette_test.cpp ui/search_view_test.cpp ui/navigation_shots_test.cpp ui/navigation_test_support.h DEPS oc_ui Qt6::Test GUI LABELS threads)
