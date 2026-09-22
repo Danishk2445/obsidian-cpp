@@ -25,7 +25,8 @@ CliOptions parseCli(const QStringList& args)
     const QCommandLineOption native(QStringLiteral("native-frame"), QStringLiteral("Use the native window frame."));
     const QCommandLineOption frameless(QStringLiteral("frameless"), QStringLiteral("Use the Obsidian-style frameless window."));
     const QCommandLineOption accent(QStringLiteral("accent"), QStringLiteral("Accent color for this run."), QStringLiteral("#rrggbb"));
-    p.addOptions({vault, open, mode, theme, size, shot, delay, script, collapse, det, picker, noReg, native, frameless, accent});
+    const QCommandLineOption edit(QStringLiteral("edit"), QStringLiteral("Developer harness: edit a single file in a bare editor window."), QStringLiteral("file"));
+    p.addOptions({vault, open, mode, theme, size, shot, delay, script, collapse, det, picker, noReg, native, frameless, accent, edit});
     p.addPositionalArgument(QStringLiteral("vault"), QStringLiteral("Vault folder (same as --vault)."), QStringLiteral("[vault]"));
     p.process(args);
 
@@ -53,6 +54,7 @@ CliOptions parseCli(const QStringList& args)
     if (p.isSet(frameless))
         o.frame = 1;
     o.accent = p.value(accent);
+    o.edit = p.value(edit);
     return o;
 }
 

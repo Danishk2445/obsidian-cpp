@@ -23,6 +23,7 @@ struct CliOptions {
     bool noRegister = false;// --no-register: don't record the vault in the registry
     int frame = -1;         // --native-frame => 0, --frameless => 1, default -1 (setting)
     QString accent;         // --accent #rrggbb
+    QString edit;           // --edit <file>: dev harness, a bare editor on one file
 };
 
 CliOptions parseCli(const QStringList& args);

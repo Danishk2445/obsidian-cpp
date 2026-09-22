@@ -99,6 +99,8 @@ public:
 
     ThemePtr theme() const { return m_theme; }
     Theme::Scheme effectiveScheme() const;
+    // A theme snapshot for a specific scheme without applying it (e.g. light colours for PDF export).
+    ThemePtr themeFor(Theme::Scheme scheme) const;
 
     // Rebuild snapshot and restyle the application.
     void apply();
