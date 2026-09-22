@@ -1,6 +1,7 @@
 oc_add_library(oc_ui
   SOURCES
     overlay/overlay_layer.cpp
+    overlay/suggest_modal.cpp
     picker/vault_picker.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
