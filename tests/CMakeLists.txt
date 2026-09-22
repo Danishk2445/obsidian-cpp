@@ -35,3 +35,6 @@ oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GU
 oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
+oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
+oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
