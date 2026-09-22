@@ -420,10 +420,32 @@ void TabHeaderBar::relayout()
 {
     const int n = int(m_group->leaves.size());
     m_tabs.resize(n);
+    const int cur = m_group->currentTab;
+    // The rightmost top header leaves room for the floating sidebar toggle + window buttons.
+    const double padL = 8, padR = m_reserve > 0 ? m_reserve : 8;
+    auto scrollIntoView = [&](double tabL, double tabR, double visible, double maxScroll) {
+        if (cur != m_snappedTab) {
+            if (tabL < m_scroll)
+                m_scroll = tabL;
+            else if (tabR > m_scroll + visible)
+                m_scroll = tabR - visible;
+            m_snappedTab = cur;
+        }
+        m_scroll = std::clamp(m_scroll, 0.0, maxScroll);
+    };
     if (m_sidedock) {
         m_newTab->hide();
         m_tabList->hide();
-        double x = 8;
+        // Icon tabs 34x25, 3px apart; the strip scrolls when it doesn't fit.
+        const double avail = std::max(0.0, width() - padL - padR);
+        const double stripW = n > 0 ? n * 34 + (n - 1) * 3 : 0;
+        if (cur >= 0 && cur < n)
+            scrollIntoView(cur * 37.0, cur * 37.0 + 34, avail, std::max(0.0, stripW - avail));
+        else
+            m_scroll = std::clamp(m_scroll, 0.0, std::max(0.0, stripW - avail));
+        m_clipL = padL;
+        m_clipR = padL + avail;
+        double x = padL - m_scroll;
         for (int i = 0; i < n; ++i) {
             TabGeom& g = m_tabs[i];
             g.rect = QRectF(x, kTabTop, 34, 25);
@@ -438,7 +460,6 @@ void TabHeaderBar::relayout()
     }
     m_newTab->show();
     m_tabList->show();
-    const double padL = 8, padR = 8 + m_reserve;
     const double content = width() - padL - padR;
     // inner (tabs) margin box = tabs + 20; "+" margin box 34; tab list margin box 30.
     const double availStrip = std::max(0.0, content - 20 - 34 - 30);
@@ -448,18 +469,13 @@ void TabHeaderBar::relayout()
     tw = std::max(tw, kMinTabWidth);
     const double stripW = n * tw;
     const double visibleStrip = std::min(stripW, availStrip);
-    // Keep the current tab visible when the tabs overflow.
-    const double maxScroll = std::max(0.0, stripW - visibleStrip);
-    const int cur = m_group->currentTab;
-    if (cur >= 0 && cur < n && cur != m_snappedTab) {
-        const double l = cur * tw, r = l + tw;
-        if (l < m_scroll)
-            m_scroll = l;
-        else if (r > m_scroll + visibleStrip)
-            m_scroll = r - visibleStrip;
-        m_snappedTab = cur;
-    }
-    m_scroll = std::clamp(m_scroll, 0.0, maxScroll);
+    if (cur >= 0 && cur < n)
+        scrollIntoView(cur * tw, cur * tw + tw, visibleStrip, std::max(0.0, stripW - visibleStrip));
+    else
+        m_scroll = std::clamp(m_scroll, 0.0, std::max(0.0, stripW - visibleStrip));
+    // .workspace-tab-header-container-inner: margin 0 -5px, padding 0 15px, overflow hidden.
+    m_clipL = padL - 5;
+    m_clipR = padL - 5 + visibleStrip + 30;
     const double x0 = padL + 10 - m_scroll;
     for (int i = 0; i < n; ++i) {
         TabGeom& g = m_tabs[i];
@@ -494,12 +510,9 @@ QRect TabHeaderBar::closeRect(int index) const
 
 int TabHeaderBar::tabAt(const QPoint& pos) const
 {
-    if (!m_sidedock) {
-        // Tabs scrolled under the "+" button or out of the strip aren't hit.
-        const double clipR = m_newTab->isVisible() ? m_newTab->x() : width();
-        if (pos.x() < 3 || pos.x() >= clipR)
-            return -1;
-    }
+    // Tabs scrolled out of the strip aren't hit.
+    if (pos.x() < m_clipL || pos.x() >= m_clipR)
+        return -1;
     for (int i = 0; i < m_tabs.size(); ++i)
         if (m_tabs[i].rect.contains(pos))
             return i;
@@ -662,15 +675,15 @@ void TabHeaderBar::paintEvent(QPaintEvent*)
                             : tok(t, "--tab-container-background");
     p.fillRect(rect(), bg);
     p.fillRect(QRectF(0, kHeaderHeight - 1, width(), 1), tok(t, "--tab-outline-color"));
+    // The tab strip scrolls inside .workspace-tab-header-container-inner (overflow hidden).
+    p.save();
+    p.setClipRect(QRectF(m_clipL, 0, std::max(0.0, m_clipR - m_clipL), height()));
     if (m_sidedock) {
         for (int i = 0; i < m_tabs.size(); ++i)
             paintSideTab(p, i, m_tabs[i]);
+        p.restore();
         return;
     }
-    // The tab strip scrolls inside .workspace-tab-header-container-inner (overflow hidden).
-    const double clipR = m_newTab->isVisible() ? m_newTab->x() + 4.0 : width();
-    p.save();
-    p.setClipRect(QRectF(3, 0, std::max(0.0, clipR - 3), height()));
     const int cur = m_group->currentTab;
     for (int i = 0; i < m_tabs.size(); ++i)
         if (i != cur)
@@ -777,10 +790,6 @@ void TabHeaderBar::leaveEvent(QEvent* e)
 
 void TabHeaderBar::wheelEvent(QWheelEvent* e)
 {
-    if (m_sidedock) {
-        e->ignore();
-        return;
-    }
     const QPoint delta = e->angleDelta();
     const int step = std::abs(delta.x()) > std::abs(delta.y()) ? delta.x() : delta.y();
     m_scroll -= step / 2.0;

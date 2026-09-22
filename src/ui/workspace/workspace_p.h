@@ -377,6 +377,7 @@ private:
     QVector<TabGeom> m_tabs;
     double m_scroll = 0;
     int m_snappedTab = -2;     // current tab last scrolled into view
+    double m_clipL = 0, m_clipR = 0; // visible part of the (scrolling) tab strip
     double m_lockedWidth = -1; // Obsidian lockTabWidths(): keep widths while closing with the mouse
     int m_hoverTab = -1;
     bool m_hoverClose = false;
