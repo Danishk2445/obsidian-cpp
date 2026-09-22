@@ -30,3 +30,6 @@ Interfaces other modules/agents build against. Change deliberately and update al
 - `src/markdown/inline_tree.h` — `InlineTree` (preorder nodes in content offsets, Mark children for hideable
   syntax, per-type infos), `LeafContent` (content ↔ document mapping), token precedence rules (header comment).
 - `SyntaxTree::leafContent / tableCellContent / inlineTree(...)` — lazy, cached inline parsing per leaf.
+- `md::parseInline(content, refdefs)` (inline_tree.h) — pure, thread-safe inline parser; `LinkRefDefinition` lives
+  in inline_tree.h. Temporary stubs: `src/markdown/syntax_tree_stub.cpp` (block) and `inline_parser_stub.cpp`
+  (inline) — each is deleted by the agent that lands the real implementation.

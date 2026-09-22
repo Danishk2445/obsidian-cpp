@@ -152,6 +152,19 @@ private:
 
 using InlineTreePtr = std::shared_ptr<const InlineTree>;
 
+// Link reference definition ("[label]: destination "title"") collected by the block parser; inline
+// parsing resolves reference links ([text][label], [label][], [label]) against these.
+struct LinkRefDefinition {
+    QString label;          // normalized (case-folded, whitespace collapsed)
+    QString destination;
+    QString title;
+    int line = 0;
+};
+
+// Parse the inline structure of one content string (leaf content, table cell, callout title).
+// Pure function, thread-safe. `refdefs` may be empty. See the header comment for precedence rules.
+InlineTreePtr parseInline(const QString& content, const QList<LinkRefDefinition>& refdefs = {});
+
 // Content of a leaf (or of a table cell / callout title): the text inline offsets refer to, with a
 // mapping back to document positions.
 struct LeafContent {

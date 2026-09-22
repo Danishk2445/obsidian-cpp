@@ -179,13 +179,6 @@ struct FootnoteDefInfo {
     QString label;
 };
 
-struct LinkRefDefinition {
-    QString label;          // normalized (case-folded, whitespace collapsed)
-    QString destination;
-    QString title;
-    int line = 0;
-};
-
 // Budget for incremental parsing. The parser always parses at least through `ensureLine` (e.g. the
 // bottom of the viewport + 2 screens) and otherwise stops after `maxNanos`, leaving the old (shifted)
 // structure below validUpTo() until resume() finishes it.
@@ -256,7 +249,8 @@ public:
     // title, LinkRefDef-free paragraphs...). Tables: use tableCellContent().
     LeafContent leafContent(int leafId, const Text& text) const;
     LeafContent tableCellContent(int line, int cellIndex, const Text& text) const;
-    // Parsed inline tree for a content (cached by content hash + link reference definitions).
+    // Parsed inline tree for a content (parseInline() + a cache keyed by content hash and the link
+    // reference definitions generation).
     InlineTreePtr inlineTree(const LeafContent& content) const;
     InlineTreePtr inlineTree(int leafId, const Text& text) const { return inlineTree(leafContent(leafId, text)); }
 

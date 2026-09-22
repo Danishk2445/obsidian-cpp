@@ -203,46 +203,6 @@ LeafContent SyntaxTree::leafContent(int leafId, const Text& text) const
     return c;
 }
 LeafContent SyntaxTree::tableCellContent(int, int, const Text&) const { return {}; }
-InlineTreePtr SyntaxTree::inlineTree(const LeafContent& content) const
-{
-    auto t = std::make_shared<InlineTree>();
-    t->mutableContent() = content.text;
-    return t;
-}
-
-qsizetype LeafContent::toDoc(int off, const Text& doc) const
-{
-    for (const Segment& s : segments)
-        if (off >= s.contentFrom && off <= s.contentFrom + s.length)
-            return doc.lineStart(s.line) + s.col + (off - s.contentFrom);
-    return segments.isEmpty() ? 0 : doc.lineStart(segments.last().line) + segments.last().col + segments.last().length;
-}
-int LeafContent::fromDoc(qsizetype pos, const Text& doc) const
-{
-    for (const Segment& s : segments) {
-        const qsizetype start = doc.lineStart(s.line) + s.col;
-        if (pos >= start && pos <= start + s.length)
-            return s.contentFrom + int(pos - start);
-    }
-    return -1;
-}
-int LeafContent::lineOf(int off) const
-{
-    for (const Segment& s : segments)
-        if (off <= s.contentFrom + s.length)
-            return s.line;
-    return segments.isEmpty() ? 0 : segments.last().line;
-}
-QString WikiLinkInfo::displayText() const
-{
-    if (!alias.isEmpty())
-        return alias;
-    if (subpath.isEmpty())
-        return target;
-    QString sub = subpath;
-    sub.remove(0, 1);
-    return target.isEmpty() ? sub : target + QStringLiteral(" > ") + sub.replace(QLatin1Char('#'), QStringLiteral(" > "));
-}
-bool SyntaxTree::equivalent(const SyntaxTree&, const SyntaxTree&, QString*) { return true; }
+InlineTreePtr SyntaxTree::inlineTree(const LeafContent& content) const { return parseInline(content.text, linkRefDefs()); }
 
 } // namespace oc::md
