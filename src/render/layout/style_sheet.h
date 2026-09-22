@@ -46,6 +46,7 @@ enum class StyleId : quint16 {
     SearchMatchCurrent,
     SpellError,
     Preedit,             // IME composition text
+    Invisible,           // transparent text that keeps its width (inactive quote markers)
     // code token styles (KSyntaxHighlighting text styles -> Obsidian --code-* tokens)
     CodeComment,
     CodeKeyword,

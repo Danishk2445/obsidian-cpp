@@ -13,24 +13,25 @@
 #include <QTextLayout>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 class QPainter;
 
 namespace oc {
 
-// Virtualized layout of a document, one unit per line (block widgets spanning several lines come
-// with live preview). Coordinates: x is relative to the text column's left edge, y to the document
-// top. Off-screen units keep an estimated (or last measured) height; ensureLaidOut() measures the
-// visible range exactly. Line boxes emulate CSS: every visual line is round(fontPx * line-height) tall
-// with the baseline centred, independent of fallback fonts.
+// Virtualized layout of a document as a sequence of units: a text unit per line, or a block widget
+// covering several lines (rendered table/callout/math...). Coordinates: x relative to the text column's
+// left edge, y to the document top. Off-screen units keep an estimated (or last measured) height;
+// ensureLaidOut() measures the visible range exactly. Line boxes emulate CSS: each visual line is
+// round(fontPx * line-height) tall with the baseline centred, independent of fallback fonts.
 class DocLayout {
 public:
     struct VisualLine {
         qreal y = 0;        // relative to the unit top
         qreal height = 0;
         qreal baseline = 0; // relative to the unit top
-        qreal x = 0;        // line start x (indent/hanging)
+        qreal x = 0;
         qreal width = 0;
         int dispStart = 0;
         int dispLength = 0;
@@ -41,7 +42,6 @@ public:
         LineDecoration deco;
         QList<VisualLine> lines;
         qreal height = 0;
-        quint64 key = 0;
         QList<QRectF> widgetRects; // per block.widgets() entry, relative to the unit top-left
     };
 
@@ -54,64 +54,88 @@ public:
     void setContentWidth(qreal width);
     qreal contentWidth() const { return m_width; }
 
-    void setText(const Text& text);                 // full reset
+    void setText(const Text& text);                 // full reset (re-queries block ranges)
     // Lines [from, oldTo) of the previous text became [from, newTo) of `text`.
     void replaceLines(const Text& text, int from, int oldTo, int newTo);
-    void invalidateLines(int from, int to);          // decorations changed
+    // Decorations of these lines changed; block structure there is re-queried.
+    void invalidateLines(int from, int to);
     void invalidateAll();
 
     const Text& text() const { return m_text; }
-    int lineCount() const { return int(m_units.size()); }
+    int lineCount() const { return int(m_lineToUnit.size()); }
     double totalHeight() const { return m_heights.total(); }
-    double lineTop(int line) const { return m_heights.top(line); }
-    double lineHeight(int line) const { return m_heights.height(line); }
-    int lineAtY(double y) const { return m_heights.indexAt(y); }
+    double lineTop(int line) const;
+    double lineHeight(int line) const;              // height of the unit containing the line
+    int lineAtY(double y) const;                    // first line of the unit at y
     bool isLaidOut(int line) const;
+    bool isInBlock(int line) const;                 // covered by a block widget
 
-    // Measure lines intersecting [y0, y1]. Returns true if any height changed.
-    bool ensureLaidOut(double y0, double y1);
-    // Free text layouts of lines outside [y0, y1] (keeps their measured heights).
+    bool ensureLaidOut(double y0, double y1);       // true if any height changed
     void evictOutside(double y0, double y1);
-    const UnitLayout* layoutFor(int line); // lays out on demand
+    const UnitLayout* layoutFor(int line);          // text units only (nullptr for block units)
 
     struct PaintContext {
         QList<SelRange> selection;
         bool drawSelection = true;
-        QRectF clip; // doc coordinates
-        qreal rightEdge = 0; // x where full-line selection highlights end
+        QRectF clip;
+        qreal rightEdge = 0;
     };
     void paint(QPainter* p, const PaintContext& ctx);
 
-    // Hit testing and geometry (doc coordinates).
     qsizetype hitTest(const QPointF& pt, int* assocOut = nullptr);
     QRectF caretRect(qsizetype pos, int assoc = 1);
     qsizetype verticalMove(qsizetype pos, qreal goalX, int direction, int assoc = 1);
     qsizetype visualLineStart(qsizetype pos);
     qsizetype visualLineEnd(qsizetype pos);
-    // Rects covering [from, to) (for scroll-into-view / overlays).
     QList<QRectF> rangeRects(qsizetype from, qsizetype to);
 
-    // Stats (tests/perf)
+    struct WidgetHit {
+        int line = -1;
+        std::shared_ptr<InlineWidget> widget;
+        QRectF rect;
+        int docFrom = 0;
+        int docTo = 0;
+    };
+    std::optional<WidgetHit> widgetAt(const QPointF& pt);
+
+    struct BlockHit {
+        int fromLine = -1;
+        int toLine = -1;
+        std::shared_ptr<BlockWidget> widget;
+        QRectF rect; // doc coordinates
+    };
+    std::optional<BlockHit> blockAt(const QPointF& pt);
+
     int laidOutCount() const;
+    int unitCount() const { return int(m_units.size()); }
 
 private:
     struct Unit {
+        int firstLine = 0;
+        int lineCount = 1;
+        std::shared_ptr<BlockWidget> block;
         std::shared_ptr<UnitLayout> layout;
-        double height = -1; // last estimate/measurement (-1 = unknown)
+        double height = -1;
         bool measured = false;
     };
 
-    double estimateHeight(int line);
+    void buildUnits(int fromLine, int toLine, std::vector<Unit>& out);
+    void rebuildIndex();
+    void rebuildHeights();
+    double estimateHeight(const Unit& u);
+    bool measure(int unitIndex);
     std::shared_ptr<UnitLayout> buildLayout(int line);
     void layoutText(UnitLayout& ul, const LineMetrics& lm);
     int visualLineIndex(const UnitLayout& ul, int dispPos) const;
-    void rebuildHeights();
+    void restructure(int fromLine, int oldToLine, int newToLine);
+    int unitOfLine(int line) const { return m_lineToUnit[size_t(std::clamp(line, 0, lineCount() - 1))]; }
 
     Text m_text;
     LineDecorator* m_decorator = nullptr;
     StyleSheetPtr m_styles;
     qreal m_width = 700;
     std::vector<Unit> m_units;
+    std::vector<int> m_lineToUnit;
     HeightMap m_heights;
 };
 
