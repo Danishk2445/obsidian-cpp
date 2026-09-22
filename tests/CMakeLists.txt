@@ -20,4 +20,5 @@ oc_add_test(core_file_recovery_test SOURCES core/file_recovery_test.cpp DEPS oc_
 oc_add_test(core_word_count_test SOURCES core/word_count_test.cpp DEPS oc_core)
 oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GUI)
 oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6::Test GUI)
+oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)

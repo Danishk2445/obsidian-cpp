@@ -34,6 +34,94 @@ void DocLayout::setContentWidth(qreal width)
     rebuildHeights();
 }
 
+bool DocLayout::isHidden(int line) const
+{
+    if (m_hidden.isEmpty())
+        return false;
+    // last range with from <= line
+    auto it = std::upper_bound(m_hidden.cbegin(), m_hidden.cend(), line, [](int l, const QPair<int, int>& r) { return l < r.first; });
+    if (it == m_hidden.cbegin())
+        return false;
+    --it;
+    return line < it->second;
+}
+
+bool DocLayout::anyHidden(int from, int to) const
+{
+    // first range ending after `from`
+    auto it = std::upper_bound(m_hidden.cbegin(), m_hidden.cend(), from, [](int l, const QPair<int, int>& r) { return l < r.second; });
+    return it != m_hidden.cend() && it->first < to;
+}
+
+int DocLayout::hiddenRunEnd(int line) const
+{
+    auto it = std::upper_bound(m_hidden.cbegin(), m_hidden.cend(), line, [](int l, const QPair<int, int>& r) { return l < r.first; });
+    if (it == m_hidden.cbegin())
+        return line;
+    --it;
+    return line < it->second ? it->second : line;
+}
+
+void DocLayout::setHiddenLines(QList<QPair<int, int>> ranges)
+{
+    // Normalize: clamp, sort, merge.
+    const int n = m_text.lineCount();
+    QList<QPair<int, int>> norm;
+    std::sort(ranges.begin(), ranges.end());
+    for (auto [a, b] : ranges) {
+        a = std::clamp(a, 0, n);
+        b = std::clamp(b, 0, n);
+        if (b <= a)
+            continue;
+        if (!norm.isEmpty() && a <= norm.last().second)
+            norm.last().second = std::max(norm.last().second, b);
+        else
+            norm.append({a, b});
+    }
+    if (norm == m_hidden)
+        return;
+    // Lines whose hidden state changes (symmetric difference of the two range sets).
+    QList<int> bounds;
+    for (const auto& r : std::as_const(m_hidden))
+        bounds << r.first << r.second;
+    for (const auto& r : std::as_const(norm))
+        bounds << r.first << r.second;
+    std::sort(bounds.begin(), bounds.end());
+    bounds.erase(std::unique(bounds.begin(), bounds.end()), bounds.end());
+    const QList<QPair<int, int>> old = std::exchange(m_hidden, norm);
+    auto inSet = [](const QList<QPair<int, int>>& set, int line) {
+        auto it = std::upper_bound(set.cbegin(), set.cend(), line, [](int l, const QPair<int, int>& r) { return l < r.first; });
+        return it != set.cbegin() && line < std::prev(it)->second;
+    };
+    QList<QPair<int, int>> changed;
+    for (qsizetype i = 0; i + 1 < bounds.size(); ++i) {
+        const int a = bounds[i], b = bounds[i + 1];
+        if (inSet(old, a) == inSet(m_hidden, a))
+            continue;
+        if (!changed.isEmpty() && changed.last().second == a)
+            changed.last().second = b;
+        else
+            changed.append({a, b});
+    }
+    if (m_units.empty())
+        return;
+    for (auto [a, b] : std::as_const(changed)) {
+        a = std::clamp(a, 0, n);
+        b = std::clamp(b, 0, n);
+        if (b <= a)
+            continue;
+        restructure(a, b, b);
+        const int u0 = unitOfLine(a), u1 = unitOfLine(b - 1);
+        for (int ui = u0; ui <= u1; ++ui) {
+            Unit& u = m_units[size_t(ui)];
+            u.layout.reset();
+            u.measured = false;
+            u.height = estimateHeight(u);
+            m_heights.set(ui, u.height);
+        }
+    }
+}
+
 void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
 {
     QList<BlockRange> blocks;
@@ -42,6 +130,9 @@ void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
     int line = fromLine;
     for (const BlockRange& b : blocks) {
         if (b.fromLine < line || b.toLine <= b.fromLine || !b.widget)
+            continue;
+        // A block touching folded lines is shown as plain lines (its hidden part stays hidden).
+        if (anyHidden(b.fromLine, b.toLine))
             continue;
         for (; line < b.fromLine && line < toLine; ++line)
             out.push_back(Unit{line, 1, nullptr, nullptr, -1, false});
@@ -201,6 +292,8 @@ int DocLayout::laidOutCount() const
 
 double DocLayout::estimateHeight(const Unit& u)
 {
+    if (isHiddenUnit(u))
+        return 0;
     if (!m_styles || !m_decorator)
         return 24;
     if (u.block)
@@ -354,7 +447,17 @@ bool DocLayout::measure(int ui)
     } else {
         if (u.layout)
             return false;
-        u.layout = buildLayout(u.firstLine);
+        if (isHidden(u.firstLine)) {
+            // Folded away: a shared empty layout, the line is never decorated.
+            if (!m_hiddenLayout) {
+                m_hiddenLayout = std::make_shared<UnitLayout>();
+                m_hiddenLayout->deco.hidden = true;
+                m_hiddenLayout->lines = {VisualLine{}};
+            }
+            u.layout = m_hiddenLayout;
+        } else {
+            u.layout = buildLayout(u.firstLine);
+        }
         u.height = u.layout->height;
         u.measured = true;
     }
@@ -385,6 +488,13 @@ bool DocLayout::ensureLaidOut(double y0, double y1)
     int i = m_heights.indexAt(y0);
     double top = m_heights.top(i);
     while (i < int(m_units.size()) && top <= y1) {
+        const Unit& u = m_units[size_t(i)];
+        if (isHiddenUnit(u)) {
+            // skip the whole folded run (zero height, nothing to measure)
+            const int end = hiddenRunEnd(u.firstLine);
+            i = end >= lineCount() ? int(m_units.size()) : std::max(i + 1, unitOfLine(end));
+            continue;
+        }
         changed |= measure(i);
         top += m_heights.height(i);
         ++i;
@@ -416,6 +526,11 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
     double top = m_heights.top(i);
     const QColor selColor = ss.selection();
     while (i < int(m_units.size()) && top <= ctx.clip.bottom()) {
+        if (isHiddenUnit(m_units[size_t(i)])) {
+            const int end = hiddenRunEnd(m_units[size_t(i)].firstLine);
+            i = end >= lineCount() ? int(m_units.size()) : std::max(i + 1, unitOfLine(end));
+            continue;
+        }
         measure(i);
         Unit& unit = m_units[size_t(i)];
         const double h = m_heights.height(i);

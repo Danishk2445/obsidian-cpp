@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/documents/document.h"
+#include "editor/fold/fold_service.h"
 #include "render/layout/doc_layout.h"
 #include "text/selection.h"
 
@@ -102,7 +103,28 @@ public:
     void removeDecorationLayer(int id);
     void refreshDecorations(int fromLine = 0, int toLine = -1);
 
+    // Folding (Obsidian: "Fold heading", "Fold indent" and the frontmatter). Folds belong to this
+    // view; the owner persists them (folds()/setFolds()).
+    void setFoldOptions(const FoldOptions& options);
+    const FoldOptions& foldOptions() const { return m_foldOptions; }
+    std::optional<FoldRange> foldableAt(int line) const;
+    bool isLineFoldable(int line) const; // cheap (for fold indicators)
+    const QList<FoldRange>& folds() const { return m_folds; }
+    void setFolds(const QList<FoldRange>& folds); // restore; ranges not matching the text are dropped
+    bool isFoldedAt(int line) const;              // a fold starts at this line
+    bool foldLine(int line);
+    bool unfoldLine(int line);
+    bool toggleFoldLine(int line);
+    bool foldAtSelection();   // fold the region starting at a cursor's line (Ctrl+Shift+[)
+    bool unfoldAtSelection(); // unfold folds starting at the cursors' lines (Ctrl+Shift+])
+    void foldAll();           // every foldable region, nested ones included (Ctrl+Alt+[)
+    void unfoldAll();         // (Ctrl+Alt+])
+    bool foldMore();          // fold the innermost unfolded region around the selection
+    bool foldLess();          // unfold the outermost folded region around the selection
+    QRectF foldIndicatorRect(int line); // viewport coordinates (empty if the line isn't laid out)
+
 signals:
+    void foldsChanged();
     void selectionChanged();
     void cursorMoved(int line, int column);
     void modeChanged(Mode mode);
@@ -129,6 +151,7 @@ protected:
     void focusOutEvent(QFocusEvent* e) override;
     void timerEvent(QTimerEvent* e) override;
     bool event(QEvent* e) override;
+    bool viewportEvent(QEvent* e) override;
     bool focusNextPrevChild(bool next) override { Q_UNUSED(next); return false; } // Tab is for indentation
 
 private:
@@ -187,6 +210,18 @@ private:
     QPoint m_lastClickPos;
 
     void applyExtraDecorations(int line, LineDecoration& d) const;
+    // folding
+    void applyFolds(bool emitChange = true);            // folds -> hidden lines in the layout
+    void mapFolds(const DocUpdate& u);                  // follow an edit (edits inside a fold unfold it)
+    Selection skipFolds(const Selection& sel, const Selection& old) const;
+    bool addFold(const FoldRange& r);
+    void paintFoldIndicators(QPainter& p);
+    int foldLineAtIndicator(const QPoint& vp);          // line whose indicator is under vp, or -1
+    void setHoverLine(int line);
+    void applyFoldPlaceholder(int line, LineDecoration& d) const;
+    FoldOptions m_foldOptions;
+    QList<FoldRange> m_folds; // sorted by line; may nest
+    int m_hoverLine = -1;
     QList<std::pair<int, DecorationLayer>> m_layers;
     int m_nextLayerId = 1;
 };

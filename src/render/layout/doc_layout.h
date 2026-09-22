@@ -61,6 +61,14 @@ public:
     void invalidateLines(int from, int to);
     void invalidateAll();
 
+    // Lines hidden by folds: sorted, non-overlapping [from, to) ranges. Hidden lines are zero-height
+    // text units (never decorated), and block widgets touching them fall back to plain lines.
+    void setHiddenLines(QList<QPair<int, int>> ranges);
+    const QList<QPair<int, int>>& hiddenLines() const { return m_hidden; }
+    bool isHidden(int line) const;
+    int hiddenRunEnd(int line) const; // end (exclusive) of the hidden range containing `line`, or `line`
+    bool anyHidden(int from, int to) const;
+
     const Text& text() const { return m_text; }
     int lineCount() const { return int(m_lineToUnit.size()); }
     double totalHeight() const { return m_heights.total(); }
@@ -130,7 +138,11 @@ private:
     void restructure(int fromLine, int oldToLine, int newToLine);
     int unitOfLine(int line) const { return m_lineToUnit[size_t(std::clamp(line, 0, lineCount() - 1))]; }
 
+    bool isHiddenUnit(const Unit& u) const { return !u.block && isHidden(u.firstLine); }
+
     Text m_text;
+    QList<QPair<int, int>> m_hidden;
+    std::shared_ptr<UnitLayout> m_hiddenLayout;
     LineDecorator* m_decorator = nullptr;
     StyleSheetPtr m_styles;
     qreal m_width = 700;

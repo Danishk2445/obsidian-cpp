@@ -24,6 +24,8 @@
 
 namespace oc {
 
+bool isFoldPlaceholder(const InlineWidget* w); // editor_view_fold.cpp
+
 namespace {
 enum class CharCat { Word, Space, Other };
 CharCat categorize(QChar c)
@@ -93,6 +95,12 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
         disconnect(m_roConn);
     }
     m_doc = std::move(doc);
+    const bool hadFolds = !m_folds.isEmpty();
+    m_folds.clear();
+    m_hoverLine = -1;
+    m_layout.setHiddenLines({});
+    if (hadFolds)
+        emit foldsChanged();
     m_decorator->setDocument(m_doc.get());
     m_lp->setDocument(m_doc.get());
     m_sel = Selection::cursor(0);
@@ -174,6 +182,7 @@ void EditorView::applyExtraDecorations(int line, LineDecoration& d) const
 {
     for (const auto& [id, layer] : m_layers)
         layer(line, d);
+    applyFoldPlaceholder(line, d);
     // IME composition: shown inline at the caret as a zero-width replacement with an underline.
     if (!m_preedit.isEmpty() && m_doc) {
         const qsizetype head = m_sel.main().head;
@@ -407,6 +416,8 @@ void EditorView::paintEvent(QPaintEvent*)
             p.fillRect(QRectF(std::round(cr.x()), cr.y(), 1.5, cr.height()), caret);
         }
     }
+    p.resetTransform();
+    paintFoldIndicators(p);
 }
 
 void EditorView::restartBlink()
@@ -455,6 +466,13 @@ void EditorView::focusOutEvent(QFocusEvent* e)
     emit focusChangedIn(false);
 }
 
+bool EditorView::viewportEvent(QEvent* e)
+{
+    if (e->type() == QEvent::Leave)
+        setHoverLine(-1);
+    return QAbstractScrollArea::viewportEvent(e);
+}
+
 bool EditorView::event(QEvent* e)
 {
     // Keep Tab / Shift+Tab for indentation instead of focus traversal.
@@ -493,11 +511,13 @@ void EditorView::onDocumentChanged(const DocUpdate& u)
         m_layout.replaceLines(u.after, 0, 0, 0);
     if (u.syntax.structural || u.syntax.toLine > u.syntax.fromLine)
         m_layout.invalidateLines(u.syntax.fromLine, u.syntax.toLine);
+    mapFolds(u);
 
     if (u.origin == this && u.tr.selection)
         m_sel = u.tr.selection->clamped(u.after.length());
     else
         m_sel = m_sel.map(u.tr.changes.desc()).clamped(u.after.length());
+    m_sel = skipFolds(m_sel, oldSel.map(u.tr.changes.desc()).clamped(u.after.length()));
 
     const bool ownScroll = u.origin == this && u.tr.scrollIntoView;
     if (!ownScroll && docTop > 0) {
@@ -562,7 +582,7 @@ void EditorView::setSelection(const Selection& sel, bool scroll, bool userEvent)
     if (!m_doc)
         return;
     const Selection old = m_sel;
-    m_sel = sel.clamped(m_doc->text().length());
+    m_sel = skipFolds(sel.clamped(m_doc->text().length()), old);
     if (m_sel == old && !scroll)
         return;
     if (userEvent)
@@ -1108,6 +1128,20 @@ void EditorView::keyPressEvent(QKeyEvent* e)
         return;
     }
 
+    // Folding (CodeMirror's fold keymap): Ctrl+Shift+[ / ] fold / unfold, Ctrl+Alt+[ / ] all.
+    if (ctrl && (e->key() == Qt::Key_BracketLeft || e->key() == Qt::Key_BraceLeft || e->key() == Qt::Key_BracketRight
+                 || e->key() == Qt::Key_BraceRight)) {
+        const bool open = e->key() == Qt::Key_BracketLeft || e->key() == Qt::Key_BraceLeft;
+        if (alt && !shift) {
+            open ? foldAll() : unfoldAll();
+            return;
+        }
+        if (shift && !alt) {
+            open ? foldAtSelection() : unfoldAtSelection();
+            return;
+        }
+    }
+
     switch (e->key()) {
     case Qt::Key_Left:
     case Qt::Key_Right:
@@ -1324,6 +1358,16 @@ void EditorView::mousePressEvent(QMouseEvent* e)
     if (QGuiApplication::inputMethod() && !m_preedit.isEmpty())
         QGuiApplication::inputMethod()->commit();
     const QPoint p = e->position().toPoint();
+    if (e->button() == Qt::LeftButton && !(e->modifiers() & (Qt::ShiftModifier | Qt::AltModifier))) {
+        if (const int fl = foldLineAtIndicator(p); fl >= 0) {
+            toggleFoldLine(fl);
+            return;
+        }
+        if (auto hit = m_layout.widgetAt(viewportToDoc(e->position())); hit && isFoldPlaceholder(hit->widget.get())) {
+            unfoldLine(hit->line);
+            return;
+        }
+    }
     const qsizetype pos = positionAt(p);
 
     if (e->button() == Qt::MiddleButton) {
@@ -1397,6 +1441,12 @@ void EditorView::mouseDoubleClickEvent(QMouseEvent* e) { mousePressEvent(e); }
 
 void EditorView::mouseMoveEvent(QMouseEvent* e)
 {
+    if (m_doc && e->buttons() == Qt::NoButton) {
+        const QPointF docPt = viewportToDoc(e->position());
+        setHoverLine(docPt.y() >= 0 && docPt.y() < m_layout.totalHeight() ? m_layout.lineAtY(docPt.y()) : -1);
+        const bool overIndicator = foldLineAtIndicator(e->position().toPoint()) >= 0;
+        viewport()->setCursor(overIndicator ? Qt::ArrowCursor : (m_mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor));
+    }
     if (!m_doc || m_drag == DragUnit::None || !(e->buttons() & Qt::LeftButton))
         return;
     m_lastMouse = e->position().toPoint();
