@@ -13,7 +13,6 @@ oc_add_library(oc_ui
     workspace/placeholder_views.h
     workspace/vault_access.cpp
     workspace/vault_access.h
-    workspace/vault_link_fallback.cpp
     workspace/view.cpp
     workspace/view.h
     workspace/view_registry.cpp

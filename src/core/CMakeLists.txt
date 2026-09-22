@@ -25,5 +25,5 @@ oc_add_library(oc_core
     vault/vault_sync.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
-  PRIVATE_DEPS KF6::KIOCore SQLite::SQLite3 zstd::libzstd
+  PRIVATE_DEPS KF6::KIOCore SQLite3::SQLite3 zstd::libzstd
 )
