@@ -52,6 +52,8 @@ EditorView::EditorView(QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     verticalScrollBar()->setSingleStep(24);
     m_layout.setDecorator(m_decorator.get());
+    m_decorator->extra = [this](int line, LineDecoration& d) { applyExtraDecorations(line, d); };
+    m_lp->extra = m_decorator->extra;
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, &EditorView::applyTheme);
     applyTheme();
@@ -149,12 +151,43 @@ void EditorView::setMargins(qreal horizontal, qreal top, qreal bottom)
 
 void EditorView::setLineWrapping(bool) {}
 
-void EditorView::setExtraDecorations(std::function<void(int, LineDecoration&)> fn)
+int EditorView::addDecorationLayer(DecorationLayer layer)
 {
-    m_extra = std::move(fn);
-    m_decorator->extra = m_extra;
-    m_lp->extra = m_extra;
+    const int id = m_nextLayerId++;
+    m_layers.append({id, std::move(layer)});
     refreshDecorations();
+    return id;
+}
+
+void EditorView::removeDecorationLayer(int id)
+{
+    for (qsizetype i = 0; i < m_layers.size(); ++i) {
+        if (m_layers[i].first == id) {
+            m_layers.removeAt(i);
+            refreshDecorations();
+            return;
+        }
+    }
+}
+
+void EditorView::applyExtraDecorations(int line, LineDecoration& d) const
+{
+    for (const auto& [id, layer] : m_layers)
+        layer(line, d);
+    // IME composition: shown inline at the caret as a zero-width replacement with an underline.
+    if (!m_preedit.isEmpty() && m_doc) {
+        const qsizetype head = m_sel.main().head;
+        const Text& t = m_doc->text();
+        if (t.lineAt(head) == line) {
+            Replace r;
+            r.from = r.to = int(head - t.lineStart(line));
+            r.kind = Replace::Kind::Text;
+            r.text = m_preedit;
+            r.style = StyleId::Preedit;
+            d.replaces.push_back(r);
+            std::stable_sort(d.replaces.begin(), d.replaces.end(), [](const Replace& a, const Replace& b) { return a.from < b.from; });
+        }
+    }
 }
 
 void EditorView::refreshDecorations(int fromLine, int toLine)
@@ -1217,26 +1250,8 @@ void EditorView::inputMethodEvent(QInputMethodEvent* e)
     for (const QInputMethodEvent::Attribute& a : e->attributes())
         if (a.type == QInputMethodEvent::Cursor)
             m_preeditCursor = a.start;
-    // Show the composition inline at the caret (a zero-width replacement with underline).
-    const qsizetype head = m_sel.main().head;
-    const int caretLine = m_doc->text().lineAt(head);
-    const int col = int(head - m_doc->text().lineStart(caretLine));
-    auto userExtra = m_extra;
-    const QString pre = m_preedit;
-    m_decorator->extra = [userExtra, pre, caretLine, col](int l, LineDecoration& d) {
-        if (userExtra)
-            userExtra(l, d);
-        if (l == caretLine && !pre.isEmpty()) {
-            Replace r;
-            r.from = col;
-            r.to = col;
-            r.kind = Replace::Kind::Text;
-            r.text = pre;
-            r.style = StyleId::Preedit;
-            d.replaces.push_back(r);
-            std::sort(d.replaces.begin(), d.replaces.end(), [](const Replace& a, const Replace& b) { return a.from < b.from; });
-        }
-    };
+    // The composition is shown inline at the caret by applyExtraDecorations().
+    const int caretLine = m_doc->text().lineAt(m_sel.main().head);
     m_layout.invalidateLines(std::min(line, caretLine), std::max(line, caretLine) + 1);
     ensureVisibleLayout();
     viewport()->update();

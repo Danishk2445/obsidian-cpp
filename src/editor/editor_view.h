@@ -95,8 +95,11 @@ public:
     double contentWidth() const { return m_layout.contentWidth(); }
     double topPadding() const { return m_marginTop; }
 
-    // Extra decoration hook (search highlights, spellcheck, ...): called for every laid-out line.
-    void setExtraDecorations(std::function<void(int line, LineDecoration&)> fn);
+    // Extra decoration layers (search highlights, spellcheck, ...), applied in order to every laid-out
+    // line after the mode's own decorations. Call refreshDecorations() when a layer's output changes.
+    using DecorationLayer = std::function<void(int line, LineDecoration&)>;
+    int addDecorationLayer(DecorationLayer layer); // returns an id for removeDecorationLayer()
+    void removeDecorationLayer(int id);
     void refreshDecorations(int fromLine = 0, int toLine = -1);
 
 signals:
@@ -183,7 +186,9 @@ private:
     int m_clickCount = 0;
     QPoint m_lastClickPos;
 
-    std::function<void(int, LineDecoration&)> m_extra;
+    void applyExtraDecorations(int line, LineDecoration& d) const;
+    QList<std::pair<int, DecorationLayer>> m_layers;
+    int m_nextLayerId = 1;
 };
 
 } // namespace oc

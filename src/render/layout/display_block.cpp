@@ -117,7 +117,7 @@ DisplayBlock DisplayBlock::build(QStringView text, const LineDecoration& deco, c
             b.m_formats.push_back(fr);
             if (spec.box.enabled) {
                 // merge with the previous box when contiguous (a code span split around hidden backticks)
-                if (!b.m_boxes.isEmpty() && b.m_boxes.last().dispTo == fr.start && b.m_boxes.last().style.background == spec.box.background)
+                if (!b.m_boxes.isEmpty() && b.m_boxes.last().dispTo == fr.start && b.m_boxes.last().style.sameLook(spec.box))
                     b.m_boxes.last().dispTo = fr.start + fr.length;
                 else
                     b.m_boxes.push_back(Box{fr.start, fr.start + fr.length, spec.box});
