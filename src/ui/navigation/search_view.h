@@ -90,7 +90,7 @@ public:
     // Results in display order.
     bool isSearching() const { return m_searching; }
     // No search running and none scheduled (typing debounce, change refresh).
-    bool isIdle() const { return !m_searching && !m_debounce.isActive() && !m_refreshTimer.isActive(); }
+    bool isIdle() const { return !m_searching && !m_updating && !m_debounce.isActive() && !m_refreshTimer.isActive(); }
     int resultCount() const;
     QStringList resultPaths() const;
     const SearchResultGroup* result(const QString& path) const;
@@ -134,6 +134,11 @@ private:
     void resort();
     void onPathChanged(const QString& path);
     void applyPendingChanges();
+    // Incremental updates: re-evaluate a few changed files on the second engine, then swap their groups in.
+    void startUpdate(const QStringList& paths);
+    void finishUpdate(quint64 generation);
+    void cancelUpdate();
+    void setUpdating(bool on);
     void updateChrome(); // explain panel, results info, empty state
     void setSearching(bool on);
     void emitStateChanged();
@@ -149,6 +154,12 @@ private:
     QList<SearchResultGroup> m_pending;
     QSet<QString> m_collapsedPaths; // groups toggled against collapseAll (kept across refreshes)
     QSet<QString> m_changed;
+    search::SearchEngine m_updateEngine;
+    std::shared_ptr<SearchSnapshot> m_updateSnapshot;
+    QSet<QString> m_updatePaths;
+    QList<search::SearchResult> m_updateResults;
+    quint64 m_updateGeneration = 0;
+    bool m_updating = false;
     QTimer m_debounce;
     QTimer m_refreshTimer;
 

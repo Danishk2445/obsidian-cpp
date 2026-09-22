@@ -6,6 +6,7 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QString>
 
 #include <memory>
@@ -99,6 +100,7 @@ private:
 
     QPointer<VaultSession> m_session;
     std::shared_ptr<detail::SearchDocCache> m_cache;
+    QSet<const QObject*> m_watched; // documents whose live text is followed
     bool m_indexReady = false;
 };
 

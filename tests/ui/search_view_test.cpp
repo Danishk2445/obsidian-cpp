@@ -395,3 +395,39 @@ TEST(SearchView, ExcludedFilesAreHidden)
     for (const QString& p : v->resultPaths())
         EXPECT_FALSE(p.startsWith("Projects/")) << qPrintable(p);
 }
+
+TEST(SearchView, KeyboardNavigatesTheResults)
+{
+    NavigationEnv env;
+    SearchView* v = searchView(env);
+    v->setQuery("welcome");
+    ASSERT_TRUE(env.waitIdle(v));
+    ASSERT_GE(v->resultCount(), 2);
+    SearchResultsList* list = v->resultsList();
+    auto focused = [&] { return std::make_pair(list->focusedRow().group, list->focusedRow().snippet); };
+
+    QTest::keyClick(v->input(), Qt::Key_Down); // from the input into the results
+    EXPECT_EQ(env.window->focusWidget(), list);
+    EXPECT_EQ(focused(), std::make_pair(0, -1));
+    QTest::keyClick(list, Qt::Key_Down);
+    EXPECT_EQ(focused(), std::make_pair(0, 0));
+    QTest::keyClick(list, Qt::Key_Left); // match -> its file
+    EXPECT_EQ(focused(), std::make_pair(0, -1));
+    QTest::keyClick(list, Qt::Key_Left); // collapses
+    EXPECT_TRUE(list->groups()[0].collapsed);
+    QTest::keyClick(list, Qt::Key_Down); // skips the collapsed matches
+    EXPECT_EQ(focused(), std::make_pair(1, -1));
+    QTest::keyClick(list, Qt::Key_Up);
+    QTest::keyClick(list, Qt::Key_Right); // expands
+    EXPECT_FALSE(list->groups()[0].collapsed);
+    QTest::keyClick(list, Qt::Key_Up); // back to the input
+    EXPECT_EQ(env.window->focusWidget(), v->input());
+
+    // Enter on a match opens the note there
+    QTest::keyClick(v->input(), Qt::Key_Down);
+    QTest::keyClick(list, Qt::Key_Down);
+    const QString path = list->groups()[0].path;
+    QTest::keyClick(list, Qt::Key_Return);
+    QApplication::processEvents();
+    EXPECT_EQ(env.activePath(), path);
+}

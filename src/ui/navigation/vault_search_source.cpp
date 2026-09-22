@@ -262,15 +262,17 @@ VaultSearchSource* VaultSearchSource::forSession(VaultSession* session)
 
 void VaultSearchSource::watchDocument(Document* doc)
 {
-    if (!doc)
+    if (!doc || m_watched.contains(doc))
         return;
+    m_watched.insert(doc);
+    connect(doc, &QObject::destroyed, this, [this, doc] { m_watched.remove(doc); });
     QPointer<Document> d = doc;
     connect(doc, &Document::changed, this, [this, d] {
         if (!d)
             return;
         invalidate(d->path());
         emit pathChanged(d->path());
-    }, Qt::UniqueConnection);
+    });
 }
 
 void VaultSearchSource::invalidate(const QString& path)

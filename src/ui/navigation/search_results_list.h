@@ -68,6 +68,13 @@ public:
     int contentHeight() const;
     void scrollToGroup(int group);
 
+    // Keyboard navigation (Obsidian's .has-focus row): ↑/↓ move between file titles and matches, → expands,
+    // ← collapses (or goes from a match to its file), Enter opens (with the pressed modifiers), ↑ on the first
+    // row emits exitTop().
+    void focusFirstRow();
+    Hit focusedRow() const { return m_focus; }
+    void setFocusedRow(int group, int snippet); // snippet -1 = the title
+
     // Display strings (tests / copy).
     static QString snippetDisplayText(const search::Snippet& s);
     static QString moreMatchesText(int count);
@@ -76,6 +83,10 @@ signals:
     void titleClicked(int group, Qt::KeyboardModifiers modifiers);
     void snippetClicked(int group, int snippet, Qt::KeyboardModifiers modifiers);
     void collapseToggled(int group);
+    // The pointer moved onto a file's title or one of its matches (rect: that row, viewport coordinates), or off
+    // the results (group -1). Emitted when the hovered row changes (page preview).
+    void rowHovered(int group, const QRect& rect);
+    void exitTop();
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -85,6 +96,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
     void leaveEvent(QEvent* e) override;
     bool viewportEvent(QEvent* e) override;
+    void keyPressEvent(QKeyEvent* e) override;
+    void focusInEvent(QFocusEvent* e) override;
+    void focusOutEvent(QFocusEvent* e) override;
 
 private:
     void measure(SearchResultGroup& g, int width) const;
@@ -93,6 +107,8 @@ private:
     void updateScrollRange();
     int groupTop(int group) const { return m_offsets[size_t(group)]; }
     void setHover(const Hit& hit);
+    QList<Hit> focusableRows() const; // titles, and the matches of expanded files, in display order
+    void ensureVisible(const QRect& viewportRect);
 
     QList<SearchResultGroup> m_groups;
     std::vector<int> m_offsets; // content y of each group (size = groups + 1)
@@ -102,6 +118,7 @@ private:
     QTimer m_loadingTimer;
     Hit m_hover;
     Hit m_pressed;
+    Hit m_focus;
 };
 
 } // namespace oc

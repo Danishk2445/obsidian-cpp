@@ -12,6 +12,7 @@
 #include "ui/navigation/search_view_widgets.h"
 #include "ui/navigation/vault_search_source.h"
 #include "ui/shell/main_window.h"
+#include "ui/views/markdown/page_preview.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
@@ -229,6 +230,8 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
             m_debounce.start();
     });
     connect(m_input, &QLineEdit::returnPressed, this, [this] { startSearch(false); });
+    m_input->installEventFilter(this);
+    connect(m_results, &SearchResultsList::exitTop, this, [this] { focusInput(false); });
     connect(m_input->matchCaseButton(), &QAbstractButton::toggled, this, [this](bool on) { setMatchCase(on); });
     connect(settings, &QAbstractButton::toggled, this, [this](bool on) { setSettingsVisible(on); });
     connect(m_explainToggle, &QAbstractButton::toggled, this, [this](bool on) { setExplainSearch(on); });
@@ -247,6 +250,19 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
     connect(m_results, &SearchResultsList::titleClicked, this, [this](int g, Qt::KeyboardModifiers mods) { openResult(g, mods); });
     connect(m_results, &SearchResultsList::snippetClicked, this,
             [this](int g, int s, Qt::KeyboardModifiers mods) { openMatch(g, s, mods); });
+    connect(m_results, &SearchResultsList::rowHovered, this, [this](int g, const QRect& rect) {
+        // Obsidian's page preview for search results (source "search": with Mod by default)
+        auto* w = qobject_cast<MainWindow*>(window());
+        if (!w)
+            return;
+        QWidget* vp = m_results->viewport();
+        if (g < 0 || g >= resultCount()) {
+            PagePreview::of(w)->onLinkUnhover(vp);
+            return;
+        }
+        PagePreview::of(w)->onLinkHover(QStringLiteral("search"), displayPath(m_results->groups()[g].path), QString(),
+                                        QRect(vp->mapToGlobal(rect.topLeft()), rect.size()), vp);
+    });
     connect(m_results, &SearchResultsList::collapseToggled, this, [this](int g) {
         auto& groups = m_results->mutableGroups();
         if (g < 0 || g >= groups.size())
@@ -272,11 +288,14 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
 SearchView::~SearchView()
 {
     m_generation += 1;
-    if (auto job = m_engine.currentJob()) {
-        job->cancel();
-        job->waitForFinished();
-    }
+    m_updateGeneration += 1;
+    for (search::SearchEngine* engine : {&m_engine, &m_updateEngine})
+        if (auto job = engine->currentJob()) {
+            job->cancel();
+            job->waitForFinished();
+        }
     setSearching(false);
+    setUpdating(false);
 }
 
 bool SearchView::eventFilter(QObject* obj, QEvent* ev)
@@ -284,6 +303,13 @@ bool SearchView::eventFilter(QObject* obj, QEvent* ev)
     if (ev->type() == QEvent::MouseButtonRelease) {
         if (auto* toggle = qobject_cast<ToggleSwitch*>(obj->property("ocToggle").value<QObject*>())) {
             toggle->toggle();
+            return true;
+        }
+    }
+    if (obj == m_input && ev->type() == QEvent::KeyPress) {
+        auto* ke = static_cast<QKeyEvent*>(ev);
+        if (ke->key() == Qt::Key_Down && ke->modifiers() == Qt::NoModifier && resultCount() > 0) {
+            m_results->focusFirstRow();
             return true;
         }
     }
@@ -473,6 +499,7 @@ void SearchView::startSearch(bool keepResults)
     m_debounce.stop();
     m_refreshTimer.stop();
     m_changed.clear();
+    cancelUpdate();
     cancelSearch();
     m_query = search::parseSearchQuery(m_input->text(), search::SearchOptions{m_matchCase});
     m_refreshing = keepResults && !m_query.isEmpty() && resultCount() > 0;
@@ -635,7 +662,8 @@ void SearchView::applyPendingChanges()
         startSearch(true);
         return;
     }
-    QStringList evaluate;
+    // Files still being re-evaluated by an unfinished update are evaluated again with the new ones.
+    QStringList evaluate(m_updatePaths.cbegin(), m_updatePaths.cend());
     QStringList removed;
     for (const QString& p : paths) {
         TAbstractFile* item = vault->item(p);
@@ -650,35 +678,92 @@ void SearchView::applyPendingChanges()
             evaluate << p;
         }
     }
+    evaluate.removeDuplicates(); // a new folder and its new file are both reported
     if (evaluate.size() > kIncrementalLimit) {
         startSearch(true);
         return;
     }
-    auto& groups = m_results->mutableGroups();
-    const QSet<QString> reevaluated(evaluate.cbegin(), evaluate.cend());
-    groups.removeIf([&](const SearchResultGroup& g) {
-        if (reevaluated.contains(g.path))
-            return true;
-        for (const QString& r : std::as_const(removed))
-            if (g.path == r || g.path.startsWith(r + QLatin1Char('/')))
-                return true;
-        return false;
-    });
-    const std::shared_ptr<SearchSnapshot> snap = m_source->snapshot(evaluate, m_query.canMatchNonNotes());
-    for (qsizetype i = 0; i < snap->count(); ++i) {
-        const std::shared_ptr<const search::SearchDocument> doc = snap->load(i);
-        if (!doc)
-            continue;
-        std::optional<search::SearchResult> r = search::matchDocument(m_query, *doc);
-        if (!r)
-            continue;
-        const SearchSnapshot::Entry& e = snap->entry(i);
-        const bool collapsed = m_collapsedPaths.contains(e.path) ? !m_collapseAll : m_collapseAll;
-        insertSorted(makeGroup(*r, doc, e.mtimeMs, e.ctimeMs, collapsed));
+    if (!removed.isEmpty()) {
+        // deleted or moved away: gone at once (what is re-evaluated stays until its result is in)
+        const QSet<QString> keep(evaluate.cbegin(), evaluate.cend());
+        const qsizetype n = m_results->mutableGroups().removeIf([&](const SearchResultGroup& g) {
+            if (keep.contains(g.path))
+                return false;
+            for (const QString& r : std::as_const(removed))
+                if (g.path == r || g.path.startsWith(r + QLatin1Char('/')))
+                    return true;
+            return false;
+        });
+        if (n > 0) {
+            m_results->groupsChanged();
+            updateChrome();
+            emit resultsChanged();
+        }
     }
+    if (evaluate.isEmpty())
+        return;
+    startUpdate(evaluate);
+}
+
+void SearchView::startUpdate(const QStringList& paths)
+{
+    cancelUpdate();
+    m_updatePaths = QSet<QString>(paths.cbegin(), paths.cend());
+    m_updateSnapshot = m_source->snapshot(paths, m_query.canMatchNonNotes());
+    const quint64 gen = ++m_updateGeneration;
+    setUpdating(true);
+    search::SearchCallbacks cb;
+    cb.context = this;
+    cb.onResults = [this, gen](QList<search::SearchResult> batch) {
+        if (gen == m_updateGeneration)
+            m_updateResults.append(batch);
+    };
+    cb.onFinished = [this, gen](const search::SearchStats&) { finishUpdate(gen); };
+    m_updateEngine.search(m_query, m_updateSnapshot->source(), std::move(cb));
+}
+
+void SearchView::finishUpdate(quint64 generation)
+{
+    if (generation != m_updateGeneration || !m_updateSnapshot)
+        return;
+    auto& groups = m_results->mutableGroups();
+    groups.removeIf([this](const SearchResultGroup& g) { return m_updatePaths.contains(g.path); });
+    for (const search::SearchResult& r : std::as_const(m_updateResults)) {
+        if (r.index < 0 || r.index >= m_updateSnapshot->count())
+            continue;
+        const SearchSnapshot::Entry& e = m_updateSnapshot->entry(r.index);
+        const bool collapsed = m_collapsedPaths.contains(e.path) ? !m_collapseAll : m_collapseAll;
+        insertSorted(makeGroup(r, m_updateSnapshot->document(r.index), e.mtimeMs, e.ctimeMs, collapsed));
+    }
+    m_updatePaths.clear();
+    m_updateResults.clear();
+    m_updateSnapshot.reset();
+    setUpdating(false);
     m_results->groupsChanged();
     updateChrome();
     emit resultsChanged();
+}
+
+void SearchView::cancelUpdate()
+{
+    ++m_updateGeneration;
+    if (auto job = m_updateEngine.currentJob())
+        job->cancel();
+    m_updatePaths.clear();
+    m_updateResults.clear();
+    m_updateSnapshot.reset();
+    setUpdating(false);
+}
+
+void SearchView::setUpdating(bool on)
+{
+    if (on == m_updating)
+        return;
+    m_updating = on;
+    if (on)
+        Busy::begin();
+    else
+        Busy::end();
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 #include "ui/navigation/search_results_list.h"
 
-#include "render/theme/icons.h"
 #include "render/theme/theme.h"
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -107,7 +107,7 @@ SearchResultsList::SearchResultsList(QWidget* parent)
     setFrameShape(QFrame::NoFrame);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(Qt::ClickFocus);
     viewport()->setMouseTracking(true);
     viewport()->setAutoFillBackground(false);
     setAttribute(Qt::WA_TranslucentBackground);
@@ -182,6 +182,10 @@ void SearchResultsList::groupsChanged()
     m_offsets[size_t(m_groups.size())] = y;
     if (m_hover.group >= m_groups.size())
         m_hover = {};
+    if (m_focus.group >= m_groups.size()
+        || (m_focus.group >= 0 && m_focus.snippet >= 0
+            && (m_groups[m_focus.group].collapsed || m_focus.snippet >= m_groups[m_focus.group].snippets.size())))
+        m_focus = m_focus.group >= 0 && m_focus.group < m_groups.size() ? Hit{m_focus.group, -1, Part::Title} : Hit{};
     updateScrollRange();
     viewport()->update();
 }
@@ -191,6 +195,7 @@ void SearchResultsList::clear()
     m_groups.clear();
     m_hover = {};
     m_pressed = {};
+    m_focus = {};
     verticalScrollBar()->setValue(0);
     groupsChanged();
 }
@@ -304,8 +309,11 @@ void SearchResultsList::setHover(const Hit& hit)
 {
     if (hit.group == m_hover.group && hit.snippet == m_hover.snippet && hit.part == m_hover.part)
         return;
+    const bool rowChanged = hit.group != m_hover.group || hit.snippet != m_hover.snippet;
     m_hover = hit;
     viewport()->update();
+    if (rowChanged)
+        emit rowHovered(hit.group, hit.group < 0 ? QRect() : itemRect(hit.group, hit.part == Part::Snippet || hit.part == Part::More ? hit.snippet : -1));
 }
 
 void SearchResultsList::resizeEvent(QResizeEvent* e)
@@ -336,7 +344,111 @@ bool SearchResultsList::viewportEvent(QEvent* e)
 void SearchResultsList::mousePressEvent(QMouseEvent* e)
 {
     m_pressed = hitTest(e->position().toPoint());
+    if (m_pressed.part == Part::Title || m_pressed.part == Part::Snippet || m_pressed.part == Part::Collapse)
+        m_focus = {m_pressed.group, m_pressed.part == Part::Snippet ? m_pressed.snippet : -1,
+                   m_pressed.part == Part::Snippet ? Part::Snippet : Part::Title};
     e->accept();
+}
+
+QList<SearchResultsList::Hit> SearchResultsList::focusableRows() const
+{
+    QList<Hit> rows;
+    for (int g = 0; g < m_groups.size(); ++g) {
+        rows.append({g, -1, Part::Title});
+        if (!m_groups[g].collapsed)
+            for (int i = 0; i < m_groups[g].snippets.size(); ++i)
+                rows.append({g, i, Part::Snippet});
+    }
+    return rows;
+}
+
+void SearchResultsList::ensureVisible(const QRect& r)
+{
+    if (r.isEmpty())
+        return;
+    QScrollBar* sb = verticalScrollBar();
+    if (r.top() < 0)
+        sb->setValue(sb->value() + r.top() - (r.top() + sb->value() <= kPadTop + 1 ? kPadTop : 0));
+    else if (r.bottom() >= viewport()->height())
+        sb->setValue(sb->value() + r.bottom() - viewport()->height() + 1);
+}
+
+void SearchResultsList::setFocusedRow(int group, int snippet)
+{
+    if (group < 0 || group >= m_groups.size())
+        return;
+    if (snippet >= m_groups[group].snippets.size() || m_groups[group].collapsed)
+        snippet = -1;
+    m_focus = {group, snippet, snippet < 0 ? Part::Title : Part::Snippet};
+    ensureVisible(itemRect(group, snippet));
+    viewport()->update();
+}
+
+void SearchResultsList::focusFirstRow()
+{
+    if (m_groups.isEmpty())
+        return;
+    setFocus(Qt::TabFocusReason);
+    setFocusedRow(0, -1);
+}
+
+void SearchResultsList::focusInEvent(QFocusEvent* e)
+{
+    QAbstractScrollArea::focusInEvent(e);
+    viewport()->update();
+}
+
+void SearchResultsList::focusOutEvent(QFocusEvent* e)
+{
+    QAbstractScrollArea::focusOutEvent(e);
+    viewport()->update();
+}
+
+void SearchResultsList::keyPressEvent(QKeyEvent* e)
+{
+    const QList<Hit> rows = focusableRows();
+    qsizetype at = -1;
+    for (qsizetype i = 0; i < rows.size(); ++i)
+        if (rows[i].group == m_focus.group && rows[i].snippet == m_focus.snippet)
+            at = i;
+    const Qt::KeyboardModifiers mods = e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+    switch (e->key()) {
+    case Qt::Key_Down:
+        if (!rows.isEmpty())
+            setFocusedRow(rows[std::min(at + 1, rows.size() - 1)].group, rows[std::min(at + 1, rows.size() - 1)].snippet);
+        return;
+    case Qt::Key_Up:
+        if (at <= 0) {
+            emit exitTop();
+            return;
+        }
+        setFocusedRow(rows[at - 1].group, rows[at - 1].snippet);
+        return;
+    case Qt::Key_Left:
+        if (m_focus.group < 0)
+            break;
+        if (m_focus.snippet >= 0)
+            setFocusedRow(m_focus.group, -1);
+        else if (!m_groups[m_focus.group].collapsed)
+            emit collapseToggled(m_focus.group);
+        return;
+    case Qt::Key_Right:
+        if (m_focus.group >= 0 && m_focus.snippet < 0 && m_groups[m_focus.group].collapsed)
+            emit collapseToggled(m_focus.group);
+        return;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        if (m_focus.group < 0)
+            break;
+        if (m_focus.snippet >= 0)
+            emit snippetClicked(m_focus.group, m_focus.snippet, mods);
+        else
+            emit titleClicked(m_focus.group, mods);
+        return;
+    default:
+        break;
+    }
+    QAbstractScrollArea::keyPressEvent(e);
 }
 
 void SearchResultsList::mouseReleaseEvent(QMouseEvent* e)
@@ -426,15 +538,22 @@ void SearchResultsList::paintEvent(QPaintEvent*)
         }
         const qreal titleLine = kTitleFont * kLineHeight;
         {
-            // collapse arrow: 10px chevron (stroke 4 on the 24 grid), rotated -90° when collapsed
-            const QPixmap pm = IconProvider::instance().pixmap(QStringLiteral("chevron-down"), 10, collapseColor, 4.0, devicePixelRatioF());
+            // .collapse-icon: the 10px "right-triangle" chevron (M3 8 L12 17 L21 8, stroke 4 on its 24 grid),
+            // rotated -90° when collapsed
             const QPointF c(row.left() + kTitlePadLeft - 20 + 8, row.top() + kTitlePadY + titleLine / 2);
+            constexpr qreal k = 10.0 / 24.0;
+            QPainterPath chevron;
+            chevron.moveTo((3 - 12) * k, (8 - 12) * k);
+            chevron.lineTo(0, (17 - 12) * k);
+            chevron.lineTo((21 - 12) * k, (8 - 12) * k);
             p.save();
             p.setOpacity(iconOpacity);
             p.translate(c);
             if (g.collapsed)
                 p.rotate(-90);
-            p.drawPixmap(QPointF(-5, -5), pm);
+            p.setPen(QPen(collapseColor, 4 * k, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(chevron);
             p.restore();
         }
         const QString flair = flairText(g);
@@ -499,6 +618,17 @@ void SearchResultsList::paintEvent(QPaintEvent*)
         p.setPen(QPen(border, 1));
         p.setBrush(Qt::NoBrush);
         p.drawPath(boxPath);
+    }
+    if (hasFocus() && m_focus.group >= 0) {
+        // .has-focus: inset 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-focus)
+        const QRect r = itemRect(m_focus.group, m_focus.snippet);
+        if (!r.isEmpty()) {
+            QPainterPath ring;
+            ring.addRoundedRect(QRectF(r).adjusted(1, 1, -1, -1), 4, 4);
+            p.setPen(QPen(tok(t, "--background-modifier-border-focus"), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(ring);
+        }
     }
 }
 
