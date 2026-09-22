@@ -64,9 +64,12 @@ enum class StyleId : quint16 {
 // Extra painting for marks that CSS draws with backgrounds/borders (inline code, tags, highlights).
 struct BoxStyle {
     bool enabled = false;
-    QColor background;
+    QColor background;      // invalid = no fill
     qreal radius = 0;
-    qreal padX = 0; // horizontal padding added around the run (painted, not laid out)
+    qreal padX = 0;         // horizontal padding added around the run (painted, not laid out)
+    QColor ring;            // CSS `box-shadow: 0 0 0 <ringWidth> <ring>` (search match highlight)
+    qreal ringWidth = 0;
+    bool sameLook(const BoxStyle& o) const { return background == o.background && ring == o.ring && ringWidth == o.ringWidth; }
 };
 
 struct StyleSpec {

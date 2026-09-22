@@ -148,10 +148,10 @@ QString LinkResolver::resolve(const QString& rawLinkpath, const QString& sourceP
 
 bool LinkResolver::isUniqueName(const QString& targetPath) const { return m_byName.value(nameKey(targetPath)).size() <= 1; }
 
-QString LinkResolver::linkText(const QString& targetPath, const QString& sourcePath, LinkFormat format) const
+QString LinkResolver::linkText(const QString& targetPath, const QString& sourcePath, LinkFormat format, bool omitMdExtension) const
 {
     QString t = targetPath;
-    if (isMarkdown(t))
+    if (omitMdExtension && isMarkdown(t))
         t.chop(3);
     switch (format) {
     case LinkFormat::Absolute:

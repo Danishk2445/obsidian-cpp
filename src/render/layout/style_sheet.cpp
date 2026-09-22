@@ -150,11 +150,13 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
         f.setForeground(t.color(QStringLiteral("--checklist-done-color"), muted));
         f.setFontStrikeOut(true);
     }
-    s->m_specs[size_t(StyleId::SearchMatch)].format.setBackground(t.color(QStringLiteral("--text-selection")));
-    {
-        QColor cur = t.color(QStringLiteral("--interactive-accent"));
-        cur.setAlphaF(0.45f);
-        s->m_specs[size_t(StyleId::SearchMatchCurrent)].format.setBackground(cur);
+    // Obsidian: .obsidian-search-match-highlight { box-shadow: 0 0 0 3px var(--text-accent); border-radius: 2px }
+    for (StyleId id : {StyleId::SearchMatch, StyleId::SearchMatchCurrent}) {
+        BoxStyle& b = s->m_specs[size_t(id)].box;
+        b.enabled = true;
+        b.radius = 2;
+        b.ring = t.color(QStringLiteral("--text-accent"));
+        b.ringWidth = 3;
     }
     {
         QTextCharFormat& f = s->m_specs[size_t(StyleId::SpellError)].format;

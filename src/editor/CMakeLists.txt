@@ -5,6 +5,8 @@ oc_add_library(oc_editor
     export/pdf_exporter.cpp
     markdown_commands.cpp
     plugins/greentext_guard.cpp
+    search/doc_searcher.cpp
+    search/editor_search.cpp
     live_preview_decorator.cpp
     source_decorator.cpp
     spell/spell_checker.cpp

@@ -506,7 +506,14 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
                     const qreal rad = std::min(b.style.radius, r.height() / 2);
                     QPainterPath path;
                     path.addRoundedRect(r, rad, rad);
-                    p->fillPath(path, b.style.background);
+                    if (b.style.background.isValid())
+                        p->fillPath(path, b.style.background);
+                    if (b.style.ringWidth > 0) {
+                        const qreal w = b.style.ringWidth;
+                        QPainterPath outer;
+                        outer.addRoundedRect(r.adjusted(-w, -w, w, w), rad + w, rad + w);
+                        p->fillPath(outer.subtracted(path), b.style.ring);
+                    }
                 }
             }
             p->restore();
