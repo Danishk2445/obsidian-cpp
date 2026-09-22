@@ -1,5 +1,11 @@
 oc_add_library(oc_ui
   SOURCES
+    graph/graph_canvas.cpp
+    graph/graph_controls.cpp
+    graph/graph_render_cache.cpp
+    graph/graph_vault.cpp
+    graph/graph_view.cpp
+    graph/graph_widget.cpp
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
@@ -15,6 +21,8 @@ oc_add_library(oc_ui
     views/markdown/markdown_view.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp
+    widgets/toggle_switch.cpp
+    widgets/value_slider.cpp
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp
@@ -27,5 +35,5 @@ oc_add_library(oc_ui
     workspace/workspace.h
     workspace/workspace_p.h
     workspace/workspace_widgets.cpp
-  PUBLIC_DEPS oc_core oc_render oc_editor Qt6::Widgets
+  PUBLIC_DEPS oc_core oc_render oc_editor oc_graph Qt6::Widgets
 )
