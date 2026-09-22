@@ -22,6 +22,7 @@ oc_add_library(oc_core
     metadata/link_resolver.cpp
     metadata/link_suggest.cpp
     metadata/subpath.cpp
+    plugins/note_plugins.cpp
     metadata/link_updater.cpp
     metadata/metadata_cache.cpp
     recovery/file_recovery.cpp

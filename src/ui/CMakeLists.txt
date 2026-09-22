@@ -3,6 +3,7 @@ oc_add_library(oc_ui
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
+    plugins/note_plugins_ui.cpp
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
