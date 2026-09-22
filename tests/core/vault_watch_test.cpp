@@ -2,12 +2,15 @@
 // OC_VAULT_WATCHER environment variable, like a user would), coalescing, rename-over, temp files,
 // bursts, self-write suppression, offline handling and the mass-delete guard.
 
+#include "core/documents/document.h"
 #include "core/util/busy.h"
 #include "core/vault/vault.h"
 #include "core/vault/vault_private.h"
+#include "text/codec.h"
 #include "vault_test_util.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
 
@@ -39,12 +42,19 @@ protected:
         ASSERT_EQ(::rename(QFile::encodeName(from).constData(), QFile::encodeName(to).constData()), 0)
             << from.toStdString() << " -> " << to.toStdString();
     }
+    // What the user's external tool does: write "<name>.tmp.<pid>.<hex>", rename it over the file.
+    void atomicPut(const QString& rel, const QByteArray& bytes)
+    {
+        const QString tmp = rel + QStringLiteral(".tmp.4242.c0ffee");
+        put(tmp, bytes);
+        mv(abs(tmp), abs(rel));
+    }
     Vault* openWith(const char* backend)
     {
         qputenv("OC_VAULT_WATCHER", backend);
         m_vault = std::make_unique<Vault>(m_root);
         qunsetenv("OC_VAULT_WATCHER");
-        VaultConfig& c = VaultImplAccess::config(*m_vault);
+        VaultTuning& c = VaultImplAccess::tuning(*m_vault);
         EXPECT_EQ(c.watcher, QString::fromUtf8(backend));
         c.pollIntervalMs = 100;
         c.hybridSweepMs = 250;
@@ -197,8 +207,11 @@ TEST_P(VaultWatchTest, BurstOfThousandFilesIsCoalesced)
 {
     Vault* v = open();
     const int passesBefore = VaultImplAccess::watcherPasses(*v);
+    QElapsedTimer burst;
+    burst.start();
     for (int i = 0; i < 1000; ++i)
         put(QStringLiteral("burst/file %1.md").arg(i, 4, 10, QLatin1Char('0')), QByteArray::number(i));
+    const qint64 burstMs = burst.elapsed();
     ASSERT_TRUE(vt::waitFor([&] { return v->fileCount() == 1000; }, 30000)) << v->fileCount();
     QTest::qWait(settleMs());
     EXPECT_EQ(v->fileCount(), 1000);
@@ -212,7 +225,11 @@ TEST_P(VaultWatchTest, BurstOfThousandFilesIsCoalesced)
         EXPECT_EQ(f->size(), QByteArray::number(i).size());
     }
     if (qstrcmp(GetParam(), "inotify") == 0) {
-        EXPECT_LE(VaultImplAccess::watcherPasses(*v) - passesBefore, 4); // a handful of passes, not one per event
+        // ~4000 events; a pass at most every coalesceMaxMs while they keep coming, then one more.
+        const int passes = VaultImplAccess::watcherPasses(*v) - passesBefore;
+        const int maxMs = VaultImplAccess::tuning(*v).coalesceMaxMs;
+        EXPECT_LE(passes, 3 + int(burstMs / maxMs)) << "burst took " << burstMs << " ms";
+        EXPECT_LE(passes, 40);
     }
 }
 
@@ -415,6 +432,150 @@ TEST_P(VaultWatchTest, LargeLegitimateDeletionIsApplied)
     EXPECT_TRUE(v->isOnline());
 }
 
+TEST_P(VaultWatchTest, FolderMovedAwayAndRecreatedUnderTheSameName)
+{
+    put(QStringLiteral("F/old.md"));
+    put(QStringLiteral("F/sub/deep.md"));
+    put(QStringLiteral("other.md"));
+    Vault* v = open();
+    TFolder* f = v->folder(QStringLiteral("F"));
+    ASSERT_NE(f, nullptr);
+    const QString outside = m_tmp.path() + QStringLiteral("/elsewhere");
+    ASSERT_TRUE(QDir().mkpath(outside));
+    mv(abs(QStringLiteral("F")), outside + QStringLiteral("/F"));
+    ASSERT_TRUE(QDir().mkpath(abs(QStringLiteral("F")))); // another directory now sits at "F"
+    put(QStringLiteral("F/new.md"));
+    ASSERT_TRUE(vt::waitFor([&] {
+        return v->file(QStringLiteral("F/new.md")) != nullptr && v->item(QStringLiteral("F/old.md")) == nullptr
+               && v->item(QStringLiteral("F/sub")) == nullptr;
+    })) << log().dump();
+    QTest::qWait(settleMs());
+    EXPECT_TRUE(log().has(QStringLiteral("deleted"), QStringLiteral("F/old.md"), true)) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("deleted"), QStringLiteral("F/sub/deep.md"), true)) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("created"), QStringLiteral("F/new.md"), true)) << log().dump();
+    EXPECT_EQ(log().count(QStringLiteral("renamed")), 0) << log().dump();
+    ASSERT_NE(v->folder(QStringLiteral("F")), nullptr);
+    EXPECT_EQ(vt::sortedPaths(v->files()), QStringList({QStringLiteral("F/new.md"), QStringLiteral("other.md")}));
+
+    // The new directory is watched; the one that left the vault is not.
+    log().clear();
+    ASSERT_TRUE(vt::writeFile(outside + QStringLiteral("/F/ghost.md"), "boo"));
+    ASSERT_TRUE(vt::writeFile(outside + QStringLiteral("/F/sub/ghost.md"), "boo"));
+    put(QStringLiteral("F/later.md"));
+    ASSERT_TRUE(vt::waitFor([&] { return v->file(QStringLiteral("F/later.md")) != nullptr; })) << log().dump();
+    QTest::qWait(settleMs());
+    EXPECT_EQ(log().evs.size(), 1) << log().dump();
+    EXPECT_EQ(v->item(QStringLiteral("F/ghost.md")), nullptr);
+    EXPECT_EQ(v->item(QStringLiteral("F/sub")), nullptr);
+}
+
+TEST_P(VaultWatchTest, FolderRenamedAndOldNameRecreated)
+{
+    put(QStringLiteral("F/a.md"), "a");
+    put(QStringLiteral("F/sub/s.md"), "s");
+    Vault* v = open();
+    TFolder* f = v->folder(QStringLiteral("F"));
+    TFile* a = v->file(QStringLiteral("F/a.md"));
+    ASSERT_TRUE(f && a);
+    mv(abs(QStringLiteral("F")), abs(QStringLiteral("G")));
+    ASSERT_TRUE(QDir().mkpath(abs(QStringLiteral("F"))));
+    put(QStringLiteral("F/b.md"), "b");
+    ASSERT_TRUE(vt::waitFor([&] {
+        return v->file(QStringLiteral("G/a.md")) != nullptr && v->file(QStringLiteral("F/b.md")) != nullptr
+               && v->item(QStringLiteral("F/a.md")) == nullptr;
+    })) << log().dump();
+    QTest::qWait(settleMs());
+    // The model's folder moved along with its content; the new "F" is a new folder.
+    EXPECT_EQ(v->folder(QStringLiteral("G")), f) << log().dump();
+    EXPECT_EQ(v->file(QStringLiteral("G/a.md")), a);
+    EXPECT_TRUE(log().hasRename(QStringLiteral("F"), QStringLiteral("G"), true)) << log().dump();
+    EXPECT_TRUE(log().hasRename(QStringLiteral("F/sub/s.md"), QStringLiteral("G/sub/s.md"), true)) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("created"), QStringLiteral("F"), true)) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("created"), QStringLiteral("F/b.md"), true)) << log().dump();
+    EXPECT_EQ(log().count(QStringLiteral("deleted")), 0) << log().dump();
+    EXPECT_EQ(vt::sortedPaths(v->files()),
+              QStringList({QStringLiteral("F/b.md"), QStringLiteral("G/a.md"), QStringLiteral("G/sub/s.md")}));
+
+    // both are watched
+    put(QStringLiteral("G/sub/c.md"));
+    put(QStringLiteral("F/d.md"));
+    ASSERT_TRUE(vt::waitFor([&] {
+        return v->file(QStringLiteral("G/sub/c.md")) != nullptr && v->file(QStringLiteral("F/d.md")) != nullptr;
+    })) << log().dump();
+}
+
+namespace {
+
+Transaction appendText(const Document& doc, const QString& s)
+{
+    const qsizetype end = doc.text().length();
+    Transaction tr;
+    tr.changes = ChangeSet::of({{end, end, s}}, end);
+    tr.selection = Selection::cursor(end + s.size());
+    tr.userEvent = QStringLiteral("input.type");
+    return tr;
+}
+
+} // namespace
+
+TEST_P(VaultWatchTest, DocumentSavingThroughTheVaultIsNotAnExternalChange)
+{
+    const QString path = QStringLiteral("Doc folder/My note.md");
+    put(path, "\xEF\xBB\xBF# Title\r\n\r\nbody  \r\n");
+    Vault* v = open();
+    Document doc(v, path);
+    QString err;
+    ASSERT_TRUE(doc.load(&err)) << err.toStdString();
+    // Wired like the app: an external modification of the file reloads the document.
+    int reloads = 0;
+    int externallyChanged = 0;
+    QObject::connect(v, &Vault::modified, &doc, [&](TFile* f, bool external) {
+        if (external && f->path() == doc.path()) {
+            ++reloads;
+            doc.reloadFromDisk();
+        }
+    });
+    QObject::connect(&doc, &Document::externallyChanged, &doc, [&](bool) { ++externallyChanged; });
+
+    for (int i = 0; i < 5; ++i) {
+        doc.dispatch(appendText(doc, QStringLiteral("edit %1\n").arg(i)), nullptr, Selection::cursor(0));
+        ASSERT_TRUE(doc.save(&err)) << err.toStdString();
+        QTest::qWait(20); // let the watcher see this save while the next one happens
+    }
+    doc.setAutosaveDelayMs(30);
+    doc.dispatch(appendText(doc, QStringLiteral("autosaved")), nullptr, Selection::cursor(0));
+    ASSERT_TRUE(vt::waitFor([&] { return !doc.isDirty(); })) << log().dump();
+    QTest::qWait(settleMs());
+
+    const QByteArray expected("\xEF\xBB\xBF# Title\r\n\r\nbody  \r\nedit 0\r\nedit 1\r\nedit 2\r\nedit 3\r\nedit 4\r\nautosaved");
+    EXPECT_EQ(vt::readFile(abs(path)), expected);
+    EXPECT_EQ(v->file(path)->size(), expected.size());
+    EXPECT_EQ(log().count(QStringLiteral("modified"), false), 6) << log().dump();
+    EXPECT_EQ(log().externalCount(), 0) << log().dump();
+    EXPECT_EQ(reloads, 0);
+    EXPECT_EQ(externallyChanged, 0);
+
+    // An external edit afterwards is reported once and merged into the (clean) document.
+    log().clear();
+    atomicPut(path, expected + "\r\nexternal line\r\n");
+    ASSERT_TRUE(vt::waitFor([&] { return externallyChanged == 1; })) << log().dump();
+    QTest::qWait(settleMs());
+    EXPECT_EQ(reloads, 1);
+    EXPECT_EQ(log().evs.size(), 1) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("modified"), path, true)) << log().dump();
+    EXPECT_FALSE(doc.isDirty());
+    EXPECT_EQ(encodeFile(doc.text(), doc.hasBom()), expected + "\r\nexternal line\r\n");
+
+    // ... and saving on top of it is our own change again.
+    log().clear();
+    doc.dispatch(appendText(doc, QStringLiteral("after")), nullptr, Selection::cursor(0));
+    ASSERT_TRUE(doc.save(&err)) << err.toStdString();
+    QTest::qWait(settleMs());
+    EXPECT_EQ(log().evs.size(), 1) << log().dump();
+    EXPECT_TRUE(log().has(QStringLiteral("modified"), path, false)) << log().dump();
+    EXPECT_EQ(vt::readFile(abs(path)), expected + "\r\nexternal line\r\nafter");
+}
+
 INSTANTIATE_TEST_SUITE_P(Backends, VaultWatchTest, ::testing::Values("inotify", "poll", "hybrid"),
                          [](const ::testing::TestParamInfo<const char*>& info) { return std::string(info.param); });
 
@@ -446,6 +607,55 @@ TEST_F(VaultHybridTest, SweepAndRescanFindMissedChanges)
     v->rescan();
     ASSERT_TRUE(vt::waitFor([&] { return v->file(QStringLiteral("focus.md")) != nullptr; }, 3000)) << m_log->dump();
     ASSERT_TRUE(vt::waitFor([] { return Busy::idle(); }, 3000));
+}
+
+TEST_F(VaultHybridTest, AutomaticBackendIsChosenWhenTheFolderAppears)
+{
+    // The app starts before the removable drive is plugged in: the filesystem can't be examined, so
+    // the backend is decided again once the folder is there (here: "a FUSE filesystem").
+    ASSERT_TRUE(QDir().rmdir(m_root));
+    qunsetenv("OC_VAULT_WATCHER");
+    m_vault = std::make_unique<Vault>(m_root);
+    VaultTuning& c = VaultImplAccess::tuning(*m_vault);
+    c.watcher.clear(); // automatic
+    c.simulatedFsBackend = QStringLiteral("hybrid");
+    c.offlinePollMs = 50;
+    c.hybridSweepMs = 200;
+    m_log = std::make_unique<SignalLog>(m_vault.get());
+    Vault* v = m_vault.get();
+    v->load();
+    EXPECT_FALSE(v->isOnline());
+    EXPECT_TRUE(VaultImplAccess::watcherBackend(*v).startsWith(u"inotify")); // placeholder (idle)
+
+    put(QStringLiteral("plugged in.md"), "p");
+    put(QStringLiteral("Folder/inside.md"), "i");
+    ASSERT_TRUE(vt::waitFor([&] { return v->isOnline() && v->fileCount() == 2; })) << m_log->dump();
+    EXPECT_EQ(VaultImplAccess::watcherBackend(*v), QStringLiteral("hybrid"));
+    EXPECT_EQ(m_log->online, QList<bool>({false, true}));
+    EXPECT_TRUE(m_log->has(QStringLiteral("created"), QStringLiteral("Folder/inside.md"), true)) << m_log->dump();
+
+    // inotify events and the verification sweeps both work
+    put(QStringLiteral("Folder/event.md"));
+    ASSERT_TRUE(vt::waitFor([&] { return v->file(QStringLiteral("Folder/event.md")) != nullptr; })) << m_log->dump();
+    VaultImplAccess::setDropWatcherEvents(*v, true);
+    put(QStringLiteral("Folder/sweep.md"));
+    ASSERT_TRUE(vt::waitFor([&] { return v->file(QStringLiteral("Folder/sweep.md")) != nullptr; })) << m_log->dump();
+}
+
+TEST_F(VaultHybridTest, ForcedBackendIsKeptWhenTheFolderAppears)
+{
+    ASSERT_TRUE(QDir().rmdir(m_root));
+    m_vault = std::make_unique<Vault>(m_root);
+    VaultTuning& c = VaultImplAccess::tuning(*m_vault);
+    c.watcher = QStringLiteral("inotify");
+    c.simulatedFsBackend = QStringLiteral("hybrid"); // ignored: the backend is forced
+    c.offlinePollMs = 50;
+    m_vault->load();
+    put(QStringLiteral("a.md"));
+    ASSERT_TRUE(vt::waitFor([&] { return m_vault->isOnline() && m_vault->fileCount() == 1; }));
+    EXPECT_EQ(VaultImplAccess::watcherBackend(*m_vault), QStringLiteral("inotify"));
+    put(QStringLiteral("b.md"));
+    ASSERT_TRUE(vt::waitFor([&] { return m_vault->file(QStringLiteral("b.md")) != nullptr; }));
 }
 
 TEST_F(VaultHybridTest, InotifyRescanWithoutSweeps)

@@ -46,7 +46,7 @@ protected:
     std::unique_ptr<Vault> open(const QString& watcher = QStringLiteral("none"))
     {
         auto v = std::make_unique<Vault>(m_root);
-        VaultImplAccess::config(*v).watcher = watcher;
+        VaultImplAccess::tuning(*v).watcher = watcher;
         v->load();
         return v;
     }
@@ -248,7 +248,7 @@ TEST_F(VaultModelTest, SymlinksAreFollowedWithoutCycles)
 TEST_F(VaultModelTest, ScanFixtureVault)
 {
     Vault v(QStringLiteral(OC_FIXTURES_DIR "/vault-basic"));
-    VaultImplAccess::config(v).watcher = QStringLiteral("none"); // read-only use of the fixture
+    VaultImplAccess::tuning(v).watcher = QStringLiteral("none"); // read-only use of the fixture
     v.load();
     EXPECT_NE(v.file(QStringLiteral("Welcome.md")), nullptr);
     EXPECT_NE(v.file(QStringLiteral("Projects/Alpha.md")), nullptr);
@@ -741,14 +741,18 @@ TEST(VaultSelfWrites, RegistryMatchesBySizeAndMtimeOrHash)
         ++hashed;
         return contentHash(QByteArrayView("xyz"));
     };
-    EXPECT_TRUE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, hashOther)); // exact stat: no hashing
+    const vaultfs::DevIno id{1, 2};
+    EXPECT_TRUE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, id, hashOther)); // exact stat: no hashing
     EXPECT_EQ(hashed, 0);
-    EXPECT_TRUE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 222, hashAbc)); // stat drifted, same bytes
-    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 222, hashOther));
-    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 4, 111, hashAbc)); // other size
-    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("b.md"), 3, 111, hashAbc));
+    EXPECT_TRUE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 222, id, hashAbc)); // stat drifted, same bytes
+    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 222, id, hashOther));
+    // Same size and (coarse) mtime but another inode: replaced within the same tick -> the hash decides.
+    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, {1, 99}, hashOther));
+    EXPECT_TRUE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, {1, 99}, hashAbc));
+    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 4, 111, id, hashAbc)); // other size
+    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("b.md"), 3, 111, id, hashAbc));
     reg.recordRename(QStringLiteral("a.md"), QStringLiteral("c.md"), {1, 2});
-    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, hashAbc)); // not a write any more
+    EXPECT_FALSE(reg.isOwnWrite(QStringLiteral("a.md"), 3, 111, id, hashAbc)); // not a write any more
     ASSERT_NE(reg.find(QStringLiteral("c.md")), nullptr);
     EXPECT_EQ(reg.find(QStringLiteral("c.md"))->kind, vaultfs::SelfWriteRegistry::Kind::RenamedHere);
 
@@ -833,7 +837,7 @@ TEST_F(VaultModelTest, VaultPathAcceptsCanonicalRoot)
 TEST_F(VaultModelTest, MissingRootLoadsOffline)
 {
     Vault v(m_tmp.path() + QStringLiteral("/does-not-exist"));
-    VaultImplAccess::config(v).watcher = QStringLiteral("none");
+    VaultImplAccess::tuning(v).watcher = QStringLiteral("none");
     SignalLog log(&v);
     v.load();
     EXPECT_TRUE(v.isLoaded());
@@ -847,7 +851,7 @@ TEST_F(VaultModelTest, OfflineKeepsModelAndRejectsWrites)
 {
     put(QStringLiteral("keep.md"), "k");
     auto v = open();
-    VaultImplAccess::config(*v).offlinePollMs = 50;
+    VaultImplAccess::tuning(*v).offlinePollMs = 50;
     DiskState st;
     ASSERT_TRUE(v->read(QStringLiteral("keep.md"), &st, nullptr));
     SignalLog log(v.get());
@@ -877,9 +881,9 @@ TEST_F(VaultModelTest, DestroyWhileWatcherIsBusy)
     for (const char* backend : {"inotify", "poll", "hybrid"}) {
         for (int round = 0; round < 3; ++round) {
             auto v = std::make_unique<Vault>(m_root);
-            VaultImplAccess::config(*v).watcher = QString::fromUtf8(backend);
-            VaultImplAccess::config(*v).pollIntervalMs = 1;
-            VaultImplAccess::config(*v).hybridSweepMs = 1;
+            VaultImplAccess::tuning(*v).watcher = QString::fromUtf8(backend);
+            VaultImplAccess::tuning(*v).pollIntervalMs = 1;
+            VaultImplAccess::tuning(*v).hybridSweepMs = 1;
             v->load();
             for (int i = 0; i < 20; ++i)
                 put(QStringLiteral("d%1/g%2.md").arg(i).arg(round));

@@ -39,7 +39,7 @@ TEST(VaultPerf, LoadTenThousandFiles)
         qint64 best = 1'000'000;
         for (int run = 0; run < 3; ++run) {
             Vault v(root);
-            VaultImplAccess::config(v).watcher = QString::fromUtf8(backend);
+            VaultImplAccess::tuning(v).watcher = QString::fromUtf8(backend);
             QElapsedTimer t;
             t.start();
             v.load();

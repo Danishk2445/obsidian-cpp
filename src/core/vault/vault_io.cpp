@@ -54,13 +54,13 @@ const SelfWriteRegistry::Entry* SelfWriteRegistry::find(const QString& path) con
     return &*it;
 }
 
-bool SelfWriteRegistry::isOwnWrite(const QString& path, qint64 size, qint64 mtimeNs,
+bool SelfWriteRegistry::isOwnWrite(const QString& path, qint64 size, qint64 mtimeNs, const DevIno& id,
                                    const std::function<QByteArray()>& diskHash) const
 {
     const Entry* e = find(path);
     if (!e || e->kind != Kind::Write || e->size != size)
         return false;
-    if (e->mtimeNs == mtimeNs)
+    if (e->mtimeNs == mtimeNs && e->id == id)
         return true;
     return !e->hash.isEmpty() && diskHash && diskHash() == e->hash;
 }

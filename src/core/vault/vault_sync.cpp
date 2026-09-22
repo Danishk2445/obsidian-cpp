@@ -69,13 +69,18 @@ struct Classification {
 
 void Vault::Impl::startWatching()
 {
-    WatcherKind kind = autoWatcherKind(rootEnc);
+    // (If the folder can't be examined now, inotify is a placeholder: updateWatcherKind() decides
+    // again when it comes back.)
+    WatcherKind kind = detectWatcherKind().value_or(WatcherKind::Inotify);
+    watcherAuto = true;
     if (!cfg.watcher.trimmed().isEmpty()) {
-        if (const std::optional<WatcherKind> k = watcherKindFromName(cfg.watcher))
+        if (const std::optional<WatcherKind> k = watcherKindFromName(cfg.watcher)) {
             kind = *k;
-        else
+            watcherAuto = false;
+        } else {
             qCWarning(lcVaultSync) << "unknown watcher backend" << cfg.watcher << "- using"
                                    << watcherKindName(kind);
+        }
     }
     watcherKind = kind;
     selfWrites.setTtl(cfg.selfWriteTtlMs);
@@ -89,21 +94,50 @@ void Vault::Impl::startWatching()
     };
     int err = 0;
     bool ok = false;
-    if (kind != WatcherKind::None) {
-        WatcherOptions wo;
-        wo.pollIntervalMs = cfg.pollIntervalMs;
-        wo.hybridSweepMs = cfg.hybridSweepMs;
-        watcher = createFsWatcher(kind, root, wo);
-        watcher->setSink([this](FsBatch b) { onBatch(std::move(b)); });
+    watcher = makeWatcher(kind);
+    if (watcher)
         ok = watcher->start(visit, WalkOptions{}, &err);
-    } else {
+    else
         ok = walkTree(rootEnc, QString(), visit, WalkOptions{}, &err);
-    }
     if (!ok) {
         qCWarning(lcVaultSync) << "vault folder not available:" << root << errnoString(err);
         online = false;
         offlineTimer.start(cfg.offlinePollMs);
     }
+}
+
+std::optional<WatcherKind> Vault::Impl::detectWatcherKind() const
+{
+    const std::optional<WatcherKind> fromFs = autoWatcherKind(rootEnc);
+    if (fromFs && !cfg.simulatedFsBackend.isEmpty())
+        return watcherKindFromName(cfg.simulatedFsBackend);
+    return fromFs;
+}
+
+std::unique_ptr<IFsWatcher> Vault::Impl::makeWatcher(WatcherKind kind)
+{
+    WatcherOptions wo;
+    wo.pollIntervalMs = cfg.pollIntervalMs;
+    wo.hybridSweepMs = cfg.hybridSweepMs;
+    std::unique_ptr<IFsWatcher> w = createFsWatcher(kind, root, wo);
+    if (w)
+        w->setSink([this](FsBatch b) { onBatch(std::move(b)); });
+    return w;
+}
+
+void Vault::Impl::updateWatcherKind()
+{
+    if (!watcherAuto || !watcher)
+        return;
+    const std::optional<WatcherKind> kind = detectWatcherKind();
+    if (!kind || *kind == watcherKind || *kind == WatcherKind::None)
+        return;
+    qCInfo(lcVaultSync) << "watcher backend for" << root << "is now" << watcherKindName(*kind) << "(was"
+                        << watcherKindName(watcherKind) << ")";
+    watcher.reset(); // joins its thread; whatever it still had queued is stale (we're offline)
+    watcherKind = *kind;
+    watcher = makeWatcher(*kind);
+    watcher->startDeferred();
 }
 
 // =============================================================================================
@@ -261,7 +295,10 @@ void Vault::Impl::applySnapshot(const FsSnapshot& snap)
         TAbstractFile* m = byPath.value(it.key());
         if (!m || m->isFolder() != it->isDir) {
             touched.insert(it.key());
-        } else if (!m->isFolder()) {
+        } else if (m->isFolder()) {
+            if (!(info(m).id == it->id))
+                touched.insert(it.key()); // another directory under the same name
+        } else {
             const VaultFileNode* f = fnode(m);
             if (f->size() != it->size || f->info.mtimeNs != it->mtimeNs || !(f->info.id == it->id))
                 touched.insert(it.key());
@@ -345,6 +382,7 @@ void Vault::Impl::offlineTick()
     offlineTimer.stop();
     qCInfo(lcVaultSync) << "vault folder is back:" << root;
     if (watcher) {
+        updateWatcherKind();
         restartPending = true;
         watcher->restart(); // re-adds watches, then delivers a snapshot -> onRestartSnapshot()
         return;
@@ -427,9 +465,11 @@ void Vault::Impl::reconcile(const QSet<QString>& touched, const QHash<QString, Q
             continue;
         const std::optional<DiskEntry> e = statInto(p);
         if (e && e->isDir) {
+            // A new folder: its content may predate its watch. Another directory under a known
+            // folder's name (moved away and re-created, replaced): its content is unknown.
             const TAbstractFile* m = byPath.value(p);
-            if (!m || !m->isFolder())
-                scanDeep(p); // a new folder: its content may predate its watch
+            if (!m || !m->isFolder() || !(info(m).id == e->id))
+                scanDeep(p);
         }
     }
 
@@ -467,24 +507,29 @@ void Vault::Impl::reconcile(const QSet<QString>& touched, const QHash<QString, Q
                     gone.append(m);
                 continue;
             }
-            if (m->isFolder())
-                continue;
-            VaultFileNode* f = fnode(m);
             const DiskEntry& e = *it;
-            if (!(e.id == f->info.id)) {
-                // Replaced. If our old inode now lives at a fresh path, the file was moved away and a
-                // new one created here: report a rename + a creation, not a modification.
-                const QString movedTo = freshById.value(f->info.id);
+            const VaultNodeInfo& in = info(m);
+            if (!(e.id == in.id)) {
+                // Replaced. If our old inode now lives at a fresh path, the item was moved away and a
+                // new one created here: report a rename + a creation, not a modification. (Folders:
+                // the inode is evidence enough; files must also look the same or be cookie-paired.)
+                const QString movedTo = freshById.value(in.id);
                 if (!movedTo.isEmpty()) {
                     const DiskEntry me = s.disk.value(movedTo);
-                    if (!me.isDir
-                        && (movedFrom.value(movedTo) == path || (me.size == f->size() && me.mtimeNs == f->info.mtimeNs))) {
+                    const bool evidence = m->isFolder() || movedFrom.value(movedTo) == path
+                                          || (me.size == fnode(m)->size() && me.mtimeNs == in.mtimeNs);
+                    if (me.isDir == m->isFolder() && evidence) {
                         gone.append(m);
                         c.fresh.append(path);
                         continue;
                     }
                 }
             }
+            if (m->isFolder()) {
+                dnode(m)->info = VaultNodeInfo{e.id, e.mtimeNs, e.isSymlink}; // (content: see scanDeep)
+                continue;
+            }
+            VaultFileNode* f = fnode(m);
             if (e.size != f->size() || e.mtimeNs != f->info.mtimeNs || !(e.id == f->info.id))
                 c.changed.append({f, path});
             else if (contentHints.contains(path) && !f->knownHash.isEmpty())
@@ -601,20 +646,20 @@ void Vault::Impl::reconcile(const QSet<QString>& touched, const QHash<QString, Q
 
     auto applyChange = [&](VaultFileNode* f, const DiskEntry& e) {
         const QString path = f->path();
-        if (e.size == f->size() && e.mtimeNs == f->info.mtimeNs && !f->knownHash.isEmpty()) {
-            // Only the inode differs (replaced by an identical copy?): compare the content.
-            if (diskHash(path) == f->knownHash) {
-                setFileStat(f, e);
-                return;
-            }
-        }
         std::optional<QByteArray> hash;
         const auto hashFn = [&] {
             if (!hash)
                 hash = diskHash(path);
             return *hash;
         };
-        if (selfWrites.isOwnWrite(path, e.size, e.mtimeNs, hashFn)) {
+        if (e.size == f->size() && e.mtimeNs == f->info.mtimeNs && !f->knownHash.isEmpty()) {
+            // Only the inode differs (replaced by an identical copy?): compare the content.
+            if (hashFn() == f->knownHash) {
+                setFileStat(f, e);
+                return;
+            }
+        }
+        if (selfWrites.isOwnWrite(path, e.size, e.mtimeNs, e.id, hashFn)) {
             // Our own write, seen with a different stat (FUSE attribute caching, coarse clocks...).
             const SelfWriteRegistry::Entry* own = selfWrites.find(path);
             setFileStat(f, e);

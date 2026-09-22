@@ -76,8 +76,9 @@ RootProbe probeRoot(const QByteArray& absRoot);
 // errno values that mean "can't tell right now" (EIO, ENOTCONN, ESTALE, ...) rather than "not there".
 bool isTransientErrno(int e);
 
-// Filesystem magic numbers of network/FUSE filesystems where inotify can miss changes.
-bool isFuseOrNetworkFs(const QByteArray& absPath, quint64* magic = nullptr);
+// Filesystem magic numbers of network/FUSE filesystems where inotify can miss changes. *known is
+// set to false when statfs() fails (e.g. the folder isn't there): the answer is then meaningless.
+bool isFuseOrNetworkFs(const QByteArray& absPath, quint64* magic = nullptr, bool* known = nullptr);
 
 qint64 monotonicMs();
 

@@ -36,8 +36,10 @@ public:
     void recordRename(const QString& from, const QString& to, DevIno id);
 
     const Entry* find(const QString& path) const; // live (non-expired) entry or nullptr
-    // Is the file now on disk (size, mtime; content hash computed lazily) the one we wrote?
-    bool isOwnWrite(const QString& path, qint64 size, qint64 mtimeNs,
+    // Is the file now on disk (size, mtime, inode; content hash computed lazily) the one we wrote?
+    // Same size + mtime + inode is trusted; otherwise (attribute caching, coarse timestamps, a
+    // same-tick replacement) the content hash decides.
+    bool isOwnWrite(const QString& path, qint64 size, qint64 mtimeNs, const DevIno& id,
                     const std::function<QByteArray()>& diskHash) const;
     void expire();
     int count() const { return int(m_entries.size()); }

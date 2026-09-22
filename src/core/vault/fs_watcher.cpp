@@ -81,9 +81,13 @@ std::optional<WatcherKind> watcherKindFromName(const QString& name)
     return std::nullopt;
 }
 
-WatcherKind autoWatcherKind(const QByteArray& absRoot)
+std::optional<WatcherKind> autoWatcherKind(const QByteArray& absRoot)
 {
-    return isFuseOrNetworkFs(absRoot) ? WatcherKind::Hybrid : WatcherKind::Inotify;
+    bool known = false;
+    const bool remote = isFuseOrNetworkFs(absRoot, nullptr, &known);
+    if (!known)
+        return std::nullopt;
+    return remote ? WatcherKind::Hybrid : WatcherKind::Inotify;
 }
 
 IFsWatcher::~IFsWatcher() = default;
@@ -138,6 +142,9 @@ public:
         return ok;
     }
 
+    // --- owner thread, instead of initialScan(): nothing is watched until a restart command.
+    void markRootLost() { m_rootLost = true; }
+
     bool startThread()
     {
         if (m_wakeFd < 0)
@@ -185,6 +192,13 @@ private:
         BusyToken busy;
     };
     enum class AddResult { Ok, Alias, Failed };
+    // A directory seen leaving its path (IN_MOVED_FROM), waiting for the IN_MOVED_TO with its cookie.
+    // Its watches are remembered by descriptor: by the time the batch ends, another directory may
+    // have been created (and watched) under the old name.
+    struct PendingDirMove {
+        QString path;
+        QSet<int> wds; // the directory's and its subdirectories' watches
+    };
 
     void run()
     {
@@ -370,17 +384,19 @@ private:
         return wds;
     }
 
-    void removeWatchTree(const QString& rel)
+    void removeWatches(const QSet<int>& wds)
     {
-        for (int wd : watchesUnder(rel)) {
+        for (int wd : wds) {
+            if (!m_wdToPath.contains(wd))
+                continue; // already gone (directory deleted, or replaced by another watch)
             ::inotify_rm_watch(m_fd, wd);
             dropMapping(wd);
         }
     }
 
-    void repathWatches(const QString& from, const QString& to)
+    // A directory (with the watches `moving`) moved from `from` to `to` inside the vault.
+    void repathWatches(const QString& from, const QString& to, const QSet<int>& moving)
     {
-        const QList<int> moving = watchesUnder(from);
         // Whatever was watched at the destination was replaced by this move.
         for (int wd : watchesUnder(to)) {
             if (!moving.contains(wd)) {
@@ -390,7 +406,12 @@ private:
         }
         QList<QPair<int, QString>> updates;
         for (int wd : moving) {
-            const QString old = m_wdToPath.value(wd);
+            const auto it = m_wdToPath.constFind(wd);
+            if (it == m_wdToPath.cend())
+                continue; // deleted in the meantime
+            const QString old = it.value();
+            if (old != from && !isStrictlyInside(old, from))
+                continue; // re-mapped in the meantime
             updates.append({wd, QString(to + QStringView(old).mid(from.size()))});
             if (m_pathToWd.value(old, -1) == wd)
                 m_pathToWd.remove(old);
@@ -408,7 +429,7 @@ private:
         closeInotify(); // no more events until restart(): nothing under the old root is ours now
     }
 
-    void handleEvent(const inotify_event* ev, FsBatch& batch, QHash<quint32, QString>& pendingDirMoves)
+    void handleEvent(const inotify_event* ev, FsBatch& batch, QHash<quint32, PendingDirMove>& pendingDirMoves)
     {
         const uint32_t mask = ev->mask;
         if (mask & IN_Q_OVERFLOW) {
@@ -462,11 +483,12 @@ private:
             flags |= FsEvent::MovedTo;
         if (isDir) {
             if (mask & IN_MOVED_FROM) {
-                pendingDirMoves.insert(ev->cookie, path);
+                const QList<int> wds = watchesUnder(path);
+                pendingDirMoves.insert(ev->cookie, PendingDirMove{path, QSet<int>(wds.cbegin(), wds.cend())});
             } else if (mask & IN_MOVED_TO) {
                 const auto pm = pendingDirMoves.find(ev->cookie);
                 if (pm != pendingDirMoves.end()) {
-                    repathWatches(pm.value(), path);
+                    repathWatches(pm->path, path, pm->wds);
                     pendingDirMoves.erase(pm);
                 }
                 if (!m_pathToWd.contains(path))
@@ -482,7 +504,7 @@ private:
     {
         alignas(inotify_event) char buf[64 * 1024];
         FsBatch batch;
-        QHash<quint32, QString> pendingDirMoves;
+        QHash<quint32, PendingDirMove> pendingDirMoves;
         for (int reads = 0; reads < 16 && m_fd >= 0;) {
             const ssize_t n = ::read(m_fd, buf, sizeof buf);
             if (n < 0) {
@@ -504,10 +526,11 @@ private:
                 p += sizeof(inotify_event) + ev->len;
             }
         }
-        // Directories moved away without a matching MOVED_TO left the vault: stop watching them.
+        // Directories moved away without a matching MOVED_TO left the vault (or their MOVED_TO is in
+        // a later read; it then re-adds them): stop watching them.
         if (m_fd >= 0)
-            for (const QString& path : std::as_const(pendingDirMoves))
-                removeWatchTree(path);
+            for (const PendingDirMove& pm : std::as_const(pendingDirMoves))
+                removeWatches(pm.wds);
         if (m_watchLimitHit && m_fd >= 0) {
             fallbackToPolling();
             batch.overflow = true; // some new directories are unwatched: have the vault sweep now
@@ -634,6 +657,13 @@ bool ThreadedFsWatcher::start(const WalkVisitor& visit, const WalkOptions& walkO
     if (!m_worker->startThread())
         qCWarning(lcVaultWatch) << "cannot start the watcher thread";
     return ok;
+}
+
+void ThreadedFsWatcher::startDeferred()
+{
+    m_worker->markRootLost();
+    if (!m_worker->startThread())
+        qCWarning(lcVaultWatch) << "cannot start the watcher thread";
 }
 
 void ThreadedFsWatcher::requestSweep() { m_worker->requestSweep(makeBusyToken()); }

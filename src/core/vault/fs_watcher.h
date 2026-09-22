@@ -79,8 +79,8 @@ struct FsBatch {
 enum class WatcherKind { None, Inotify, Hybrid, Poll };
 QString watcherKindName(WatcherKind kind);
 std::optional<WatcherKind> watcherKindFromName(const QString& name);
-// FUSE / network filesystems -> Hybrid, else Inotify.
-WatcherKind autoWatcherKind(const QByteArray& absRoot);
+// FUSE / network filesystems -> Hybrid, else Inotify; nullopt if the folder can't be examined.
+std::optional<WatcherKind> autoWatcherKind(const QByteArray& absRoot);
 
 struct WatcherOptions {
     int pollIntervalMs = 3000;  // PollingWatcher (and the inotify -> polling fallback)
@@ -101,6 +101,9 @@ public:
     // Returns false (with *err) if the root can't be read; the thread is started anyway so that
     // restart() works later.
     virtual bool start(const WalkVisitor& visit, const WalkOptions& walkOpts, int* err) = 0;
+    // Starts the thread without the initial walk, as if the root were unavailable: nothing is
+    // watched until restart().
+    virtual void startDeferred() = 0;
     // Asynchronous full stat sweep -> an FsBatch carrying a snapshot.
     virtual void requestSweep() = 0;
     // Asynchronous: drop every watch, re-add them while walking, deliver the walk as a snapshot
@@ -124,6 +127,7 @@ public:
     WatcherKind kind() const override { return m_kind; }
     bool usingInotify() const override;
     bool start(const WalkVisitor& visit, const WalkOptions& walkOpts, int* err) override;
+    void startDeferred() override;
     void requestSweep() override;
     void restart() override;
 

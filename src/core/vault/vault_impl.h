@@ -78,6 +78,9 @@ struct Vault::Impl {
 
     // ---- watcher integration / reconciliation (vault_sync.cpp)
     void startWatching();
+    std::optional<vaultfs::WatcherKind> detectWatcherKind() const; // automatic mode; nullopt: can't tell
+    std::unique_ptr<vaultfs::IFsWatcher> makeWatcher(vaultfs::WatcherKind kind);
+    void updateWatcherKind(); // automatic mode, root just came back: switch backends if needed
     void onBatch(vaultfs::FsBatch batch);
     void scheduleProcessing(int delayMs);
     void processPending();
@@ -102,7 +105,7 @@ struct Vault::Impl {
     QString root;          // absolute, cleaned, no trailing slash
     QString rootCanonical; // symlinks resolved (for vaultPath())
     QByteArray rootEnc;
-    VaultConfig cfg;
+    VaultTuning cfg;
 
     VaultFolderNode* rootNode = nullptr;
     QHash<QString, TAbstractFile*> byPath; // includes the root under ""
@@ -115,6 +118,7 @@ struct Vault::Impl {
 
     std::unique_ptr<vaultfs::IFsWatcher> watcher;
     vaultfs::WatcherKind watcherKind = vaultfs::WatcherKind::None;
+    bool watcherAuto = true; // backend chosen from the filesystem (not forced by configuration)
     QList<vaultfs::FsEvent> pendingEvents;
     bool pendingOverflow = false;
     bool pendingRootLost = false;

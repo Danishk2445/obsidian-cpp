@@ -282,10 +282,13 @@ RootProbe probeRoot(const QByteArray& absRoot)
     return p;
 }
 
-bool isFuseOrNetworkFs(const QByteArray& absPath, quint64* magicOut)
+bool isFuseOrNetworkFs(const QByteArray& absPath, quint64* magicOut, bool* known)
 {
     struct statfs sf {};
-    if (::statfs(absPath.constData(), &sf) != 0)
+    const bool ok = ::statfs(absPath.constData(), &sf) == 0;
+    if (known)
+        *known = ok;
+    if (!ok)
         return false;
     const quint32 magic = quint32(sf.f_type);
     if (magicOut)

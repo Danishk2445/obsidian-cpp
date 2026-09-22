@@ -19,9 +19,9 @@ namespace oc {
 
 using namespace vaultfs;
 
-VaultConfig VaultConfig::fromEnvironment()
+VaultTuning VaultTuning::fromEnvironment()
 {
-    VaultConfig c;
+    VaultTuning c;
     c.watcher = qEnvironmentVariable("OC_VAULT_WATCHER");
     bool ok = false;
     int v = qEnvironmentVariableIntValue("OC_VAULT_POLL_MS", &ok);
@@ -44,7 +44,7 @@ Vault::Impl::Impl(Vault* q_, QString rootDir)
     if (rootCanonical.isEmpty())
         rootCanonical = root;
     rootEnc = encodeName(root);
-    cfg = VaultConfig::fromEnvironment();
+    cfg = VaultTuning::fromEnvironment();
 
     rootNode = new VaultFolderNode;
     byPath.insert(QString(), rootNode);
@@ -835,7 +835,7 @@ void Vault::rescan()
 // =============================================================================================
 // VaultImplAccess
 
-VaultConfig& VaultImplAccess::config(Vault& v) { return v.d->cfg; }
+VaultTuning& VaultImplAccess::tuning(Vault& v) { return v.d->cfg; }
 
 QString VaultImplAccess::watcherBackend(const Vault& v)
 {
