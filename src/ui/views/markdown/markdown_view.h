@@ -13,6 +13,7 @@ namespace oc {
 
 class Document;
 class EditorSearchBar;
+class EditorSuggest;
 class FoldStore;
 class InlineTitle;
 class ViewRegistry;
@@ -53,18 +54,23 @@ public:
     void showSearch(bool replace); // editor:open-search / editor:open-search-replace
     EditorSearchBar* searchBar() const { return m_searchBar; }
     InlineTitle* inlineTitle() const { return m_title; }
+    EditorSuggest* editorSuggest() const { return m_suggest; }
     bool save();                 // editor:save-file
     void applySettings();        // re-read the vault config (readable line length, folding, ...)
 
     // What a click on a #tag does (Obsidian opens the global search with "tag:#tag"). Folds are
     // remembered in the session's FoldStore (a child object of the VaultSession).
     static void setTagHandler(std::function<void(const QString& tag, MarkdownView* from)> handler);
+    // Obsidian's openLinkText: follow a link written in `sourcePath` (kind as EditorView::linkActivated;
+    // URLs go to the desktop, unresolved notes are created, "#sub" alone targets the source note).
+    static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, bool newLeaf);
 
 signals:
     void modeChanged(oc::EditorView::Mode mode);
 
 private:
     void openLink(const QString& target, int kind, bool newLeaf);
+    void addSpellingActions(QMenu* menu, qsizetype pos);
     void navigateToSubpath(const QString& subpath);
     void renameFromTitle(const QString& newName);
     FoldStore* foldStore() const;
@@ -76,9 +82,17 @@ private:
     EditorView* m_editor;
     EditorSearchBar* m_searchBar;
     InlineTitle* m_title;
+    EditorSuggest* m_suggest;
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
+    QMetaObject::Connection m_configConn;
+    QMetaObject::Connection m_typingConn;
+    QMetaObject::Connection m_resolvedConn;
     bool m_restoringFolds = false;
+    bool m_previewAttached = false;
+    bool m_spellcheck = false; // vault config "spellcheck" (applySettings)
+    bool m_typing = false;     // the last change was typing at m_typingPos (spellcheck skips that word)
+    qsizetype m_typingPos = -1;
 };
 
 // Registers the "markdown" view type for .md files.

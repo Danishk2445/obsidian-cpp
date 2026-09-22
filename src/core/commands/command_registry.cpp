@@ -206,6 +206,22 @@ bool HotkeyDispatcher::tryDispatch(QObject* target, QKeyEvent* ke, bool execute)
         return false;
     if (insideCapturingOverlay(w))
         return false;
+    // An open editor suggest popup owns the navigation keys of its editor.
+    if (w->property("ocSuggestActive").toBool()) {
+        switch (ke->key()) {
+        case Qt::Key_Up:
+        case Qt::Key_Down:
+        case Qt::Key_PageUp:
+        case Qt::Key_PageDown:
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+        case Qt::Key_Tab:
+        case Qt::Key_Escape:
+            return false;
+        default:
+            break;
+        }
+    }
     const Hotkey hk = Hotkey::fromEvent(ke);
     if (!hk.isValid())
         return false;

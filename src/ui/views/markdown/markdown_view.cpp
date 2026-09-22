@@ -1,9 +1,17 @@
 #include "ui/views/markdown/markdown_view.h"
 
+#include "ui/views/markdown/attachments.h"
+#include "ui/views/markdown/editor_suggest.h"
+#include "ui/views/markdown/page_preview.h"
+
+#include "editor/live_preview_decorator.h"
+#include "editor/spell/spell_checker.h"
+
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
 #include "core/files/file_manager.h"
+#include "core/metadata/link_resolver.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
@@ -53,6 +61,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     , m_editor(new EditorView(this))
     , m_searchBar(new EditorSearchBar(m_editor, this))
     , m_title(new InlineTitle)
+    , m_suggest(new EditorSuggest(this, m_editor))
 {
     setObjectName(QStringLiteral("ocMarkdownView"));
     auto* v = new QVBoxLayout(this);
@@ -84,6 +93,104 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     });
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, [this] { m_editor->setTopWidget(m_title, m_title->bottomMargin()); });
+
+    // Link resolution for rendering: unresolved-link styling and image embeds.
+    if (LivePreviewDecorator* lp = m_editor->livePreview()) {
+        lp->isResolved = [this](const QString& target) {
+            VaultSession* s = session();
+            MetadataCache* mc = s ? s->metadata() : nullptr;
+            const QString path = LinkResolver::splitSubpath(target).first;
+            if (!mc || path.isEmpty())
+                return true;
+            return !mc->resolver().resolve(path, m_file ? m_file->path() : QString()).isEmpty();
+        };
+        lp->resolveAttachment = [this](const QString& linkpath) -> QString {
+            VaultSession* s = session();
+            MetadataCache* mc = s ? s->metadata() : nullptr;
+            if (!mc || !s->vault())
+                return {};
+            const QString dest = mc->resolver().resolve(LinkResolver::splitSubpath(linkpath).first, m_file ? m_file->path() : QString());
+            return dest.isEmpty() ? QString() : s->vault()->absolutePath(dest);
+        };
+    }
+
+    // Spellcheck (editing modes only, like Chromium's contenteditable spellcheck).
+    m_editor->addDecorationLayer([this](int line, LineDecoration& d) {
+        Document* doc = m_editor->document();
+        if (!m_spellcheck || !doc || m_editor->mode() == EditorView::Mode::Reading)
+            return;
+        int skipCol = -1; // leave the word being typed alone
+        if (m_typing) {
+            const Text& t = doc->text();
+            const qsizetype head = m_editor->cursorPosition();
+            if (t.lineAt(head) == line)
+                skipCol = int(head - t.lineStart(line));
+        }
+        SpellChecker::instance().decorateLine(*doc, line, d, skipCol);
+    });
+    connect(&SpellChecker::instance(), &SpellChecker::dictionaryChanged, this, [this] { m_editor->refreshDecorations(); });
+    connect(m_editor, &EditorView::selectionChanged, this, [this] {
+        if (m_typing && m_editor->cursorPosition() != m_typingPos) {
+            m_typing = false;
+            if (Document* doc = m_editor->document()) {
+                const int line = doc->text().lineAt(std::min<qsizetype>(m_typingPos, doc->text().length()));
+                m_editor->refreshDecorations(line, line + 1);
+            }
+        }
+    });
+    connect(m_editor, &EditorView::contextMenuAboutToShow, this, &MarkdownView::addSpellingActions);
+    attachments::installHooks(); // paste/drop: HTML -> Markdown, URL over selection, attachments
+}
+
+void MarkdownView::addSpellingActions(QMenu* menu, qsizetype pos)
+{
+    Document* doc = m_editor->document();
+    SpellChecker& sc = SpellChecker::instance();
+    if (!m_spellcheck || !doc || mode() == EditorView::Mode::Reading || !sc.available())
+        return;
+    const Text& t = doc->text();
+    const int line = t.lineAt(pos);
+    int from = 0, to = 0;
+    if (!SpellChecker::wordAt(t.lineView(line), int(pos - t.lineStart(line)), &from, &to))
+        return;
+    LineDecoration d;
+    sc.decorateLine(*doc, line, d);
+    const bool flagged = std::any_of(d.marks.cbegin(), d.marks.cend(), [&](const Mark& m) {
+        return m.style == StyleId::SpellError && m.from < to && m.to > from;
+    });
+    if (!flagged)
+        return;
+    const QString word = t.line(line).mid(from, to - from);
+    const qsizetype base = t.lineStart(line);
+    QList<QAction*> actions;
+    const QStringList suggestions = sc.suggestions(word, 6);
+    for (const QString& s : suggestions) {
+        auto* a = new QAction(s, menu);
+        connect(a, &QAction::triggered, this, [this, base, from, to, s, word] {
+            Document* d = m_editor->document();
+            if (!d || d->text().slice(base + from, base + to) != word)
+                return;
+            Transaction tr;
+            tr.changes = ChangeSet::of(ChangeSpec{base + from, base + to, s}, d->text().length());
+            tr.selection = Selection::cursor(base + from + s.size());
+            tr.userEvent = QStringLiteral("input.spellcheck");
+            m_editor->dispatch(tr);
+        });
+        actions << a;
+    }
+    if (suggestions.isEmpty()) {
+        auto* none = new QAction(tr("No suggestions..."), menu);
+        none->setEnabled(false);
+        actions << none;
+    }
+    auto* add = new QAction(tr("Add to dictionary"), menu);
+    connect(add, &QAction::triggered, this, [word] { SpellChecker::instance().addToDictionary(word); });
+    actions << add;
+    auto* sep = new QAction(menu);
+    sep->setSeparator(true);
+    actions << sep;
+    QAction* first = menu->actions().value(0);
+    menu->insertActions(first, actions);
 }
 
 MarkdownView::~MarkdownView()
@@ -112,6 +219,11 @@ void MarkdownView::applySettings()
     const bool showTitle = cfg->flag(QStringLiteral("showInlineTitle"));
     m_title->setVisible(showTitle);
     m_editor->updateTopWidget();
+    const bool spell = cfg->flag(QStringLiteral("spellcheck"));
+    if (spell != m_spellcheck) {
+        m_spellcheck = spell;
+        m_editor->refreshDecorations();
+    }
 }
 
 void MarkdownView::loadFile(TFile* file)
@@ -121,19 +233,31 @@ void MarkdownView::loadFile(TFile* file)
     saveFolds();
     m_foldSave.stop();
     m_editor->setDocument(nullptr);
+    m_suggest->documentChanged();
     m_doc.reset();
     m_file = file;
-    if (VaultSession* s = session(); s && s->vaultConfig()) {
-        static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle"};
-        connect(s->vaultConfig(), &VaultConfig::configChanged, this,
-                [this](const QString& key) {
-                    for (const char* k : keys)
-                        if (key == QLatin1String(k))
-                            applySettings();
-                },
-                Qt::UniqueConnection);
+    if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
+        static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck"};
+        m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
+            for (const char* k : keys)
+                if (key == QLatin1String(k))
+                    applySettings();
+        });
     }
     applySettings();
+    if (MetadataCache* mc = session() ? session()->metadata() : nullptr; mc && !m_resolvedConn) {
+        // links may have become (un)resolved: re-decorate the visible lines
+        m_resolvedConn = connect(mc, &MetadataCache::resolved, this, [this] { m_editor->refreshDecorations(); });
+    }
+    if (!m_previewAttached) {
+        // Page preview: Mod+hover (editing) / hover (reading) over links
+        Workspace* ws = workspace();
+        if (PagePreview* pp = PagePreview::of(ws ? ws->window() : nullptr)) {
+            m_previewAttached = true;
+            pp->attachEditor(m_editor, [this] { return m_file ? m_file->path() : QString(); },
+                             [this] { return mode() == EditorView::Mode::Reading ? QStringLiteral("preview") : QStringLiteral("editor"); });
+        }
+    }
     if (file) {
         DocumentManager* dm = session() ? session()->documents() : nullptr;
         QString err;
@@ -145,6 +269,17 @@ void MarkdownView::loadFile(TFile* file)
                     guard->release(doc);
             });
             m_editor->setDocument(m_doc);
+            m_suggest->documentChanged();
+            disconnect(m_typingConn);
+            m_typing = false;
+            m_typingConn = connect(d, &Document::changed, this, [this](const DocUpdate& u) {
+                if (u.origin == m_editor && u.tr.isUserEvent(QStringLiteral("input.type"))) {
+                    m_typing = true;
+                    m_typingPos = m_editor->cursorPosition();
+                    if (u.tr.selection)
+                        m_typingPos = u.tr.selection->main().head;
+                }
+            });
             restoreFolds();
         } else if (NoticeManager* n = noticesFor(this)) {
             n->show(tr("Failed to open \"%1\": %2").arg(file->path(), err.isEmpty() ? tr("no document manager") : err));
@@ -330,6 +465,17 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
             g_tagHandler(target, this);
         return;
     }
+    const QString t = kind == MdLink ? QUrl::fromPercentEncoding(target.toUtf8()) : target;
+    if (kind != Url && LinkResolver::splitSubpath(t).first.isEmpty()) {
+        navigateToSubpath(LinkResolver::splitSubpath(t).second);
+        return;
+    }
+    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), newLeaf);
+}
+
+void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)
+{
+    enum { WikiLink = 0, Embed = 1, MdLink = 2, Url = 3, Tag = 4 };
     QString t = target;
     if (kind == MdLink)
         t = QUrl::fromPercentEncoding(t.toUtf8());
@@ -338,16 +484,12 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         QDesktopServices::openUrl(QUrl(target));
         return;
     }
-    VaultSession* s = session();
-    Workspace* ws = workspace();
-    if (!s || !ws || !s->vault())
+    VaultSession* s = ws ? ws->session() : nullptr;
+    if (!s || !s->vault())
         return;
-    const auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
-    if (linkpath.isEmpty()) {
-        navigateToSubpath(subpath);
-        return;
-    }
-    const QString source = m_file ? m_file->path() : QString();
+    auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
+    if (linkpath.isEmpty())
+        linkpath = source; // "#Heading" of the source note
     MetadataCache* mc = s->metadata();
     QString dest = mc ? mc->resolver().resolve(linkpath, source, kind == MdLink) : QString();
     TFile* file = dest.isEmpty() ? nullptr : s->vault()->file(dest);
@@ -365,7 +507,7 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         if (!file)
             file = s->vault()->createFile(path, QByteArray(), &err);
         if (!file) {
-            if (NoticeManager* n = noticesFor(this))
+            if (NoticeManager* n = ws->window() ? ws->window()->notices() : nullptr)
                 n->show(tr("Failed to create \"%1\": %2").arg(path, err));
             return;
         }

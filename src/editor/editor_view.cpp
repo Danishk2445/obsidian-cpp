@@ -45,6 +45,8 @@ EditorView::EditorView(QWidget* parent)
 {
     setFrameShape(QFrame::NoFrame);
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
     setAttribute(Qt::WA_InputMethodEnabled);
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     viewport()->setAttribute(Qt::WA_InputMethodEnabled);
@@ -98,6 +100,8 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
     const bool hadFolds = !m_folds.isEmpty();
     m_folds.clear();
     m_hoverLine = -1;
+    m_clipFrom = 0;
+    m_clipTo = -1;
     m_layout.setHiddenLines({});
     if (hadFolds)
         emit foldsChanged();
@@ -375,6 +379,15 @@ QRectF EditorView::caretRectInViewport() const
     return QRectF(docToViewport(r.topLeft()), r.size());
 }
 
+QRectF EditorView::caretRectAt(qsizetype pos) const
+{
+    if (!m_doc)
+        return {};
+    auto* self = const_cast<EditorView*>(this);
+    const QRectF r = self->m_layout.caretRect(std::clamp<qsizetype>(pos, 0, m_doc->text().length()));
+    return QRectF(docToViewport(r.topLeft()), r.size());
+}
+
 void EditorView::scrollToPos(qsizetype pos, bool center)
 {
     if (!m_doc)
@@ -473,6 +486,58 @@ void EditorView::paintEvent(QPaintEvent*)
     }
     p.resetTransform();
     paintFoldIndicators(p);
+    if (m_dropPos >= 0) { // where a drag would drop
+        const QRectF r = caretRectAt(m_dropPos);
+        p.fillRect(QRectF(std::round(r.x()), r.y(), 2, r.height()), t->color(QStringLiteral("--text-accent")));
+    }
+}
+
+void EditorView::dragEnterEvent(QDragEnterEvent* e)
+{
+    if (m_doc && !isReadOnly() && (e->mimeData()->hasUrls() || e->mimeData()->hasText() || e->mimeData()->hasImage())) {
+        e->acceptProposedAction();
+        dragMoveEvent(static_cast<QDragMoveEvent*>(static_cast<QDropEvent*>(e)));
+    } else {
+        e->ignore();
+    }
+}
+
+void EditorView::dragMoveEvent(QDragMoveEvent* e)
+{
+    if (!m_doc || isReadOnly()) {
+        e->ignore();
+        return;
+    }
+    e->acceptProposedAction();
+    const qsizetype pos = positionAt(e->position().toPoint());
+    if (pos != m_dropPos) {
+        m_dropPos = pos;
+        viewport()->update();
+    }
+}
+
+void EditorView::dragLeaveEvent(QDragLeaveEvent*)
+{
+    m_dropPos = -1;
+    viewport()->update();
+}
+
+void EditorView::dropEvent(QDropEvent* e)
+{
+    m_dropPos = -1;
+    viewport()->update();
+    if (!m_doc || isReadOnly()) {
+        e->ignore();
+        return;
+    }
+    const qsizetype pos = positionAt(e->position().toPoint());
+    setSelection(Selection::cursor(pos), false);
+    setFocus(Qt::MouseFocusReason);
+    e->acceptProposedAction();
+    if (EditorHooks::global().runDrop(*this, *e->mimeData(), pos))
+        return;
+    if (e->mimeData()->hasText())
+        pasteText(e->mimeData()->text(), QStringLiteral("input.drop"));
 }
 
 void EditorView::restartBlink()
@@ -523,9 +588,10 @@ void EditorView::focusOutEvent(QFocusEvent* e)
 
 bool EditorView::viewportEvent(QEvent* e)
 {
-    if (e->type() == QEvent::Leave)
+    if (e->type() == QEvent::Leave) {
         setHoverLine(-1);
-    else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
+        updateHoveredLink(QPoint(-1, -1));
+    } else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
         // the top widget's content changed (updateGeometry() posts this to its parent)
         const int w = int(m_layout.contentWidth());
         const qreal h = m_topWidget->isHidden() ? 0
@@ -1502,13 +1568,48 @@ void EditorView::mousePressEvent(QMouseEvent* e)
 
 void EditorView::mouseDoubleClickEvent(QMouseEvent* e) { mousePressEvent(e); }
 
+void EditorView::updateHoveredLink(const QPoint& vp)
+{
+    QString key;
+    int kind = 0;
+    QString target;
+    QRect box;
+    if (m_doc && vp.x() >= 0) {
+        const qsizetype pos = positionAt(vp);
+        if (const auto hit = m_lp->linkAt(pos); hit && hit->to > hit->from) {
+            // positionAt() snaps to the nearest character: only count it when the point is on the link's box
+            const QRectF a = caretRectAt(hit->from);
+            const QRectF b = caretRectAt(hit->to);
+            QRectF r;
+            if (qFuzzyCompare(a.top() + 1, b.top() + 1))
+                r = QRectF(QPointF(a.left(), a.top()), QPointF(b.left(), b.bottom()));
+            else // wrapped over several visual lines: from the start line's top to the end line's bottom
+                r = QRectF(QPointF(m_contentLeft, a.top()), QPointF(m_contentLeft + m_layout.contentWidth(), b.bottom()));
+            if (r.contains(QPointF(vp))) {
+                kind = int(hit->kind);
+                target = hit->target;
+                box = r.toAlignedRect();
+                key = QString::number(kind) + u':' + QString::number(hit->from) + u':' + target;
+            }
+        }
+    }
+    if (key == m_hoverLink)
+        return;
+    m_hoverLink = key;
+    emit linkHovered(target, kind, box);
+}
+
 void EditorView::mouseMoveEvent(QMouseEvent* e)
 {
     if (m_doc && e->buttons() == Qt::NoButton) {
         const QPointF docPt = viewportToDoc(e->position());
         setHoverLine(docPt.y() >= 0 && docPt.y() < m_layout.totalHeight() ? m_layout.lineAtY(docPt.y()) : -1);
         const bool overIndicator = foldLineAtIndicator(e->position().toPoint()) >= 0;
-        viewport()->setCursor(overIndicator ? Qt::ArrowCursor : (m_mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor));
+        updateHoveredLink(e->position().toPoint());
+        const bool overLink = !m_hoverLink.isEmpty() && m_mode == Mode::Reading;
+        viewport()->setCursor(overIndicator ? Qt::ArrowCursor
+                                            : overLink ? Qt::PointingHandCursor
+                                                       : (m_mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor));
     }
     if (!m_doc || m_drag == DragUnit::None || !(e->buttons() & Qt::LeftButton))
         return;
@@ -1634,7 +1735,9 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
     copyA->setEnabled(!m_sel.allEmpty());
     pasteA->setEnabled(!isReadOnly());
     emit contextMenuRequestedAt(e->globalPos(), pos);
-    menu.exec(e->globalPos());
+    emit contextMenuAboutToShow(&menu, pos); // owners add their entries (spelling suggestions first)
+    if (!menu.isEmpty())
+        menu.exec(e->globalPos());
 }
 
 } // namespace oc
