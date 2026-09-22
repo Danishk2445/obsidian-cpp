@@ -131,12 +131,15 @@ protected:
         QTest::qWait(20);
         return mv;
     }
-    // viewport point in the middle of the first occurrence of `text` (+ offset chars)
-    static QPoint pointAt(EditorView* e, const QString& text, int offset = 3)
+    // viewport point in the middle of the first occurrence of `text` as displayed: hidden or replaced
+    // syntax (Reading view shows "[[Other#Sub]]" as "Other > Sub") has no position of its own, so the
+    // middle between the span's edges is used
+    static QPoint pointAt(EditorView* e, const QString& text)
     {
         const qsizetype at = e->document()->text().toString().indexOf(text);
-        const QRectF r = e->caretRectAt(at + offset);
-        return r.center().toPoint();
+        const QRectF a = e->caretRectAt(at);
+        const QRectF b = e->caretRectAt(at + text.size());
+        return QPointF((a.left() + b.left()) / 2, a.center().y()).toPoint();
     }
     static bool linksParsed(EditorView* e, const QString& text)
     {
@@ -165,8 +168,7 @@ TEST_F(PagePreviewTest, ReadingViewHoverShowsSection)
     MarkdownView* mv = open("Welcome.md", EditorView::Mode::Reading);
     ASSERT_TRUE(mv);
     EditorView* e = mv->editor();
-    if (!linksParsed(e, "[[Other"))
-        GTEST_SKIP() << "the interim inline parser finds no links";
+    ASSERT_TRUE(linksParsed(e, "[[Other"));
     EXPECT_FALSE(preview->requiresMod("preview"));
     EXPECT_TRUE(preview->requiresMod("editor"));
     hover(e, pointAt(e, "Other#Sub"));
@@ -192,9 +194,8 @@ TEST_F(PagePreviewTest, EditorNeedsMod)
     MarkdownView* mv = open("Welcome.md", EditorView::Mode::Source);
     ASSERT_TRUE(mv);
     EditorView* e = mv->editor();
-    if (!linksParsed(e, "[[Other"))
-        GTEST_SKIP() << "the interim inline parser finds no links";
-    hover(e, pointAt(e, "[[Other]]", 4));
+    ASSERT_TRUE(linksParsed(e, "[[Other"));
+    hover(e, pointAt(e, "[[Other]]"));
     QTest::qWait(60);
     EXPECT_TRUE(preview->popovers().isEmpty()); // no Mod: nothing
     QTest::keyPress(e, Qt::Key_Control);
@@ -213,15 +214,14 @@ TEST_F(PagePreviewTest, NestedPopovers)
     MarkdownView* mv = open("Welcome.md", EditorView::Mode::Reading);
     ASSERT_TRUE(mv);
     EditorView* e = mv->editor();
-    if (!linksParsed(e, "[[Other"))
-        GTEST_SKIP() << "the interim inline parser finds no links";
+    ASSERT_TRUE(linksParsed(e, "[[Other"));
     hover(e, pointAt(e, "Other#Sub"));
     ASSERT_TRUE(QTest::qWaitFor([&] { return preview->popovers().size() == 1; }, 2000));
     HoverPopover* outer = preview->popovers().first();
     EditorView* pe = outer->editor();
     ASSERT_TRUE(QTest::qWaitFor([&] { return pe->isVisible(); }, 1000));
     QTest::qWait(20);
-    hover(pe, pointAt(pe, "[[Third]]", 4));
+    hover(pe, pointAt(pe, "[[Third]]"));
     ASSERT_TRUE(QTest::qWaitFor([&] { return preview->popovers().size() == 2; }, 2000));
     EXPECT_EQ(preview->popovers().last()->file()->path(), "Third.md");
     EXPECT_EQ(preview->popovers().first(), outer); // the outer one stays

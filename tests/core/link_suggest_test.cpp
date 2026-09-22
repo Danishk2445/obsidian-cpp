@@ -295,12 +295,14 @@ TEST_F(LinkSuggestVaultTest, UnresolvedAndAliases)
 {
     const md::CachedMetadata* w = meta->fileCache("Welcome.md");
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!w || w->links.isEmpty() || !o || o->aliases().isEmpty())
-        GTEST_SKIP() << "the interim parser extracts no links/frontmatter";
+    ASSERT_TRUE(w && o);
+    ASSERT_EQ(w->links.size(), 2);
     QList<LinkSuggestion> s = provider->suggestions("missing", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Linktext);
     EXPECT_EQ(s[0].path, "Missing note");
+    if (o->aliases().isEmpty())
+        GTEST_SKIP() << "the interim block parser reads no frontmatter";
     s = provider->suggestions("nick", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Alias);
@@ -370,8 +372,8 @@ TEST_F(LinkSuggestVaultTest, Blocks)
 TEST_F(LinkSuggestVaultTest, Tags)
 {
     const md::CachedMetadata* w = meta->fileCache("Welcome.md");
-    if (!w || w->tags.isEmpty())
-        GTEST_SKIP() << "no tags from the interim parser";
+    ASSERT_TRUE(w);
+    ASSERT_EQ(w->tags.size(), 2);
     const QHash<QString, int> tags = vaultTags(*meta);
     // "#tag" (x2, incl. the parent of #tag/sub) and "#Tag" merge; the more frequent spelling wins
     EXPECT_EQ(tags.value("#tag"), 3);

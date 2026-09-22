@@ -231,8 +231,7 @@ TEST_F(EditorSuggestTest, Footnotes)
 TEST_F(EditorSuggestTest, Tags)
 {
     const md::CachedMetadata* m = meta->fileCache("Folder/Deep note.md");
-    if (!m || m->tags.isEmpty())
-        GTEST_SKIP() << "no tags from the interim parser";
+    ASSERT_TRUE(m && !m->tags.isEmpty());
     MarkdownView* mv = open("Welcome.md");
     ASSERT_TRUE(mv);
     EditorView* e = mv->editor();
