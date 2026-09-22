@@ -117,6 +117,7 @@ private:
     QList<graph_controls_detail::Section*> m_sections;
     SearchInput* m_search = nullptr;
     QWidget* m_searchRow = nullptr;
+    QWidget* m_loading = nullptr; // search progress bar
     QHash<QString, ToggleSwitch*> m_toggles;
     QHash<QString, ValueSlider*> m_sliders;
     QWidget* m_groupsContainer = nullptr;

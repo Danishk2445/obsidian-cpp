@@ -430,7 +430,10 @@ TEST_F(Fixture, HeadlessScreenshots)
     const QString dir = qEnvironmentVariable("OC_GRAPH_SHOT_DIR");
     if (!dir.isEmpty())
         QDir().mkpath(dir);
-    const auto graph = test::makeSyntheticGraph();
+    test::SyntheticGraphOptions options;
+    if (dir.isEmpty())
+        options.notes = 120; // keep the sanitizer runs quick when no PNGs are written
+    const auto graph = test::makeSyntheticGraph(options);
     for (const bool dark : {true, false}) {
         setScheme(dark);
         GraphWidget w;
@@ -451,7 +454,7 @@ TEST_F(Fixture, HeadlessScreenshots)
             for (int x = 0; x < shot.width(); x += 4)
                 differing += shot.pixel(x, y) != bg;
         EXPECT_GT(differing, 500);
-        EXPECT_GT(w.canvas()->lastFrameStats().nodes, 100);
+        EXPECT_GT(w.canvas()->lastFrameStats().nodes, 40);
         if (!dir.isEmpty()) {
             const QString scheme = dark ? QStringLiteral("dark") : QStringLiteral("light");
             shot.save(dir + QStringLiteral("/graph-%1.png").arg(scheme));

@@ -1,6 +1,6 @@
 #include "graph/force_simulation.h"
 
-#include <QtConcurrent/QtConcurrentMap>
+#include "graph/parallel.h"
 
 #include <algorithm>
 #include <limits>
@@ -298,7 +298,7 @@ void ForceSimulation::applyManyBody(double alpha)
         ranges.reserve(size_t(n / kChunk + 1));
         for (int b = 0; b < n; b += kChunk)
             ranges.emplace_back(b, std::min(n, b + kChunk));
-        QtConcurrent::blockingMap(ranges, [this, alpha](const std::pair<int, int>& r) { manyBodyRange(r.first, r.second, alpha); });
+        parallelFor(int(ranges.size()), [&](int k) { manyBodyRange(ranges[size_t(k)].first, ranges[size_t(k)].second, alpha); });
     } else {
         manyBodyRange(0, n, alpha);
     }

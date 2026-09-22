@@ -1,10 +1,11 @@
 #include "ui/graph/graph_render_cache.h"
 
+#include "graph/parallel.h"
+
 #include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
-#include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
 #include <cmath>
@@ -127,12 +128,12 @@ void LabelCache::prepare(const std::vector<Request>& requests)
     const QString family = m_family;
     const QRgb color = m_color;
     auto renderOne = [&](const Request* r) { return render(r->label, family, r->px, r->wrap, color); };
-    std::vector<QImage> images;
+    std::vector<QImage> images(missing.size());
     if (missing.size() < 8) {
-        for (const Request* r : missing)
-            images.push_back(renderOne(r));
+        for (size_t i = 0; i < missing.size(); ++i)
+            images[i] = renderOne(missing[i]);
     } else {
-        images = QtConcurrent::blockingMapped<std::vector<QImage>>(missing, renderOne);
+        graph::parallelFor(int(missing.size()), [&](int i) { images[size_t(i)] = renderOne(missing[size_t(i)]); });
     }
     for (size_t i = 0; i < missing.size(); ++i)
         m_entries.insert(Key{missing[i]->id, missing[i]->px, missing[i]->wrap}, std::move(images[i]));

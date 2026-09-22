@@ -71,9 +71,9 @@ GraphWidget::GraphWidget(Mode mode, QWidget* parent, const graph::SimulationConf
 
 GraphWidget::~GraphWidget()
 {
-    // The canvas holds a QPointer to the runner; stop the simulation thread first.
-    m_canvas->setRunner(nullptr);
+    // Join the simulation thread before touching the connection it emits through.
     m_runner.reset();
+    m_canvas->setRunner(nullptr);
 }
 
 void GraphWidget::setGraph(std::shared_ptr<const graph::GraphData> full)

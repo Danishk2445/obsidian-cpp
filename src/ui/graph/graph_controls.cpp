@@ -18,6 +18,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QTimer>
+#include <QVariantAnimation>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -111,6 +113,62 @@ protected:
 
 private:
     QColor m_color;
+};
+
+// ".mod-search-setting.is-loading .setting-item-control:before": an accent bar that grows from the
+// left edge to the full width and shrinks towards the right (progress-bar keyframes, 1 s,
+// ease-in-out, 300 ms delay).
+class LoadingBar : public QWidget {
+public:
+    explicit LoadingBar(QWidget* parent)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        m_anim.setStartValue(0.0);
+        m_anim.setEndValue(1.0);
+        m_anim.setDuration(1000);
+        m_anim.setLoopCount(-1);
+        m_anim.setEasingCurve(QEasingCurve::InOutQuad);
+        QObject::connect(&m_anim, &QVariantAnimation::valueChanged, this, qOverload<>(&QWidget::update));
+        m_delay.setSingleShot(true);
+        m_delay.setInterval(300);
+        QObject::connect(&m_delay, &QTimer::timeout, &m_anim, [this] { m_anim.start(); });
+        hide();
+    }
+    void setRunning(bool on)
+    {
+        setVisible(on);
+        if (on) {
+            raise();
+            m_delay.start();
+        } else {
+            m_delay.stop();
+            m_anim.stop();
+        }
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        if (m_anim.state() != QAbstractAnimation::Running)
+            return;
+        const double t = m_anim.currentValue().toDouble();
+        double left = 0, right = 0; // 5 %–50 %: grow from the left; 50 %–95 %: shrink to the right
+        if (t < 0.05 || t > 0.95)
+            return;
+        if (t <= 0.5) {
+            right = (t - 0.05) / 0.45 * width();
+        } else {
+            right = width();
+            left = (t - 0.5) / 0.45 * width();
+        }
+        QPainter p(this);
+        p.fillRect(QRectF(left, 0, right - left, height()), token("--interactive-accent"));
+    }
+
+private:
+    QVariantAnimation m_anim;
+    QTimer m_delay;
 };
 
 QWidget* settingRow(QWidget* parent, bool column, QBoxLayout** layout)
@@ -650,8 +708,11 @@ void GraphControls::focusSearch()
 
 void GraphControls::setSearching(bool searching)
 {
-    m_searchRow->setProperty("ocLoading", searching);
-    m_searchRow->update();
+    if (!m_loading)
+        m_loading = new LoadingBar(m_searchRow);
+    // Along the top edge of the input.
+    m_loading->setGeometry(m_search->geometry().left(), m_search->geometry().top(), m_search->width(), 2);
+    static_cast<LoadingBar*>(m_loading)->setRunning(searching);
 }
 
 void GraphControls::setInSidebar(bool inSidebar)

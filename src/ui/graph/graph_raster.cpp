@@ -1,12 +1,11 @@
 #include "ui/graph/graph_raster.h"
 
+#include "graph/parallel.h"
+
 #include <QPainter>
-#include <QThreadPool>
-#include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 
 namespace oc::graph_raster {
 
@@ -117,9 +116,7 @@ void forBands(int height, Fn&& fn)
         fn(0, height);
         return;
     }
-    std::vector<int> bandIndex(static_cast<size_t>(bands));
-    std::iota(bandIndex.begin(), bandIndex.end(), 0);
-    QtConcurrent::blockingMap(bandIndex, [&](int b) { fn(height * b / bands, height * (b + 1) / bands); });
+    graph::parallelFor(bands, [&](int b) { fn(height * b / bands, height * (b + 1) / bands); });
 }
 
 } // namespace
@@ -131,7 +128,7 @@ bool supportsDirect(const QImage& image)
 
 int bandCount(int height)
 {
-    const int threads = std::max(1, QThreadPool::globalInstance()->maxThreadCount());
+    const int threads = graph::parallelWorkers();
     return std::clamp(height / 32, 1, std::min(threads, 32));
 }
 
