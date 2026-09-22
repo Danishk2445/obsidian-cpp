@@ -316,6 +316,10 @@ TEST(InlineObsidian, Footnotes)
     EXPECT_DUMP("^[a [b] c]", R"x((InlineFootnote (FootnoteDelim "^[") "a [b] c" (FootnoteDelim "]")))x");
     EXPECT_DUMP("^[see [[Note]]]", R"x((InlineFootnote (FootnoteDelim "^[") "see " (WikiLink{target="Note"} (WikiOpen "[[") (WikiTarget "Note") (WikiClose "]]")) (FootnoteDelim "]")))x");
     EXPECT_DUMP("^[unclosed", R"x("^[unclosed")x");
+    // a bare URL inside an inline footnote ends before its ']' (GFM would otherwise take the ']')
+    EXPECT_DUMP("^[see https://example.com/a] and www.x.com]",
+                R"x((InlineFootnote (FootnoteDelim "^[") "see " (BareUrl "https://example.com/a") (FootnoteDelim "]")) " and " (BareUrl{www} "www.x.com]"))x");
+    EXPECT_DUMP("^[see www.x.com/(a)]", R"x((InlineFootnote (FootnoteDelim "^[") "see " (BareUrl{www} "www.x.com/(a)") (FootnoteDelim "]")))x");
 }
 
 TEST(InlineObsidian, BlockIds)
@@ -363,6 +367,10 @@ TEST(InlineObsidian, ReferenceLinks)
     EXPECT_EQ(dump("[Other   One]"), R"x((Link{dest="/o" ref="other one"} (LinkOpen "[") "Other   One" (LinkClose "]")))x");
     EXPECT_EQ(dump("[undefined] and [x][undefined]"), R"x("[undefined] and [x][undefined]")x");
     EXPECT_EQ(dump("![alt][ref]"), R"x((Image{dest="/url" title="T" ref="ref"} (LinkOpen "![") "alt" (LinkClose "][ref]")))x");
+    // a blank second label falls back to the link text (cmark); only spaces, tabs and line endings
+    // are blank: a no-break space is a label of its own
+    EXPECT_EQ(dump("[ref][ ] x"), R"x((Link{dest="/url" title="T" ref="ref"} (LinkOpen "[") "ref" (LinkClose "][ ]")) " x")x");
+    EXPECT_EQ(dump("[ref][ ] x"), "\"[ref][ ] x\"");
 }
 
 TEST(InlineObsidian, Images)

@@ -154,7 +154,8 @@ private:
     std::vector<Delim> m_delims;
     qint32 m_delimTop = -1;
     std::vector<Bracket> m_brackets;
-    qint32 m_linkBrackets = 0; // Link/Image brackets on the stack (GFM: no bare URLs inside brackets)
+    qint32 m_linkBrackets = 0;     // Link/Image brackets on the stack (GFM: no bare URLs inside brackets)
+    qint32 m_footnoteBrackets = 0; // "^[" brackets on the stack (bare URLs inside stop at ']')
     qint32 m_lastEnd = 0;      // end of the last node (lower bound for trailing whitespace)
     qint32 m_blockIdFrom = -1;
     qint32 m_blockIdTo = -1;
@@ -187,6 +188,7 @@ private:
     NextFinder m_nextWikiClose;   // "]]"
     NextFinder m_nextWikiOpen;    // "[["
     NextFinder m_nextNewline;     // '\n'
+    NextFinder m_nextCloseBracket; // ']' (bare URLs inside inline footnotes)
     qint32 m_noDisplayCloseFrom = -1; // no "$$" closer from this offset on
     HtmlScanMemo m_htmlMemo;
 
@@ -455,12 +457,16 @@ void Parser::pushBracket(BracketKind kind, qint32 pos, qint32 textFrom)
     m_brackets.push_back(b);
     if (kind != BracketKind::Footnote)
         ++m_linkBrackets;
+    else
+        ++m_footnoteBrackets;
 }
 
 void Parser::popBracket()
 {
     if (m_brackets.back().kind != BracketKind::Footnote)
         --m_linkBrackets;
+    else
+        --m_footnoteBrackets;
     m_brackets.pop_back();
 }
 
@@ -554,7 +560,12 @@ qint32 Parser::onCloseBracket(qint32 i)
         qint32 refEnd = after;
         bool haveLabel = false;
         if (le >= 0) {
-            raw = QStringView(m_str).mid(lf, lt - lf).trimmed();
+            // only spaces, tabs and line endings are trimmed ("[x][ ]" has a non-empty label)
+            while (lf < lt && (s[lf] == u' ' || s[lf] == u'\t' || s[lf] == u'\n' || s[lf] == u'\r'))
+                ++lf;
+            while (lt > lf && (s[lt - 1] == u' ' || s[lt - 1] == u'\t' || s[lt - 1] == u'\n' || s[lt - 1] == u'\r'))
+                --lt;
+            raw = QStringView(m_str).mid(lf, lt - lf);
             haveLabel = true;
             refEnd = qint32(le);
         }
@@ -704,14 +715,22 @@ qint32 Parser::onLetter(qint32 i)
     if (m_linkBrackets > 0)
         return i + 1; // GFM: no extended autolinks inside link text
     const char16_t c = s[i];
+    // Inside "^[...]" a bare URL ends before the next ']' so that the footnote still closes (Obsidian
+    // tokenizes the footnote text separately).
+    QStringView view(m_str);
+    if (m_footnoteBrackets > 0) {
+        const qint32 close = m_nextCloseBracket.find(i, n, [this](qint32 k) { return s[k] == u']'; });
+        if (close >= 0)
+            view = view.left(close);
+    }
     qsizetype end = -1;
     if (c == u'w') {
         const char16_t p = at(i - 1);
         if (i == 0 || p == u' ' || p == u'\t' || p == u'\n' || p == u'\v' || p == u'\f' || p == u'\r' || p == u'*' || p == u'_' || p == u'~'
             || p == u'(')
-            end = scanWwwAutolink(m_str, i);
+            end = scanWwwAutolink(view, i);
     } else if (i == 0 || !isAsciiAlpha(s[i - 1])) {
-        end = scanSchemeAutolink(m_str, i);
+        end = scanSchemeAutolink(view, i);
     }
     if (end < 0)
         return i + 1;

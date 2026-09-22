@@ -449,20 +449,24 @@ QString runMarkdownIt(const QString& markdown)
 
 // Tie-breaker for a mismatch with cmark-gfm: its CommonMark core (0.29) has known bugs, e.g. after a
 // link a later '[' re-enables the link openers before it (nested links), the old per-character
-// openers_bottom of process_emphasis, "![^x](y)" read as '!' + link. When two independent CommonMark
-// 0.31 implementations (md4c, markdown-it; both print cmark's XHTML format) agree with each other but
-// not with cmark-gfm's core, cmark-gfm cannot judge the input: if its extensions do not change its
-// output, our HTML must equal theirs; otherwise the input is only counted.
+// openers_bottom of process_emphasis, entities decoded before backslash escapes in link destinations.
+// md4c (CommonMark 0.31, XHTML output = cmark's format) is the second opinion: when it disagrees with
+// cmark-gfm's core and cmark-gfm's extensions do not change its output, our HTML must equal md4c's.
+// When the extensions do change it, neither oracle can judge the input alone; it is only counted if
+// markdown-it (a third implementation) agrees with md4c.
 bool cmarkCoreQuirk(const QString& markdown, const QString& gfmHtml, const QString& ours)
 {
-    static const bool haveOthers = QFile::exists(QStringLiteral("/usr/bin/md2html")) && QFile::exists(QStringLiteral("/usr/bin/markdown-it"));
-    if (!haveOthers)
+    static const bool haveMd4c = QFile::exists(QStringLiteral("/usr/bin/md2html"));
+    static const bool haveMarkdownIt = QFile::exists(QStringLiteral("/usr/bin/markdown-it"));
+    if (!haveMd4c)
         return false;
     const QString core = runCmarkGfm(markdown, false);
     const QString md4c = runTool(QStringLiteral("/usr/bin/md2html"), {QStringLiteral("-x")}, markdown);
-    if (md4c == core || runMarkdownIt(markdown) != md4c)
+    if (md4c == core)
         return false;
-    return core != gfmHtml || ours == md4c;
+    if (core == gfmHtml)
+        return ours == md4c;
+    return haveMarkdownIt && runMarkdownIt(markdown) == md4c;
 }
 
 struct DiffStats {
@@ -557,10 +561,29 @@ bool hasKnownCmarkQuirk(const QString& s)
     for (const char* pair : {"*~", "~*", "_~", "~_"})
         if (s.contains(QLatin1StringView(pair)))
             return true;
-    // cmark 0.29 accepts unbalanced '(' in a link destination
+    // a single '~' (also what an escape leaves of "\~~") is strikethrough in GFM, text in Obsidian
+    for (qsizetype i = 0; i < s.size();) {
+        if (s[i] != u'~') {
+            ++i;
+            continue;
+        }
+        qsizetype k = i;
+        while (k < s.size() && s[k] == u'~')
+            ++k;
+        if (k - i - (i > 0 && s[i - 1] == u'\\' ? 1 : 0) == 1)
+            return true;
+        i = k;
+    }
+    // cmark-gfm reads "![^x](y)" as '!' + a link (footnote handling), CommonMark as an image
+    if (s.contains(QLatin1StringView("![^")))
+        return true;
+    // "^[" opens an Obsidian inline footnote, which changes bracket semantics even when unclosed
+    if (s.contains(QLatin1StringView("^[")))
+        return true;
+    // cmark 0.29 accepts unbalanced '(' in a link destination (which ends at ASCII whitespace only)
     for (qsizetype i = s.indexOf(QLatin1StringView("](")); i >= 0; i = s.indexOf(QLatin1StringView("]("), i + 1)) {
         int depth = 0;
-        for (qsizetype k = i + 2; k < s.size() && !QChar(s[k]).isSpace(); ++k)
+        for (qsizetype k = i + 2; k < s.size() && s[k] != u' ' && s[k] != u'\t' && s[k] != u'\n'; ++k)
             depth += s[k] == u'(' ? 1 : s[k] == u')' ? -1 : 0;
         if (depth > 0)
             return true;
@@ -666,5 +689,37 @@ TEST(InlineSpec, RandomDifferentialWithCmarkGfm)
         for (const QString& m : stats.mismatches.mid(0, 40))
             std::printf("[inline-spec] %s\n", qPrintable(m));
         EXPECT_TRUE(stats.mismatches.isEmpty()) << prof.name;
+    }
+}
+
+// Development helper: OC_INLINE_DIFF_FILE=<file> (one input per line, escaped as the mismatch reports
+// print them: "\\" = backslash, "\n" = line break) prints cmark-gfm (with / without extensions), md4c,
+// markdown-it and our HTML for each input, against the "wide+refs" reference definitions.
+TEST(InlineSpec, DiffInputsFromFile)
+{
+    const QString path = qEnvironmentVariable("OC_INLINE_DIFF_FILE");
+    if (path.isEmpty())
+        GTEST_SKIP() << "set OC_INLINE_DIFF_FILE to compare inputs";
+    QFile f(path);
+    ASSERT_TRUE(f.open(QIODevice::ReadOnly));
+    const FuzzProfile prof = fuzzProfiles().last();
+    for (const QString& line : QString::fromUtf8(f.readAll()).split(u'\n', Qt::SkipEmptyParts)) {
+        QString input;
+        for (qsizetype k = 0; k < line.size(); ++k) {
+            if (line[k] == u'\\' && k + 1 < line.size() && (line[k + 1] == u'\\' || line[k + 1] == u'n')) {
+                input += line[k + 1] == u'n' ? QLatin1Char('\n') : QLatin1Char('\\');
+                ++k;
+            } else {
+                input += line[k];
+            }
+        }
+        QList<LinkRefDefinition> refs = prof.refs;
+        const QStringList contents = prepareParagraphs(input, &refs);
+        const InlineTreePtr tree = parseInline(contents.value(0), refs);
+        const QString md = prof.prefix + input;
+        std::printf("IN: %s\n  gfm-ext  %s  gfm-core %s  md4c     %s  mdit     %s  ours     %s  compat   %s  tree: %s\n", qPrintable(line),
+                    qPrintable(runCmarkGfm(md)), qPrintable(runCmarkGfm(md, false)),
+                    qPrintable(runTool(QStringLiteral("/usr/bin/md2html"), {QStringLiteral("-x")}, md)), qPrintable(runMarkdownIt(md)),
+                    qPrintable(test::renderParagraph(*tree)), qPrintable(test::renderParagraph(*tree, true)), qPrintable(test::dumpSexpr(*tree)));
     }
 }
