@@ -1,6 +1,9 @@
 #include "app/application.h"
 
 #include "core/config/config_store.h"
+#include "core/documents/document.h"
+#include "core/documents/local_storage.h"
+#include "editor/editor_view.h"
 #include "core/config/vault_registry.h"
 #include "core/util/busy.h"
 #include "core/vault_session.h"
@@ -50,6 +53,9 @@ int Application::start()
         m_themes->setAccent(QColor(m_opts.accent));
     m_themes->apply();
 
+    if (!m_opts.edit.isEmpty())
+        return startEditHarness();
+
     QString vault = m_opts.vault;
     if (vault.isEmpty() && !m_opts.picker) {
         for (const VaultEntry& e : m_registry->vaults()) {
@@ -65,6 +71,45 @@ int Application::start()
         return 0;
     }
     showPicker();
+    return 0;
+}
+
+int Application::startEditHarness()
+{
+    const QFileInfo fi(m_opts.edit);
+    auto* storage = new LocalFileStorage(fi.absolutePath());
+    auto doc = std::make_shared<Document>(storage, fi.fileName());
+    QString err;
+    if (!doc->load(&err)) {
+        qCritical("oc: cannot open %s: %s", qPrintable(fi.absoluteFilePath()), qPrintable(err));
+        return 1;
+    }
+    auto* view = new EditorView;
+    view->setAttribute(Qt::WA_DeleteOnClose);
+    view->setWindowTitle(fi.fileName() + QStringLiteral(" - Obsidian C++ (editor harness)"));
+    view->setDocument(doc);
+    if (m_opts.mode == u"live")
+        view->setMode(EditorView::Mode::LivePreview);
+    else if (m_opts.mode == u"reading")
+        view->setMode(EditorView::Mode::Reading);
+    view->resize(m_opts.size.isValid() ? m_opts.size : QSize(1000, 800));
+    connect(view, &QObject::destroyed, [storage, doc]() mutable {
+        doc->save();
+        doc.reset();
+        delete storage;
+    });
+    view->show();
+    view->setFocus();
+    if (!m_opts.open.isEmpty()) {
+        // --open :line[:col] positions the caret
+        const QStringList parts = m_opts.open.split(QLatin1Char(':'));
+        const int line = std::clamp(parts.value(1).toInt() - 1, 0, doc->text().lineCount() - 1);
+        const int col = parts.value(2).toInt();
+        view->setCursorPosition(doc->text().lineStart(line) + std::min(col, doc->text().lineLength(line)));
+        view->scrollToPos(view->cursorPosition(), true);
+    }
+    if (!m_opts.screenshot.isEmpty())
+        finishHeadless(view);
     return 0;
 }
 
