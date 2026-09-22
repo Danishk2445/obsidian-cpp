@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 
 namespace oc::md::scan {
 
@@ -77,21 +78,16 @@ bool isTagNameChar(QChar c) { return isAsciiLetter(c) || isAsciiDigit(c) || c ==
 bool isAttrNameStart(QChar c) { return isAsciiLetter(c) || c == u'_' || c == u':'; }
 bool isAttrNameChar(QChar c) { return isAsciiLetter(c) || isAsciiDigit(c) || c == u'_' || c == u'.' || c == u':' || c == u'-'; }
 
-// Complete open tag at pos (s[pos] == '<'); returns the end position or -1. Type-1 tag names are
-// excluded, as the spec requires for start condition 7.
+// Complete open tag at pos (s[pos] == '<'); returns the end position or -1. Like cmark, type-1
+// tag names are not excluded here (they are caught by start condition 1 first when it applies).
 int scanOpenTag(QStringView s, int pos)
 {
     const int n = int(s.size());
     int i = pos + 1;
     if (i >= n || !isTagNameStart(s[i]))
         return -1;
-    const int nameFrom = i;
     while (i < n && isTagNameChar(s[i]))
         ++i;
-    const QStringView name = s.mid(nameFrom, i - nameFrom);
-    for (const char* ex : {"pre", "script", "style", "textarea"})
-        if (name.compare(QLatin1StringView(ex), Qt::CaseInsensitive) == 0)
-            return -1;
     for (;;) {
         const int wsFrom = i;
         while (i < n && isTableSpace(s[i]))
@@ -347,7 +343,7 @@ int htmlBlockStart(QStringView s, int pos, bool allow7)
         const QLatin1StringView t(tag);
         if (startsWithCiAt(s, i, t)) {
             const int j = i + int(t.size());
-            if (j >= n || s[j] == u' ' || s[j] == u'\t' || s[j] == u'>')
+            if (j >= n || isTableSpace(s[j]) || s[j] == u'>')
                 return 1;
         }
     }
@@ -359,7 +355,7 @@ int htmlBlockStart(QStringView s, int pos, bool allow7)
         while (j < n && (isAsciiLetter(s[j]) || isAsciiDigit(s[j])))
             ++j;
         if (j > nameFrom && isBlockTag(s.mid(nameFrom, j - nameFrom))) {
-            if (j >= n || s[j] == u' ' || s[j] == u'\t' || s[j] == u'>' || (s[j] == u'/' && at(s, j + 1) == u'>'))
+            if (j >= n || isTableSpace(s[j]) || s[j] == u'>' || (s[j] == u'/' && at(s, j + 1) == u'>'))
                 return 6;
         }
     }

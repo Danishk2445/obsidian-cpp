@@ -65,9 +65,11 @@ private slots:
 
     void enterContinuesTabIndentedTaskAndOrdered()
     {
-        auto fx = open("\t- [x] done", 11);
+        // (A tab-indented item needs a parent item: a top-level "\t- x" line is an indented code
+        // block in CommonMark, where Enter must not continue list markup.)
+        auto fx = open("- a\n\t- [x] done", 15);
         QTest::keyClick(fx.view.get(), Qt::Key_Return);
-        QCOMPARE(fx.text(), QStringLiteral("\t- [x] done\n\t- [ ] "));
+        QCOMPARE(fx.text(), QStringLiteral("- a\n\t- [x] done\n\t- [ ] "));
         auto fx2 = open("9. nine", 7);
         QTest::keyClick(fx2.view.get(), Qt::Key_Return);
         QCOMPARE(fx2.text(), QStringLiteral("9. nine\n10. "));

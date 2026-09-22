@@ -142,7 +142,7 @@ void refFeed(RefState& st, RefScratch& sc, QStringView s, int pos, int line, Ref
                         st.bits |= RefState::kNonSpace;
                     ++i;
                 }
-                if (st.n > 999) {
+                if (st.n > 1000) {
                     fail(st, sc, sink);
                     return;
                 }
@@ -151,7 +151,7 @@ void refFeed(RefState& st, RefScratch& sc, QStringView s, int pos, int line, Ref
                 // Line break inside the label.
                 sc.label += u'\n';
                 ++st.n;
-                if (st.n > 999)
+                if (st.n > 1000)
                     fail(st, sc, sink);
                 return;
             }
@@ -228,18 +228,21 @@ void refFeed(RefState& st, RefScratch& sc, QStringView s, int pos, int line, Ref
             return;
         }
 
-        case RefMode::Dest:
-            if (i < n && isTitleOpen(s[i])) {
-                st = RefState{RefMode::Title, quint8(delimCode(s[i]) << RefState::kDelimShift), 0};
+        case RefMode::Dest: {
+            // spnl already crossed the line break; leading spaces of this line are skipped too.
+            const int t = skipSpaces(s, i);
+            if (t < n && isTitleOpen(s[t])) {
+                st = RefState{RefMode::Title, quint8(delimCode(s[t]) << RefState::kDelimShift), 0};
                 sc.titleStart = line;
                 sc.title.clear();
-                ++i;
+                i = t + 1;
                 continue;
             }
             // No title: the definition ended with the previous line; this line starts afresh.
             complete(st, sc, sink, false);
             i = pos;
             continue;
+        }
 
         case RefMode::Title: {
             const QChar close = delimClose(st.bits);
