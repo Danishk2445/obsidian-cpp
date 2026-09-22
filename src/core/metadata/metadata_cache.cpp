@@ -1,5 +1,8 @@
 #include "core/metadata/metadata_cache.h"
 
+#include <QCoreApplication>
+#include <QElapsedTimer>
+
 #include "core/util/busy.h"
 #include "text/codec.h"
 
@@ -50,6 +53,15 @@ void MetadataCache::indexAll(const QStringList& files)
         return;
     }
     parseAsync(md);
+}
+
+bool MetadataCache::waitUntilClean(int timeoutMs)
+{
+    QElapsedTimer clock;
+    clock.start();
+    while (m_pending > 0 && clock.elapsed() < timeoutMs)
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents | QEventLoop::WaitForMoreEvents, 10);
+    return m_pending == 0;
 }
 
 void MetadataCache::parseAsync(const QStringList& paths)

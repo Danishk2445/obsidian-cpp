@@ -8,6 +8,7 @@ oc_add_library(oc_core
     config/vault_config.cpp
     config/vault_registry.cpp
     documents/document.cpp
+    files/file_manager.cpp
     documents/document_manager.cpp
     documents/local_storage.cpp
     fuzzy/fuzzy.cpp
@@ -30,6 +31,7 @@ oc_add_library(oc_core
     vault/vault.cpp
     vault/vault_io.cpp
     vault/vault_sync.cpp
+    vault_bindings.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
   PRIVATE_DEPS KF6::KIOCore SQLite3::SQLite3 zstd::libzstd

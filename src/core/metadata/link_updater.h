@@ -46,6 +46,8 @@ public:
     // Apply edits (any order) to `text`, skipping those whose span no longer holds `expected`.
     // Returns the number applied.
     static int apply(Text& text, QList<Edit> edits);
+    // Percent-encode what would break a markdown link destination (spaces, backslashes, controls).
+    static QString encodeMarkdownDestination(const QString& dest);
     // All files a link path could mean from `sourcePath`, best first (getLinkpathDest).
     static QStringList resolveAll(const LinkResolver& resolver, const QString& linkpath, const QString& sourcePath, bool markdownLink);
 };

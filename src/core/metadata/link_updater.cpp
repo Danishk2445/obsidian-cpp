@@ -79,6 +79,8 @@ QString encodeDestination(const QString& s)
 }
 } // namespace
 
+QString LinkUpdater::encodeMarkdownDestination(const QString& dest) { return encodeDestination(dest); }
+
 LinkUpdater::PathMap LinkUpdater::renameMap(const QString& oldPath, const QString& newPath)
 {
     return [oldPath, newPath](const QString& p) -> QString {

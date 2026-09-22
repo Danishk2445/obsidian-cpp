@@ -30,6 +30,10 @@ public:
     // Initial full index. `files` = every vault file (for link resolution); markdown ones get parsed.
     void indexAll(const QStringList& files);
     bool isReady() const { return m_ready; }
+    // No parse in flight (Obsidian's "clean cache"). waitUntilClean() processes events until then
+    // (bounded) — used before snapshotting links for a rename.
+    bool isClean() const { return m_pending == 0; }
+    bool waitUntilClean(int timeoutMs = 5000);
 
     // Vault events (paths vault-relative).
     void fileCreated(const QString& path);
