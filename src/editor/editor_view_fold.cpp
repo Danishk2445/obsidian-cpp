@@ -69,12 +69,30 @@ bool EditorView::isFoldedAt(int line) const
     return it != m_folds.cend() && it->line == line;
 }
 
+void EditorView::setVisibleLineRange(int from, int to)
+{
+    from = std::max(0, from);
+    if (from == m_clipFrom && to == m_clipTo)
+        return;
+    m_clipFrom = from;
+    m_clipTo = to;
+    applyFolds(false);
+}
+
+double EditorView::documentHeight() const { return m_marginTop + m_layout.totalHeight() + m_marginBottom; }
+
 void EditorView::applyFolds(bool emitChange)
 {
     QList<QPair<int, int>> hidden;
     hidden.reserve(m_folds.size());
     for (const FoldRange& f : std::as_const(m_folds))
         hidden.append({f.line + 1, f.lastLine + 1});
+    // setVisibleLineRange(): everything outside the range is hidden too
+    const int lines = m_layout.lineCount();
+    if (m_clipFrom > 0)
+        hidden.append({0, std::min(m_clipFrom, lines)});
+    if (m_clipTo >= 0 && m_clipTo + 1 < lines)
+        hidden.append({m_clipTo + 1, lines});
     m_layout.setHiddenLines(hidden);
     // Fold start lines get (or lose) their placeholder.
     updateScrollbar();
