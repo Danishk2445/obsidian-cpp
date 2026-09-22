@@ -1,0 +1,88 @@
+#include "ui/shell/ribbon.h"
+
+#include "render/theme/theme.h"
+#include "ui/widgets/icon_button.h"
+
+#include <QPainter>
+#include <QVBoxLayout>
+
+namespace oc {
+
+Ribbon::Ribbon(QWidget* parent)
+    : QWidget(parent)
+{
+    setObjectName(QStringLiteral("ocRibbon"));
+    setFixedWidth(44);
+    auto* v = new QVBoxLayout(this);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(0);
+
+    auto* top = new QWidget(this);
+    top->setFixedHeight(40);
+    top->setProperty("ocDragRegion", true);
+    auto* th = new QHBoxLayout(top);
+    th->setContentsMargins(0, 0, 0, 0);
+    m_toggle = new IconButton(QStringLiteral("sidebar-left"), tr("Collapse"), top);
+    m_toggle->setButtonSize({28, 28});
+    th->addWidget(m_toggle, 0, Qt::AlignCenter);
+    v->addWidget(top);
+
+    auto* actions = new QWidget(this);
+    m_actionsLayout = new QVBoxLayout(actions);
+    m_actionsLayout->setContentsMargins(0, 4, 0, 4);
+    m_actionsLayout->setSpacing(6);
+    m_actionsLayout->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+    v->addWidget(actions);
+    v->addStretch(1);
+
+    auto* bottom = new QWidget(this);
+    m_bottomLayout = new QVBoxLayout(bottom);
+    m_bottomLayout->setContentsMargins(0, 4, 0, 12);
+    m_bottomLayout->setSpacing(6);
+    m_bottomLayout->setAlignment(Qt::AlignBottom | Qt::AlignHCenter);
+    v->addWidget(bottom);
+
+    if (auto* tm = ThemeManager::instance())
+        connect(tm, &ThemeManager::themeChanged, this, qOverload<>(&QWidget::update));
+}
+
+IconButton* Ribbon::makeButton(const QString& id, const QString& icon, const QString& title)
+{
+    auto* b = new IconButton(icon, title, this);
+    b->setButtonSize({28, 28});
+    connect(b, &IconButton::clicked, this, [this, id] { emit actionTriggered(id); });
+    m_actions.push_back({id, b});
+    return b;
+}
+
+IconButton* Ribbon::addAction(const QString& id, const QString& icon, const QString& title)
+{
+    IconButton* b = makeButton(id, icon, title);
+    m_actionsLayout->addWidget(b, 0, Qt::AlignHCenter);
+    return b;
+}
+
+IconButton* Ribbon::addBottomAction(const QString& id, const QString& icon, const QString& title)
+{
+    IconButton* b = makeButton(id, icon, title);
+    m_bottomLayout->addWidget(b, 0, Qt::AlignHCenter);
+    return b;
+}
+
+void Ribbon::setActionHidden(const QString& id, bool hidden)
+{
+    for (auto& [aid, b] : m_actions)
+        if (aid == id)
+            b->setHidden(hidden);
+}
+
+void Ribbon::paintEvent(QPaintEvent*)
+{
+    const ThemePtr t = currentTheme();
+    QPainter p(this);
+    p.fillRect(rect(), t->color(QStringLiteral("--ribbon-background"), t->color(QStringLiteral("--background-secondary"))));
+    // right divider below the header row
+    p.fillRect(QRect(width() - 1, 40, 1, height() - 40), t->color(QStringLiteral("--divider-color")));
+}
+
+} // namespace oc

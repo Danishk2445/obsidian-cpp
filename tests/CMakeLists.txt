@@ -1,0 +1,6 @@
+oc_add_test(render_css_test SOURCES render/css_value_test.cpp DEPS oc_render GUI)
+oc_add_test(core_registry_test SOURCES core/vault_registry_test.cpp DEPS oc_core)
+oc_add_test(spike_text_layout_test SOURCES spikes/text_layout_spike_test.cpp DEPS Qt6::Gui Qt6::Concurrent GUI LABELS spike threads)
+if(OC_WITH_MATH)
+  oc_add_test(spike_math_test SOURCES spikes/math_spike_test.cpp DEPS JKQTMathText6 GUI LABELS spike)
+endif()

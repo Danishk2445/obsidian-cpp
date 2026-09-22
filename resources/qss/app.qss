@@ -1,0 +1,160 @@
+/* Generated per theme by ThemeManager: ${--token} -> resolved color/px, ${px:--token} -> px,
+   ${font:interface|text|mono} -> family. Custom-painted widgets read tokens directly instead. */
+
+QWidget {
+    color: ${--text-normal};
+    selection-background-color: ${--text-selection};
+    selection-color: ${--text-normal};
+}
+
+QWidget[ocBg="primary"] { background: ${--background-primary}; }
+QWidget[ocBg="primary-alt"] { background: ${--background-primary-alt}; }
+QWidget[ocBg="secondary"] { background: ${--background-secondary}; }
+QWidget[ocBg="secondary-alt"] { background: ${--background-secondary-alt}; }
+
+QLabel { background: transparent; }
+QLabel[ocText="muted"] { color: ${--text-muted}; }
+QLabel[ocText="faint"] { color: ${--text-faint}; }
+QLabel[ocText="accent"] { color: ${--text-accent}; }
+QLabel[ocText="error"] { color: ${--text-error}; }
+
+QToolTip {
+    color: ${--text-normal};
+    background: ${--background-secondary};
+    border: 1px solid ${--background-modifier-border-hover};
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+/* ---- scrollbars: 12px track, thumb inset by 3px, rounded ------------------------------------ */
+QScrollBar:vertical { width: 12px; background: transparent; margin: 0; border: none; }
+QScrollBar:horizontal { height: 12px; background: transparent; margin: 0; border: none; }
+QScrollBar::handle:vertical {
+    background: ${--scrollbar-thumb-bg}; min-height: 32px; border-radius: 3px; margin: 3px 3px 3px 3px;
+}
+QScrollBar::handle:horizontal {
+    background: ${--scrollbar-thumb-bg}; min-width: 32px; border-radius: 3px; margin: 3px 3px 3px 3px;
+}
+QScrollBar::handle:hover, QScrollBar::handle:pressed { background: ${--scrollbar-active-thumb-bg}; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; background: none; }
+QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+QAbstractScrollArea::corner { background: transparent; }
+
+/* ---- menus ----------------------------------------------------------------------------------- */
+QMenu {
+    background: ${--background-secondary};
+    border: 1px solid ${--background-modifier-border-hover};
+    padding: 6px;
+}
+QMenu::item {
+    padding: 4px 24px 4px 8px;
+    border-radius: 4px;
+    color: ${--text-normal};
+    background: transparent;
+}
+QMenu::item:selected { background: ${--background-modifier-hover}; }
+QMenu::item:disabled { color: ${--text-faint}; }
+QMenu::separator { height: 1px; background: ${--background-modifier-border}; margin: 6px -6px; }
+QMenu::icon { padding-left: 6px; }
+QMenu::right-arrow { width: 12px; height: 12px; }
+
+/* ---- inputs ---------------------------------------------------------------------------------- */
+QLineEdit, QAbstractSpinBox, QPlainTextEdit[ocInput="true"], QTextEdit[ocInput="true"] {
+    background: ${--background-modifier-form-field};
+    border: 1px solid ${--background-modifier-border};
+    border-radius: 5px;
+    padding: 4px 8px;
+    min-height: 20px;
+    color: ${--text-normal};
+    selection-background-color: ${--text-selection};
+}
+QLineEdit:hover, QAbstractSpinBox:hover { border-color: ${--background-modifier-border-hover}; }
+QLineEdit:focus, QAbstractSpinBox:focus, QPlainTextEdit[ocInput="true"]:focus {
+    border-color: ${--background-modifier-border-focus};
+}
+QLineEdit:disabled { color: ${--text-faint}; }
+QLineEdit[ocFlat="true"] { background: transparent; border: none; padding: 0; }
+
+/* ---- buttons (Obsidian: button / button.mod-cta / button.mod-warning) ------------------------- */
+QPushButton {
+    background: ${--interactive-normal};
+    color: ${--text-normal};
+    border: 1px solid ${--background-modifier-border};
+    border-radius: 5px;
+    padding: 5px 12px;
+    min-height: 18px;
+}
+QPushButton:hover { background: ${--interactive-hover}; }
+QPushButton:pressed { background: ${--interactive-hover}; }
+QPushButton:disabled { color: ${--text-faint}; }
+QPushButton[cta="true"] {
+    background: ${--interactive-accent};
+    color: ${--text-on-accent};
+    border: 1px solid ${--interactive-accent};
+}
+QPushButton[cta="true"]:hover { background: ${--interactive-accent-hover}; border-color: ${--interactive-accent-hover}; }
+QPushButton[warning="true"] {
+    background: ${--background-modifier-error};
+    color: ${--text-on-accent};
+    border: 1px solid ${--background-modifier-error};
+}
+QPushButton[flat="true"], QToolButton {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 4px;
+}
+QPushButton[flat="true"]:hover, QToolButton:hover { background: ${--background-modifier-hover}; }
+QToolButton:checked { background: ${--background-modifier-hover}; }
+
+/* ---- dropdowns --------------------------------------------------------------------------------- */
+QComboBox {
+    background: ${--interactive-normal};
+    border: 1px solid ${--background-modifier-border};
+    border-radius: 5px;
+    padding: 4px 28px 4px 10px;
+    min-height: 20px;
+    color: ${--text-normal};
+}
+QComboBox:hover { background: ${--interactive-hover}; }
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox QAbstractItemView {
+    background: ${--background-secondary};
+    border: 1px solid ${--background-modifier-border-hover};
+    selection-background-color: ${--background-modifier-hover};
+    selection-color: ${--text-normal};
+    outline: none;
+    padding: 4px;
+}
+
+/* ---- sliders --------------------------------------------------------------------------------- */
+QSlider::groove:horizontal { height: 4px; background: ${--slider-track-background}; border-radius: 2px; }
+QSlider::sub-page:horizontal { background: ${--slider-fill-background}; border-radius: 2px; }
+QSlider::handle:horizontal {
+    background: white; width: 16px; height: 16px; margin: -6px 0; border-radius: 8px;
+    border: 1px solid ${--background-modifier-border-hover};
+}
+
+/* ---- splitters ------------------------------------------------------------------------------- */
+QSplitter::handle { background: ${--divider-color}; }
+QSplitter::handle:hover { background: ${--divider-color-hover}; }
+QSplitter::handle:horizontal { width: 1px; }
+QSplitter::handle:vertical { height: 1px; }
+
+/* ---- item views (lists/trees in panes) ----------------------------------------------------------- */
+QAbstractItemView {
+    background: transparent;
+    border: none;
+    outline: none;
+    selection-background-color: ${--nav-item-background-selected};
+    selection-color: ${--nav-item-color-selected};
+}
+QHeaderView::section {
+    background: ${--background-primary};
+    color: ${--text-muted};
+    border: none;
+    border-bottom: 1px solid ${--background-modifier-border};
+    padding: 4px 8px;
+}
+QCheckBox { spacing: 8px; background: transparent; }
+QRadioButton { spacing: 8px; background: transparent; }

@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "configurePresets": [
+    { "name": "base", "hidden": true, "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}" },
+    { "name": "dev", "inherits": "base", "displayName": "Debug + ASan/UBSan",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "OC_SANITIZE": "address;undefined" } },
+    { "name": "rel", "inherits": "base", "displayName": "RelWithDebInfo",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" } },
+    { "name": "tsan", "inherits": "base", "displayName": "RelWithDebInfo + TSan",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "OC_SANITIZE": "thread" } },
+    { "name": "perf", "inherits": "base", "displayName": "Release (perf gates)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" } }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "rel", "configurePreset": "rel" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "perf", "configurePreset": "perf" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "perf" } }, "execution": { "jobs": 16 } },
+    { "name": "rel", "configurePreset": "rel", "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "perf" } }, "execution": { "jobs": 16 } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true },
+      "filter": { "include": { "label": "threads" } } },
+    { "name": "perf", "configurePreset": "perf", "output": { "outputOnFailure": true },
+      "filter": { "include": { "label": "perf" } } }
+  ]
+}
