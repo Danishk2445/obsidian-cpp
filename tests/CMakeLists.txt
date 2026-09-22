@@ -10,3 +10,6 @@ oc_add_test(core_document_test SOURCES core/document_test.cpp DEPS oc_core Qt6::
 oc_add_test(editor_view_test SOURCES editor/editor_view_test.cpp DEPS oc_editor QT)
 oc_add_test(perf_editor_test SOURCES perf/editor_perf_test.cpp DEPS oc_editor Qt6::Test GUI LABELS perf)
 oc_add_test(core_commands_test SOURCES core/commands_test.cpp DEPS oc_core Qt6::Test GUI)
+oc_add_test(core_moment_test SOURCES core/moment_format_test.cpp DEPS oc_core)
+oc_add_test(core_fuzzy_test SOURCES core/fuzzy_test.cpp DEPS oc_core)
+oc_add_test(perf_fuzzy_test SOURCES perf/fuzzy_perf_test.cpp DEPS oc_core LABELS perf)

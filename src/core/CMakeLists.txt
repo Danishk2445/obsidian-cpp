@@ -8,6 +8,8 @@ oc_add_library(oc_core
     config/vault_registry.cpp
     documents/document.cpp
     documents/local_storage.cpp
+    fuzzy/fuzzy.cpp
+    time/moment_format.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets
 )
