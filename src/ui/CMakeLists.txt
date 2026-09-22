@@ -9,6 +9,7 @@ oc_add_library(oc_ui
     shell/ribbon.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
+    views/markdown/attachments.cpp
     views/markdown/editor_search_bar.cpp
     views/markdown/inline_title.cpp
     views/markdown/markdown_commands.cpp

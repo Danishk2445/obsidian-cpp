@@ -1,5 +1,6 @@
 #include "ui/views/markdown/markdown_view.h"
 
+#include "ui/views/markdown/attachments.h"
 #include "ui/views/markdown/editor_suggest.h"
 #include "ui/views/markdown/page_preview.h"
 
@@ -138,6 +139,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
         }
     });
     connect(m_editor, &EditorView::contextMenuAboutToShow, this, &MarkdownView::addSpellingActions);
+    attachments::installHooks(); // paste/drop: HTML -> Markdown, URL over selection, attachments
 }
 
 void MarkdownView::addSpellingActions(QMenu* menu, qsizetype pos)

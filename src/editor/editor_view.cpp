@@ -45,6 +45,8 @@ EditorView::EditorView(QWidget* parent)
 {
     setFrameShape(QFrame::NoFrame);
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
     setAttribute(Qt::WA_InputMethodEnabled);
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     viewport()->setAttribute(Qt::WA_InputMethodEnabled);
@@ -484,6 +486,58 @@ void EditorView::paintEvent(QPaintEvent*)
     }
     p.resetTransform();
     paintFoldIndicators(p);
+    if (m_dropPos >= 0) { // where a drag would drop
+        const QRectF r = caretRectAt(m_dropPos);
+        p.fillRect(QRectF(std::round(r.x()), r.y(), 2, r.height()), t->color(QStringLiteral("--text-accent")));
+    }
+}
+
+void EditorView::dragEnterEvent(QDragEnterEvent* e)
+{
+    if (m_doc && !isReadOnly() && (e->mimeData()->hasUrls() || e->mimeData()->hasText() || e->mimeData()->hasImage())) {
+        e->acceptProposedAction();
+        dragMoveEvent(static_cast<QDragMoveEvent*>(static_cast<QDropEvent*>(e)));
+    } else {
+        e->ignore();
+    }
+}
+
+void EditorView::dragMoveEvent(QDragMoveEvent* e)
+{
+    if (!m_doc || isReadOnly()) {
+        e->ignore();
+        return;
+    }
+    e->acceptProposedAction();
+    const qsizetype pos = positionAt(e->position().toPoint());
+    if (pos != m_dropPos) {
+        m_dropPos = pos;
+        viewport()->update();
+    }
+}
+
+void EditorView::dragLeaveEvent(QDragLeaveEvent*)
+{
+    m_dropPos = -1;
+    viewport()->update();
+}
+
+void EditorView::dropEvent(QDropEvent* e)
+{
+    m_dropPos = -1;
+    viewport()->update();
+    if (!m_doc || isReadOnly()) {
+        e->ignore();
+        return;
+    }
+    const qsizetype pos = positionAt(e->position().toPoint());
+    setSelection(Selection::cursor(pos), false);
+    setFocus(Qt::MouseFocusReason);
+    e->acceptProposedAction();
+    if (EditorHooks::global().runDrop(*this, *e->mimeData(), pos))
+        return;
+    if (e->mimeData()->hasText())
+        pasteText(e->mimeData()->text(), QStringLiteral("input.drop"));
 }
 
 void EditorView::restartBlink()

@@ -166,6 +166,10 @@ protected:
     void mouseReleaseEvent(QMouseEvent* e) override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    void dragEnterEvent(QDragEnterEvent* e) override;
+    void dragMoveEvent(QDragMoveEvent* e) override;
+    void dragLeaveEvent(QDragLeaveEvent* e) override;
+    void dropEvent(QDropEvent* e) override;
     void focusInEvent(QFocusEvent* e) override;
     void focusOutEvent(QFocusEvent* e) override;
     void timerEvent(QTimerEvent* e) override;
@@ -246,6 +250,7 @@ private:
     FoldOptions m_foldOptions;
     QList<FoldRange> m_folds; // sorted by line; may nest
     int m_hoverLine = -1;
+    qsizetype m_dropPos = -1; // drop caret while dragging over the text
     int m_clipFrom = 0;  // setVisibleLineRange()
     int m_clipTo = -1;
     QString m_hoverLink; // linkHovered(): "kind:from:target" of the link under the mouse
