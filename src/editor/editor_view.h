@@ -14,6 +14,7 @@
 namespace oc {
 
 class SourceDecorator;
+class LivePreviewDecorator;
 
 // The Markdown editor widget: a virtualized, custom-painted text view over a shared Document.
 // M1: source mode (block styling). Live preview decorations plug in through LineDecorator (M2).
@@ -21,6 +22,7 @@ class EditorView : public QAbstractScrollArea {
     Q_OBJECT
 public:
     enum class Mode { Source, LivePreview, Reading };
+    LivePreviewDecorator* livePreview() const { return m_lp.get(); }
 
     explicit EditorView(QWidget* parent = nullptr);
     ~EditorView() override;
@@ -104,6 +106,9 @@ signals:
     void scrolled(double top);
     void focusChangedIn(bool focused);
     void contextMenuRequestedAt(const QPoint& globalPos, qsizetype docPos);
+    // A rendered link was clicked (live preview / reading). kind: 0 wikilink, 1 embed, 2 markdown link,
+    // 3 url, 4 tag. newLeaf: Ctrl held.
+    void linkActivated(const QString& target, int kind, bool newLeaf);
 
 protected:
     void paintEvent(QPaintEvent* e) override;
@@ -143,9 +148,15 @@ private:
     std::shared_ptr<Document> m_doc;
     QMetaObject::Connection m_docConn, m_syntaxConn, m_roConn;
     std::unique_ptr<SourceDecorator> m_decorator;
+    std::unique_ptr<LivePreviewDecorator> m_lp;
+    LineDecorator* activeDecorator() const;
+    void syncRevealSelection(const Selection& old);
+    bool handleWidgetClick(const QPointF& docPt);
+    bool handleLinkClick(qsizetype pos, Qt::KeyboardModifiers mods);
     StyleSheetPtr m_styles;
     DocLayout m_layout;
     Selection m_sel;
+    Selection m_revealed; // selection the live preview reveal state currently reflects
     Mode m_mode = Mode::Source;
     bool m_readOnly = false;
     bool m_readable = true;

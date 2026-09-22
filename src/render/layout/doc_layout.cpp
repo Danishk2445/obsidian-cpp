@@ -11,6 +11,9 @@ namespace oc {
 DocLayout::DocLayout() = default;
 DocLayout::~DocLayout() = default;
 
+// ---------------------------------------------------------------------------------------------
+// structure
+// ---------------------------------------------------------------------------------------------
 void DocLayout::setStyleSheet(StyleSheetPtr styles)
 {
     m_styles = std::move(styles);
@@ -23,20 +26,45 @@ void DocLayout::setContentWidth(qreal width)
     if (width == m_width)
         return;
     m_width = width;
-    // Keep measured heights as estimates (they're close) but drop the layouts.
     for (Unit& u : m_units) {
         u.layout.reset();
         u.measured = false;
-        u.height = -1; // width changed: re-estimate (visible lines get measured right away)
+        u.height = -1;
     }
     rebuildHeights();
 }
 
-void DocLayout::setText(const Text& text)
+void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
 {
-    m_text = text;
-    m_units.assign(size_t(text.lineCount()), Unit{});
-    rebuildHeights();
+    QList<BlockRange> blocks;
+    if (m_decorator && toLine > fromLine)
+        m_decorator->blockRanges(fromLine, toLine, blocks);
+    int line = fromLine;
+    for (const BlockRange& b : blocks) {
+        if (b.fromLine < line || b.toLine <= b.fromLine || !b.widget)
+            continue;
+        for (; line < b.fromLine && line < toLine; ++line)
+            out.push_back(Unit{line, 1, nullptr, nullptr, -1, false});
+        Unit u;
+        u.firstLine = b.fromLine;
+        u.lineCount = b.toLine - b.fromLine;
+        u.block = b.widget;
+        out.push_back(u);
+        line = b.toLine;
+    }
+    for (; line < toLine; ++line)
+        out.push_back(Unit{line, 1, nullptr, nullptr, -1, false});
+}
+
+void DocLayout::rebuildIndex()
+{
+    m_lineToUnit.assign(size_t(m_text.lineCount()), 0);
+    for (size_t u = 0; u < m_units.size(); ++u) {
+        const Unit& un = m_units[u];
+        for (int l = 0; l < un.lineCount; ++l)
+            if (size_t(un.firstLine + l) < m_lineToUnit.size())
+                m_lineToUnit[size_t(un.firstLine + l)] = int(u);
+    }
 }
 
 void DocLayout::rebuildHeights()
@@ -47,60 +75,121 @@ void DocLayout::rebuildHeights()
         if (u.layout)
             u.height = u.layout->height;
         else if (u.height < 0)
-            u.height = estimateHeight(int(i));
+            u.height = estimateHeight(u);
         h[i] = u.height;
     }
     m_heights.assign(h);
 }
 
+void DocLayout::setText(const Text& text)
+{
+    m_text = text;
+    m_units.clear();
+    buildUnits(0, text.lineCount(), m_units);
+    rebuildIndex();
+    rebuildHeights();
+}
+
+void DocLayout::restructure(int from, int oldTo, int newTo)
+{
+    // Old units overlapping [from, oldTo) (at least the unit at `from`), expanded to whole units.
+    const int oldLines = int(m_lineToUnit.size());
+    if (m_units.empty() || oldLines == 0) {
+        setText(m_text);
+        return;
+    }
+    const int uFrom = m_lineToUnit[size_t(std::clamp(from, 0, oldLines - 1))];
+    int uTo = m_lineToUnit[size_t(std::clamp(std::max(from, oldTo - 1), 0, oldLines - 1))] + 1;
+    int L0 = m_units[size_t(uFrom)].firstLine;
+    int L1old = m_units[size_t(uTo - 1)].firstLine + m_units[size_t(uTo - 1)].lineCount;
+    const int delta = (newTo - from) - (oldTo - from);
+    int L1new = L1old + delta;
+
+    std::vector<Unit> fresh;
+    for (;;) {
+        fresh.clear();
+        buildUnits(L0, std::min(L1new, m_text.lineCount()), fresh);
+        // A block may extend beyond the rebuilt region: grow the region to its end.
+        int reach = L1new;
+        for (const Unit& u : fresh)
+            reach = std::max(reach, u.firstLine + u.lineCount);
+        if (reach <= L1new || uTo >= int(m_units.size()))
+            break;
+        while (uTo < int(m_units.size()) && m_units[size_t(uTo)].firstLine + delta < reach)
+            ++uTo;
+        L1old = m_units[size_t(uTo - 1)].firstLine + m_units[size_t(uTo - 1)].lineCount;
+        L1new = L1old + delta;
+    }
+    // Fast path: same unit shape (typing inside lines, inline reveal changes) -> drop the layouts only,
+    // keep heights as estimates; no O(lines) index/height rebuild.
+    if (delta == 0 && int(fresh.size()) == uTo - uFrom) {
+        bool same = true;
+        for (int k = 0; k < uTo - uFrom && same; ++k) {
+            const Unit& o = m_units[size_t(uFrom + k)];
+            const Unit& n = fresh[size_t(k)];
+            same = !o.block && !n.block && o.firstLine == n.firstLine && o.lineCount == n.lineCount;
+        }
+        if (same) {
+            for (int k = uFrom; k < uTo; ++k) {
+                m_units[size_t(k)].layout.reset();
+                m_units[size_t(k)].measured = false;
+            }
+            return;
+        }
+    }
+    // Preserve measured heights of unchanged text units where possible (reduces jitter).
+    if (!fresh.empty() && uTo - uFrom == 1 && fresh.size() == 1 && !fresh[0].block && !m_units[size_t(uFrom)].block)
+        fresh[0].height = m_units[size_t(uFrom)].height;
+    for (size_t k = size_t(uTo); k < m_units.size(); ++k)
+        m_units[k].firstLine += delta;
+    m_units.erase(m_units.begin() + uFrom, m_units.begin() + uTo);
+    m_units.insert(m_units.begin() + uFrom, fresh.begin(), fresh.end());
+    rebuildIndex();
+    rebuildHeights();
+}
+
 void DocLayout::replaceLines(const Text& text, int from, int oldTo, int newTo)
 {
     m_text = text;
-    from = std::clamp(from, 0, int(m_units.size()));
-    oldTo = std::clamp(oldTo, from, int(m_units.size()));
-    const int added = newTo - from;
-    const int removed = oldTo - from;
-    if (added == removed) {
-        // Same line count: keep previous heights as estimates (no jitter) until re-measured.
-        for (int i = from; i < oldTo; ++i) {
-            m_units[size_t(i)].layout.reset();
-            m_units[size_t(i)].measured = false;
-        }
-        return;
-    }
-    const double keep = removed > 0 ? m_units[size_t(from)].height : -1;
-    m_units.erase(m_units.begin() + from, m_units.begin() + oldTo);
-    m_units.insert(m_units.begin() + from, size_t(added), Unit{});
-    if (added > 0 && keep > 0)
-        m_units[size_t(from)].height = keep;
-    rebuildHeights();
+    restructure(from, oldTo, newTo);
 }
 
 void DocLayout::invalidateLines(int from, int to)
 {
+    if (m_units.empty())
+        return;
     from = std::max(0, from);
-    to = std::min(to, int(m_units.size()));
-    for (int i = from; i < to; ++i) {
-        Unit& u = m_units[size_t(i)];
-        if (u.layout) {
-            u.layout.reset();
-            u.measured = false;
-        }
-    }
+    to = std::min(to, lineCount());
+    if (from >= to)
+        return;
+    // Drop text layouts; re-query blocks in the region (reveal state may have changed).
+    restructure(from, to, to);
 }
 
 void DocLayout::invalidateAll()
 {
-    for (Unit& u : m_units) {
-        u.layout.reset();
-        u.measured = false;
-        u.height = -1;
-    }
-    if (!m_units.empty() && m_styles)
-        rebuildHeights();
+    if (!m_styles)
+        return;
+    m_units.clear();
+    buildUnits(0, m_text.lineCount(), m_units);
+    rebuildIndex();
+    rebuildHeights();
 }
 
-bool DocLayout::isLaidOut(int line) const { return line >= 0 && line < int(m_units.size()) && m_units[size_t(line)].layout != nullptr; }
+// ---------------------------------------------------------------------------------------------
+// geometry queries
+// ---------------------------------------------------------------------------------------------
+double DocLayout::lineTop(int line) const { return m_units.empty() ? 0 : m_heights.top(unitOfLine(line)); }
+double DocLayout::lineHeight(int line) const { return m_units.empty() ? 0 : m_heights.height(unitOfLine(line)); }
+int DocLayout::lineAtY(double y) const { return m_units.empty() ? 0 : m_units[size_t(m_heights.indexAt(y))].firstLine; }
+bool DocLayout::isLaidOut(int line) const
+{
+    if (m_units.empty())
+        return false;
+    const Unit& u = m_units[size_t(unitOfLine(line))];
+    return u.block ? u.measured : u.layout != nullptr;
+}
+bool DocLayout::isInBlock(int line) const { return !m_units.empty() && m_units[size_t(unitOfLine(line))].block != nullptr; }
 
 int DocLayout::laidOutCount() const
 {
@@ -110,18 +199,20 @@ int DocLayout::laidOutCount() const
     return n;
 }
 
-double DocLayout::estimateHeight(int line)
+double DocLayout::estimateHeight(const Unit& u)
 {
     if (!m_styles || !m_decorator)
         return 24;
+    if (u.block)
+        return u.lineCount * m_styles->line(StyleId::Normal).lineBox;
+    const int line = u.firstLine;
     const StyleId ls = m_decorator->quickLineStyle(line);
     const LineMetrics& lm = m_styles->line(ls);
     const int len = m_text.lineLength(line);
     int visual = 1;
     if (len > 0) {
         const double w = len * lm.avgCharWidth;
-        const double avail = std::max<qreal>(40, m_width - (ls == StyleId::CodeBlock ? m_styles->codePaddingX() : 0));
-        // Account for wrap waste (half an average word per wrapped line).
+        const double avail = std::max<qreal>(40, m_width - (ls == StyleId::CodeBlock ? 2 * m_styles->codePaddingX() : 0));
         visual = std::max(1, int(std::ceil(w / std::max(20.0, avail - 3.0 * lm.avgCharWidth))));
     }
     return visual * lm.lineBox + m_decorator->quickVerticalPadding(line);
@@ -140,6 +231,19 @@ std::shared_ptr<DocLayout::UnitLayout> DocLayout::buildLayout(int line)
 void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
 {
     const LineDecoration& deco = ul.deco;
+    if (deco.hidden) {
+        ul.text = std::make_unique<QTextLayout>(QString(), lm.font);
+        ul.text->beginLayout();
+        QTextLine l = ul.text->createLine();
+        l.setLineWidth(10);
+        l.setPosition(QPointF(0, 0));
+        ul.text->endLayout();
+        VisualLine vl;
+        vl.height = 0;
+        ul.lines = {vl};
+        ul.height = 0;
+        return;
+    }
     ul.text = std::make_unique<QTextLayout>(ul.block.display(), lm.font);
     QTextLayout& tl = *ul.text;
     QTextOption opt;
@@ -150,13 +254,13 @@ void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
     const qreal tab = deco.tabStop > 0 ? deco.tabStop : lm.spaceWidth * m_styles->tabSizeSpaces();
     opt.setTabStopDistance(tab);
     tl.setTextOption(opt);
-    QList<QTextLayout::FormatRange> fmts = ul.block.formats();
-    tl.setFormats(fmts);
+    tl.setFormats(ul.block.formats());
     tl.setCacheEnabled(true);
 
+    const bool code = deco.code != LineDecoration::CodeEdge::None;
     const qreal quoteIndent = deco.quoteDepth > 0 ? deco.quoteDepth * m_styles->quoteIndent() : 0;
-    const qreal x0 = deco.indent + quoteIndent + (deco.code != LineDecoration::CodeEdge::None ? m_styles->codePaddingX() : 0);
-    const qreal avail = std::max<qreal>(20, m_width - x0 - (deco.code != LineDecoration::CodeEdge::None ? m_styles->codePaddingX() : 0));
+    const qreal x0 = deco.indent + quoteIndent + (code ? m_styles->codePaddingX() : 0);
+    const qreal avail = std::max<qreal>(20, m_width - x0 - (code ? m_styles->codePaddingX() : 0));
 
     qreal y = deco.paddingTop;
     qreal hang = -1;
@@ -173,7 +277,6 @@ void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
             if (hd < line.textStart() + line.textLength())
                 hang = std::min(line.cursorToX(hd), avail * 0.5);
         }
-        // CSS-like line box: fixed height, baseline centred on the base font, taller widgets grow it.
         qreal boxH = lm.lineBox;
         qreal extraAbove = 0;
         for (const DisplayBlock::WidgetSlot& w : ul.block.widgets()) {
@@ -208,6 +311,18 @@ void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
         y += lm.lineBox;
     }
     ul.height = y + deco.paddingBottom;
+    if (deco.fixedHeight >= 0) {
+        const qreal shift = (deco.fixedHeight - ul.height) / 2;
+        for (int i = 0; i < ul.lines.size(); ++i) {
+            ul.lines[i].y += shift;
+            ul.lines[i].baseline += shift;
+            if (i < tl.lineCount()) {
+                QTextLine ql = tl.lineAt(i);
+                ql.setPosition(ql.position() + QPointF(0, shift));
+            }
+        }
+        ul.height = deco.fixedHeight;
+    }
 
     ul.widgetRects.clear();
     for (const DisplayBlock::WidgetSlot& w : ul.block.widgets()) {
@@ -227,17 +342,38 @@ int DocLayout::visualLineIndex(const UnitLayout& ul, int dispPos) const
     return 0;
 }
 
+bool DocLayout::measure(int ui)
+{
+    Unit& u = m_units[size_t(ui)];
+    const double before = m_heights.height(ui);
+    if (u.block) {
+        if (u.measured)
+            return false;
+        u.height = u.block->layout(m_width);
+        u.measured = true;
+    } else {
+        if (u.layout)
+            return false;
+        u.layout = buildLayout(u.firstLine);
+        u.height = u.layout->height;
+        u.measured = true;
+    }
+    if (u.height != before) {
+        m_heights.set(ui, u.height);
+        return true;
+    }
+    return false;
+}
+
 const DocLayout::UnitLayout* DocLayout::layoutFor(int line)
 {
-    if (line < 0 || line >= int(m_units.size()) || !m_styles)
+    if (m_units.empty() || !m_styles || line < 0 || line >= lineCount())
         return nullptr;
-    Unit& u = m_units[size_t(line)];
-    if (!u.layout) {
-        u.layout = buildLayout(line);
-        u.measured = true;
-        u.height = u.layout->height;
-        m_heights.set(line, u.layout->height);
-    }
+    const int ui = unitOfLine(line);
+    Unit& u = m_units[size_t(ui)];
+    if (u.block)
+        return nullptr;
+    measure(ui);
     return u.layout.get();
 }
 
@@ -247,20 +383,9 @@ bool DocLayout::ensureLaidOut(double y0, double y1)
         return false;
     bool changed = false;
     int i = m_heights.indexAt(y0);
-    // Iterate while the unit top (with the heights as they are updated) is above y1.
     double top = m_heights.top(i);
     while (i < int(m_units.size()) && top <= y1) {
-        Unit& u = m_units[size_t(i)];
-        if (!u.layout) {
-            const double before = m_heights.height(i);
-            u.layout = buildLayout(i);
-            u.measured = true;
-            u.height = u.layout->height;
-            if (u.layout->height != before) {
-                m_heights.set(i, u.layout->height);
-                changed = true;
-            }
-        }
+        changed |= measure(i);
         top += m_heights.height(i);
         ++i;
     }
@@ -275,10 +400,13 @@ void DocLayout::evictOutside(double y0, double y1)
     for (int i = 0; i < int(m_units.size()); ++i) {
         if (i >= a && i <= b)
             continue;
-        m_units[size_t(i)].layout.reset(); // measured height stays in the height map
+        m_units[size_t(i)].layout.reset();
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// painting
+// ---------------------------------------------------------------------------------------------
 void DocLayout::paint(QPainter* p, const PaintContext& ctx)
 {
     if (m_units.empty() || !m_styles)
@@ -288,8 +416,23 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
     double top = m_heights.top(i);
     const QColor selColor = ss.selection();
     while (i < int(m_units.size()) && top <= ctx.clip.bottom()) {
-        const UnitLayout* ul = layoutFor(i);
+        measure(i);
+        Unit& unit = m_units[size_t(i)];
         const double h = m_heights.height(i);
+        if (unit.block) {
+            unit.block->paint(p, QRectF(0, top, m_width, h));
+            // selection over a block: tint it
+            if (ctx.drawSelection) {
+                const qsizetype bs = m_text.lineStart(unit.firstLine), be = m_text.lineEnd(unit.firstLine + unit.lineCount - 1);
+                for (const SelRange& r : ctx.selection)
+                    if (!r.empty() && r.from() <= bs && r.to() >= be)
+                        p->fillRect(QRectF(0, top, m_width, h), selColor);
+            }
+            top += h;
+            ++i;
+            continue;
+        }
+        const UnitLayout* ul = unit.layout.get();
         if (!ul) {
             top += h;
             ++i;
@@ -297,8 +440,8 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         }
         const LineDecoration& deco = ul->deco;
         const qreal unitTop = top;
+        const int line = unit.firstLine;
 
-        // Code block background (full text-column width, rounded at the block's ends).
         if (deco.code != LineDecoration::CodeEdge::None) {
             const QRectF r(deco.indent, unitTop, m_width - deco.indent, ul->height);
             const qreal rad = ss.codeRadius();
@@ -323,30 +466,32 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             p->fillPath(path, ss.codeBackground());
             p->restore();
         }
-        // Quote bars.
         for (int q = 0; q < deco.quoteDepth; ++q) {
             const qreal x = deco.indent + q * ss.quoteIndent();
             p->fillRect(QRectF(x, unitTop, ss.quoteBarWidth(), ul->height), ss.quoteBarColor());
         }
-        // Horizontal rule (live preview).
+        if (!deco.quoteColumns.isEmpty() && ul->text && ul->text->lineCount() > 0) {
+            const QTextLine first = ul->text->lineAt(0);
+            for (int col : deco.quoteColumns) {
+                const qreal x = first.cursorToX(ul->block.docToDisp(col, -1));
+                p->fillRect(QRectF(std::round(x), unitTop, ss.quoteBarWidth(), ul->height), ss.quoteBarColor());
+            }
+        }
         if (deco.hrRule) {
             const qreal y = unitTop + ul->height / 2;
-            p->fillRect(QRectF(deco.indent, y - ss.hrThickness() / 2, m_width - deco.indent, ss.hrThickness()), ss.hrColor());
+            p->fillRect(QRectF(deco.indent, std::round(y - ss.hrThickness() / 2), m_width - deco.indent, ss.hrThickness()), ss.hrColor());
         }
-        // Indentation guides (at columns, drawn through the whole unit height).
-        if (!deco.guideColumns.isEmpty() && !ul->lines.isEmpty() && ul->text) {
+        if (!deco.guideColumns.isEmpty() && ul->text && ul->text->lineCount() > 0) {
             const QTextLine first = ul->text->lineAt(0);
             for (int col : deco.guideColumns) {
-                const int dp = ul->block.docToDisp(col);
-                const qreal x = first.cursorToX(dp) + ss.listIndent() * 0.25;
+                const qreal x = first.cursorToX(ul->block.docToDisp(col)) + deco.guideOffset;
                 p->fillRect(QRectF(std::round(x), unitTop, 1, ul->height), ss.guideColor());
             }
         }
-
-        // Pills (inline code / tags / highlights with boxes).
         if (!ul->block.boxes().isEmpty() && ul->text) {
             p->save();
             p->setRenderHint(QPainter::Antialiasing);
+            const LineMetrics& lm = ss.line(deco.lineStyle);
             for (const DisplayBlock::Box& b : ul->block.boxes()) {
                 for (int li = 0; li < ul->lines.size(); ++li) {
                     const VisualLine& vl = ul->lines[li];
@@ -356,9 +501,8 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
                     const QTextLine ql = ul->text->lineAt(li);
                     const qreal x1 = ql.cursorToX(s), x2 = ql.cursorToX(e);
                     const qreal pad = b.style.padX;
-                    const LineMetrics& lm = ss.line(deco.lineStyle);
-                    const qreal hh = (lm.ascent + lm.descent) * 1.0;
-                    QRectF r(std::min(x1, x2) - pad, unitTop + vl.baseline - lm.ascent + (lm.ascent + lm.descent - hh) / 2, std::abs(x2 - x1) + 2 * pad, hh);
+                    const qreal hh = lm.ascent + lm.descent;
+                    QRectF r(std::min(x1, x2) - pad, unitTop + vl.baseline - lm.ascent, std::abs(x2 - x1) + 2 * pad, hh);
                     const qreal rad = std::min(b.style.radius, r.height() / 2);
                     QPainterPath path;
                     path.addRoundedRect(r, rad, rad);
@@ -368,11 +512,10 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             p->restore();
         }
 
-        // Selection -> background format ranges drawn by QTextLayout (bidi-correct).
         QList<QTextLayout::FormatRange> selFormats;
         bool extendEol = false;
         if (ctx.drawSelection && ul->text) {
-            const qsizetype ls = m_text.lineStart(i), le = m_text.lineEnd(i);
+            const qsizetype ls = m_text.lineStart(line), le = m_text.lineEnd(line);
             for (const SelRange& r : ctx.selection) {
                 if (r.empty() || r.to() < ls || r.from() > le + 1)
                     continue;
@@ -391,7 +534,7 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         }
         if (ul->text)
             ul->text->draw(p, QPointF(0, unitTop), selFormats);
-        if (extendEol) {
+        if (extendEol && !deco.hidden) {
             const VisualLine& last = ul->lines.last();
             const QTextLine ql = ul->text->lineAt(int(ul->lines.size()) - 1);
             const qreal x = ql.cursorToX(last.dispStart + last.dispLength);
@@ -399,111 +542,131 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             if (right > x)
                 p->fillRect(QRectF(x, unitTop + last.y, right - x, last.height), selColor);
         }
-        // Inline widgets.
         for (int w = 0; w < ul->block.widgets().size(); ++w) {
             const auto& slot = ul->block.widgets()[w];
-            if (!slot.widget)
-                continue;
-            slot.widget->paint(p, ul->widgetRects[w].translated(0, unitTop), ss.line(deco.lineStyle));
+            if (slot.widget)
+                slot.widget->paint(p, ul->widgetRects[w].translated(0, unitTop), ss.line(deco.lineStyle));
         }
         top += h;
         ++i;
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// hit testing & navigation
+// ---------------------------------------------------------------------------------------------
 qsizetype DocLayout::hitTest(const QPointF& pt, int* assocOut)
 {
     if (m_units.empty())
         return 0;
-    const int line = m_heights.indexAt(pt.y());
-    const UnitLayout* ul = layoutFor(line);
-    const qsizetype ls = m_text.lineStart(line);
-    if (!ul || !ul->text)
+    const int ui = m_heights.indexAt(pt.y());
+    measure(ui);
+    const Unit& u = m_units[size_t(ui)];
+    const double top = m_heights.top(ui);
+    if (u.block) {
+        const qsizetype p = u.block->docPosAt(pt - QPointF(0, top));
+        return p >= 0 ? p : m_text.lineStart(u.firstLine);
+    }
+    const UnitLayout* ul = u.layout.get();
+    const qsizetype ls = m_text.lineStart(u.firstLine);
+    if (!ul || !ul->text || ul->deco.hidden)
         return ls;
-    const double top = m_heights.top(line);
     const qreal y = pt.y() - top;
     int li = 0;
-    for (int k = 0; k < ul->lines.size(); ++k) {
+    for (int k = 0; k < ul->lines.size(); ++k)
         if (y >= ul->lines[k].y)
             li = k;
-    }
     if (pt.y() < top)
         li = 0;
     const QTextLine ql = ul->text->lineAt(li);
     int disp = ql.xToCursor(pt.x(), QTextLine::CursorBetweenCharacters);
-    // Clicking past the end of a wrapped line lands at its end, before the wrap.
     const VisualLine& vl = ul->lines[li];
     disp = std::clamp(disp, vl.dispStart, vl.dispStart + vl.dispLength);
-    if (li + 1 < ul->lines.size() && disp == vl.dispStart + vl.dispLength && vl.dispLength > 0) {
-        // the break position belongs to the next visual line; stay on this one when at its end
-        if (assocOut)
-            *assocOut = -1;
-    } else if (assocOut) {
-        *assocOut = 1;
-    }
-    const int col = ul->block.dispToDoc(disp, 1);
-    return ls + col;
+    if (assocOut)
+        *assocOut = (li + 1 < ul->lines.size() && disp == vl.dispStart + vl.dispLength && vl.dispLength > 0) ? -1 : 1;
+    return ls + ul->block.dispToDoc(disp, 1);
 }
 
 QRectF DocLayout::caretRect(qsizetype pos, int assoc)
 {
-    if (m_units.empty())
+    if (m_units.empty() || !m_styles)
         return {};
     pos = std::clamp<qsizetype>(pos, 0, m_text.length());
     const int line = m_text.lineAt(pos);
-    const UnitLayout* ul = layoutFor(line);
-    if (!ul)
-        return {};
+    const int ui = unitOfLine(line);
+    measure(ui);
+    const Unit& u = m_units[size_t(ui)];
+    const double top = m_heights.top(ui);
+    const LineMetrics& normal = m_styles->line(StyleId::Normal);
+    if (u.block || !u.layout)
+        return QRectF(0, top, 1, normal.ascent + normal.descent);
+    const UnitLayout* ul = u.layout.get();
     const int col = int(pos - m_text.lineStart(line));
     const int disp = ul->block.docToDisp(col, assoc);
     int li = visualLineIndex(*ul, disp);
-    // At a soft wrap boundary with assoc < 0 keep the caret at the end of the previous visual line.
     if (assoc < 0 && li > 0 && disp == ul->lines[li].dispStart)
         --li;
-    const QTextLine ql = ul->text->lineAt(li);
+    const QTextLine ql = ul->text->lineAt(std::min(li, ul->text->lineCount() - 1));
     const qreal x = ql.cursorToX(disp);
     const VisualLine& vl = ul->lines[li];
     const LineMetrics& lm = m_styles->line(ul->deco.lineStyle);
-    const double top = m_heights.top(line);
-    const qreal h = lm.ascent + lm.descent;
-    return QRectF(x, top + vl.baseline - lm.ascent, 1, h);
+    return QRectF(x, top + vl.baseline - lm.ascent, 1, lm.ascent + lm.descent);
 }
 
 qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int assoc)
 {
-    const int line = m_text.lineAt(pos);
-    const UnitLayout* ul = layoutFor(line);
-    if (!ul)
+    if (m_units.empty())
         return pos;
-    const int col = int(pos - m_text.lineStart(line));
-    const int disp = ul->block.docToDisp(col, assoc);
-    int li = visualLineIndex(*ul, disp);
-    if (assoc < 0 && li > 0 && disp == ul->lines[li].dispStart)
-        --li;
-    int targetLine = line;
-    int targetVl = li + direction;
-    const UnitLayout* target = ul;
-    if (targetVl < 0) {
-        if (line == 0)
-            return 0;
-        targetLine = line - 1;
-        target = layoutFor(targetLine);
-        targetVl = int(target->lines.size()) - 1;
-    } else if (targetVl >= ul->lines.size()) {
-        if (line + 1 >= int(m_units.size()))
-            return m_text.length();
-        targetLine = line + 1;
-        target = layoutFor(targetLine);
-        targetVl = 0;
+    const int line = m_text.lineAt(pos);
+    const int ui = unitOfLine(line);
+    measure(ui);
+    const Unit& u = m_units[size_t(ui)];
+    int li = 0;
+    int lineCountHere = 1;
+    if (!u.block && u.layout) {
+        const UnitLayout* ul = u.layout.get();
+        const int disp = ul->block.docToDisp(int(pos - m_text.lineStart(line)), assoc);
+        li = visualLineIndex(*ul, disp);
+        if (assoc < 0 && li > 0 && disp == ul->lines[li].dispStart)
+            --li;
+        lineCountHere = int(ul->lines.size());
     }
-    const QTextLine ql = target->text->lineAt(targetVl);
+    const int targetVl = li + direction;
+    if (!u.block && targetVl >= 0 && targetVl < lineCountHere) {
+        const UnitLayout* ul = u.layout.get();
+        const QTextLine ql = ul->text->lineAt(targetVl);
+        int d = ql.xToCursor(goalX, QTextLine::CursorBetweenCharacters);
+        const VisualLine& vl = ul->lines[targetVl];
+        d = std::clamp(d, vl.dispStart, vl.dispStart + vl.dispLength);
+        if (targetVl + 1 < lineCountHere && d == vl.dispStart + vl.dispLength && vl.dispLength > 0)
+            d = std::max(vl.dispStart, d - 1);
+        return m_text.lineStart(line) + ul->block.dispToDoc(d, -1);
+    }
+    // Move to the neighbouring unit.
+    int tu = ui + direction;
+    // skip hidden text units
+    while (tu >= 0 && tu < int(m_units.size()) && !m_units[size_t(tu)].block && (measure(tu), m_units[size_t(tu)].layout && m_units[size_t(tu)].layout->deco.hidden))
+        tu += direction;
+    if (tu < 0)
+        return 0;
+    if (tu >= int(m_units.size()))
+        return m_text.length();
+    measure(tu);
+    const Unit& t = m_units[size_t(tu)];
+    if (t.block) {
+        // Entering a rendered block puts the caret on its first/last source line (it then reveals).
+        const int l = direction > 0 ? t.firstLine : t.firstLine + t.lineCount - 1;
+        return m_text.lineStart(l);
+    }
+    const UnitLayout* tl = t.layout.get();
+    const int tv = direction > 0 ? 0 : int(tl->lines.size()) - 1;
+    const QTextLine ql = tl->text->lineAt(tv);
     int d = ql.xToCursor(goalX, QTextLine::CursorBetweenCharacters);
-    const VisualLine& vl = target->lines[targetVl];
+    const VisualLine& vl = tl->lines[tv];
     d = std::clamp(d, vl.dispStart, vl.dispStart + vl.dispLength);
-    // Don't land after the wrap point of a non-final visual line (it belongs to the next line).
-    if (targetVl + 1 < target->lines.size() && d == vl.dispStart + vl.dispLength && vl.dispLength > 0)
+    if (tv + 1 < tl->lines.size() && d == vl.dispStart + vl.dispLength && vl.dispLength > 0)
         d = std::max(vl.dispStart, d - 1);
-    return m_text.lineStart(targetLine) + target->block.dispToDoc(d, -1);
+    return m_text.lineStart(t.firstLine) + tl->block.dispToDoc(d, -1);
 }
 
 qsizetype DocLayout::visualLineStart(qsizetype pos)
@@ -528,7 +691,6 @@ qsizetype DocLayout::visualLineEnd(qsizetype pos)
     const VisualLine& vl = ul->lines[li];
     int end = vl.dispStart + vl.dispLength;
     if (li + 1 < ul->lines.size()) {
-        // Stop before the trailing space that caused the wrap.
         const QString& d = ul->block.display();
         if (end > vl.dispStart && end - 1 < d.size() && d[end - 1].isSpace())
             --end;
@@ -543,10 +705,18 @@ QList<QRectF> DocLayout::rangeRects(qsizetype from, qsizetype to)
         return out;
     const int la = m_text.lineAt(from), lb = m_text.lineAt(to);
     for (int line = la; line <= lb; ++line) {
-        const UnitLayout* ul = layoutFor(line);
+        const int ui = unitOfLine(line);
+        measure(ui);
+        const Unit& u = m_units[size_t(ui)];
+        const double top = m_heights.top(ui);
+        if (u.block) {
+            out.push_back(QRectF(0, top, m_width, m_heights.height(ui)));
+            line = u.firstLine + u.lineCount - 1;
+            continue;
+        }
+        const UnitLayout* ul = u.layout.get();
         if (!ul)
             continue;
-        const double top = m_heights.top(line);
         const qsizetype ls = m_text.lineStart(line);
         const int a = ul->block.docToDisp(int(std::max(from, ls) - ls));
         const int b = ul->block.docToDisp(int(std::min(to, m_text.lineEnd(line)) - ls));
@@ -561,6 +731,53 @@ QList<QRectF> DocLayout::rangeRects(qsizetype from, qsizetype to)
         }
     }
     return out;
+}
+
+std::optional<DocLayout::WidgetHit> DocLayout::widgetAt(const QPointF& pt)
+{
+    if (m_units.empty())
+        return std::nullopt;
+    const int ui = m_heights.indexAt(pt.y());
+    measure(ui);
+    const Unit& u = m_units[size_t(ui)];
+    if (u.block || !u.layout)
+        return std::nullopt;
+    const UnitLayout* ul = u.layout.get();
+    const double top = m_heights.top(ui);
+    for (int i = 0; i < ul->block.widgets().size(); ++i) {
+        const QRectF r = ul->widgetRects[i].translated(0, top);
+        if (r.adjusted(-2, -2, 2, 2).contains(pt)) {
+            WidgetHit h;
+            h.line = u.firstLine;
+            h.widget = ul->block.widgets()[i].widget;
+            h.rect = r;
+            for (const DisplayBlock::Segment& seg : ul->block.segments()) {
+                if (seg.kind == DisplayBlock::Segment::Kind::Widget && seg.dispFrom == ul->block.widgets()[i].dispPos) {
+                    h.docFrom = seg.docFrom;
+                    h.docTo = seg.docTo;
+                }
+            }
+            return h;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<DocLayout::BlockHit> DocLayout::blockAt(const QPointF& pt)
+{
+    if (m_units.empty())
+        return std::nullopt;
+    const int ui = m_heights.indexAt(pt.y());
+    measure(ui);
+    const Unit& u = m_units[size_t(ui)];
+    if (!u.block)
+        return std::nullopt;
+    BlockHit h;
+    h.fromLine = u.firstLine;
+    h.toLine = u.firstLine + u.lineCount;
+    h.widget = u.block;
+    h.rect = QRectF(0, m_heights.top(ui), m_width, m_heights.height(ui));
+    return h;
 }
 
 } // namespace oc

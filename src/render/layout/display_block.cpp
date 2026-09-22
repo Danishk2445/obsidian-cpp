@@ -19,6 +19,9 @@ quint64 LineDecoration::signature() const
     }
     for (int c : guideColumns)
         h = qHashMulti(h, c);
+    for (int c : quoteColumns)
+        h = qHashMulti(h, c, 7);
+    h = qHashMulti(h, guideOffset, hidden, fixedHeight);
     return h;
 }
 

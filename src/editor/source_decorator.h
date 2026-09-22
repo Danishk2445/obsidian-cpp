@@ -11,7 +11,9 @@
 
 namespace oc {
 
-class Document;
+namespace md {
+class DocSource;
+}
 
 // Block-level styling of the raw Markdown source (Obsidian's "Source mode"): heading lines get
 // heading fonts with faint '#', code/math/frontmatter lines monospace with a code background, list and
@@ -19,8 +21,8 @@ class Document;
 // Inline styling (bold, links, tags...) is layered on by the inline decorator (M2).
 class SourceDecorator : public LineDecorator {
 public:
-    explicit SourceDecorator(const Document* doc) : m_doc(doc) {}
-    void setDocument(const Document* doc) { m_doc = doc; }
+    explicit SourceDecorator(const md::DocSource* doc) : m_doc(doc) {}
+    void setDocument(const md::DocSource* doc) { m_doc = doc; m_fenceCache.clear(); }
     void setStyleSheet(const StyleSheet* ss) { m_styles = ss; }
 
     LineDecoration decorate(int line) override;
@@ -40,7 +42,7 @@ private:
         std::vector<QList<Mark>> marks;
     };
 
-    const Document* m_doc;
+    const md::DocSource* m_doc;
     const StyleSheet* m_styles = nullptr;
     QHash<int, FenceCache> m_fenceCache; // key: fence opening line
 };

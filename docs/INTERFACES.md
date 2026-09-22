@@ -25,3 +25,8 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `WorkspaceLeaf` (Obsidian getLeaf/openFile/setViewState semantics, workspace.json shape).
 - `src/core/vault_session.h` — per-vault service bundle (`vault()`, `documents()`, `commands()`, `workspace()`,
   `viewRegistry()`, `config()`), i.e. Obsidian's `app`.
+
+## M2 (frozen)
+- `src/markdown/inline_tree.h` — `InlineTree` (preorder nodes in content offsets, Mark children for hideable
+  syntax, per-type infos), `LeafContent` (content ↔ document mapping), token precedence rules (header comment).
+- `SyntaxTree::leafContent / tableCellContent / inlineTree(...)` — lazy, cached inline parsing per leaf.

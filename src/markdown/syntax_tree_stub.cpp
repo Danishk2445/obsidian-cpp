@@ -186,6 +186,63 @@ int SyntaxTree::htmlBlockKind(int) const { return 0; }
 const QList<LinkRefDefinition>& SyntaxTree::linkRefDefs() const { return d->refs; }
 int SyntaxTree::frontmatter() const { return -1; }
 QString SyntaxTree::dump(const Text&) const { return QStringLiteral("(stub)"); }
+LeafContent SyntaxTree::leafContent(int leafId, const Text& text) const
+{
+    LeafContent c;
+    if (leafId < 0 || leafId >= nodeCount())
+        return c;
+    const BlockNode& n = node(leafId);
+    for (int l = n.fromLine; l < n.toLine; ++l) {
+        const int col = contentColumn(l);
+        if (!c.text.isEmpty())
+            c.text += QLatin1Char('\n');
+        LeafContent::Segment seg{l, col, int(c.text.size()), text.lineLength(l) - col};
+        c.text += text.lineView(l).mid(col);
+        c.segments.push_back(seg);
+    }
+    return c;
+}
+LeafContent SyntaxTree::tableCellContent(int, int, const Text&) const { return {}; }
+InlineTreePtr SyntaxTree::inlineTree(const LeafContent& content) const
+{
+    auto t = std::make_shared<InlineTree>();
+    t->mutableContent() = content.text;
+    return t;
+}
+
+qsizetype LeafContent::toDoc(int off, const Text& doc) const
+{
+    for (const Segment& s : segments)
+        if (off >= s.contentFrom && off <= s.contentFrom + s.length)
+            return doc.lineStart(s.line) + s.col + (off - s.contentFrom);
+    return segments.isEmpty() ? 0 : doc.lineStart(segments.last().line) + segments.last().col + segments.last().length;
+}
+int LeafContent::fromDoc(qsizetype pos, const Text& doc) const
+{
+    for (const Segment& s : segments) {
+        const qsizetype start = doc.lineStart(s.line) + s.col;
+        if (pos >= start && pos <= start + s.length)
+            return s.contentFrom + int(pos - start);
+    }
+    return -1;
+}
+int LeafContent::lineOf(int off) const
+{
+    for (const Segment& s : segments)
+        if (off <= s.contentFrom + s.length)
+            return s.line;
+    return segments.isEmpty() ? 0 : segments.last().line;
+}
+QString WikiLinkInfo::displayText() const
+{
+    if (!alias.isEmpty())
+        return alias;
+    if (subpath.isEmpty())
+        return target;
+    QString sub = subpath;
+    sub.remove(0, 1);
+    return target.isEmpty() ? sub : target + QStringLiteral(" > ") + sub.replace(QLatin1Char('#'), QStringLiteral(" > "));
+}
 bool SyntaxTree::equivalent(const SyntaxTree&, const SyntaxTree&, QString*) { return true; }
 
 } // namespace oc::md
