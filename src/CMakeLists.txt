@@ -1,5 +1,7 @@
 add_subdirectory(text)
+add_subdirectory(markdown)
 add_subdirectory(core)
 add_subdirectory(render)
+add_subdirectory(editor)
 add_subdirectory(ui)
 add_subdirectory(app)

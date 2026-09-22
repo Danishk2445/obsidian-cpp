@@ -32,6 +32,7 @@ private:
     void applyAppearance(VaultSession* session);
     void populateWindow(MainWindow* w);
     void finishHeadless(QWidget* target);
+    int startEditHarness();
 
     CliOptions m_opts;
     ThemeManager* m_themes;

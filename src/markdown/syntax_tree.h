@@ -12,6 +12,7 @@
 // Coordinates: lines are 0-based indices into oc::Text; columns are UTF-16 offsets within a line.
 // Node ids are preorder indices (0 = Document) and are only valid until the next update().
 
+#include "markdown/inline_tree.h"
 #include "text/changeset.h"
 #include "text/text.h"
 
@@ -249,6 +250,15 @@ public:
     int htmlBlockKind(int id) const;       // CommonMark HTML block start condition 1..7
     const QList<LinkRefDefinition>& linkRefDefs() const;
     int frontmatter() const;               // Frontmatter node id or -1
+
+    // --- inline structure (M2) ----------------------------------------------------------------
+    // Content of a leaf that carries inline markup (Paragraph, headings (text part), CalloutHeader
+    // title, LinkRefDef-free paragraphs...). Tables: use tableCellContent().
+    LeafContent leafContent(int leafId, const Text& text) const;
+    LeafContent tableCellContent(int line, int cellIndex, const Text& text) const;
+    // Parsed inline tree for a content (cached by content hash + link reference definitions).
+    InlineTreePtr inlineTree(const LeafContent& content) const;
+    InlineTreePtr inlineTree(int leafId, const Text& text) const { return inlineTree(leafContent(leafId, text)); }
 
     // --- debugging / tests ------------------------------------------------------------------------
     QString dump(const Text& text) const;  // S-expression of nodes + line roles
