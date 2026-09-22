@@ -377,8 +377,19 @@ void verifyAgainstFullParse(const Store& st)
     Store full;
     fullParse(full, st.text);
     QString why;
-    if (!storesEquivalent(st, full, &why))
-        qFatal("OC_VERIFY_INCREMENTAL: incremental parse differs from a full parse:\n%s", qPrintable(why));
+    int at = -1;
+    if (storesEquivalent(st, full, &why, &at))
+        return;
+    // The text around the first difference with both line roles (incremental / full).
+    QString context;
+    for (int l = std::max(0, at - 4), e = std::min(st.lineCount(), at + 5); at >= 0 && l < e; ++l)
+        context += QStringLiteral("%1%2 %3 / %4 |%5|\n")
+                       .arg(l == at ? QLatin1Char('>') : QLatin1Char(' '))
+                       .arg(l, 6)
+                       .arg(QLatin1StringView(lineRoleName(LineRole(st.lines[size_t(l)].role))))
+                       .arg(QLatin1StringView(lineRoleName(LineRole(full.lines[size_t(l)].role))))
+                       .arg(st.text.lineView(l).left(160).toString());
+    qFatal("OC_VERIFY_INCREMENTAL: incremental parse differs from a full parse:\n%s\n%s", qPrintable(why), qPrintable(context));
 }
 
 // One re-parse run shared by update() and resume().

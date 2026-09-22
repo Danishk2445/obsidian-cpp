@@ -600,11 +600,13 @@ QString SyntaxTree::dump(const Text& text) const
 
 namespace detail {
 
-bool storesEquivalent(const Store& a, const Store& b, QString* why)
+bool storesEquivalent(const Store& a, const Store& b, QString* why, int* line)
 {
-    auto fail = [&](const QString& msg) {
+    auto fail = [&](const QString& msg, int at = -1) {
         if (why)
             *why = msg;
+        if (line)
+            *line = at;
         return false;
     };
     auto nodeStr = [](const Store& s, int id) {
@@ -636,11 +638,12 @@ bool storesEquivalent(const Store& a, const Store& b, QString* why)
                             .arg(QLatin1StringView(lineRoleName(LineRole(y.role))))
                             .arg(y.col)
                             .arg(y.flags)
-                            .arg(y.vmd));
+                            .arg(y.vmd),
+                        l);
         const bool xs = x.state != kNoState && x.state < a.states->size();
         const bool ys = y.state != kNoState && y.state < b.states->size();
         if (xs != ys || (xs && !(a.states->get(x.state) == b.states->get(y.state))))
-            return fail(QStringLiteral("line %1: parser state at line start differs").arg(l));
+            return fail(QStringLiteral("line %1: parser state at line start differs").arg(l), l);
     }
     if (a.nodes.size() != b.nodes.size()) {
         const size_t n = std::min(a.nodes.size(), b.nodes.size());
@@ -652,14 +655,15 @@ bool storesEquivalent(const Store& a, const Store& b, QString* why)
                         .arg(b.nodes.size())
                         .arg(i)
                         .arg(i < a.nodes.size() ? nodeStr(a, int(i)) : QStringLiteral("-"))
-                        .arg(i < b.nodes.size() ? nodeStr(b, int(i)) : QStringLiteral("-")));
+                        .arg(i < b.nodes.size() ? nodeStr(b, int(i)) : QStringLiteral("-")),
+                    i < a.nodes.size() ? a.nodes[i].fromLine : -1);
     }
     for (size_t i = 0; i < a.nodes.size(); ++i) {
         const BlockNode& x = a.nodes[i];
         const BlockNode& y = b.nodes[i];
         if (x.type != y.type || x.fromLine != y.fromLine || x.toLine != y.toLine || x.depth != y.depth || x.flags != y.flags
             || a.parents[i] != b.parents[i] || a.subEnd[i] != b.subEnd[i])
-            return fail(QStringLiteral("node %1 vs %2").arg(nodeStr(a, int(i)), nodeStr(b, int(i))));
+            return fail(QStringLiteral("node %1 vs %2").arg(nodeStr(a, int(i)), nodeStr(b, int(i))), std::min(x.fromLine, y.fromLine));
         auto infoDiff = [&](bool same) {
             return same ? false : true;
         };
@@ -718,7 +722,7 @@ bool storesEquivalent(const Store& a, const Store& b, QString* why)
             break;
         }
         if (differs)
-            return fail(QStringLiteral("node %1: per-type info differs").arg(nodeStr(a, int(i))));
+            return fail(QStringLiteral("node %1: per-type info differs").arg(nodeStr(a, int(i))), x.fromLine);
     }
     if (a.refdefs.size() != b.refdefs.size())
         return fail(QStringLiteral("refdef count %1 vs %2").arg(a.refdefs.size()).arg(b.refdefs.size()));
@@ -726,7 +730,7 @@ bool storesEquivalent(const Store& a, const Store& b, QString* why)
         const LinkRefDefinition& x = a.refdefs[i];
         const LinkRefDefinition& y = b.refdefs[i];
         if (x.label != y.label || x.destination != y.destination || x.title != y.title || x.line != y.line)
-            return fail(QStringLiteral("refdef %1: [%2]@%3 vs [%4]@%5").arg(i).arg(x.label).arg(x.line).arg(y.label).arg(y.line));
+            return fail(QStringLiteral("refdef %1: [%2]@%3 vs [%4]@%5").arg(i).arg(x.label).arg(x.line).arg(y.label).arg(y.line), std::min(x.line, y.line));
     }
     if (a.fmClose != b.fmClose)
         return fail(QStringLiteral("frontmatter close %1 vs %2").arg(a.fmClose).arg(b.fmClose));

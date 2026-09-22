@@ -219,7 +219,8 @@ TreeUpdate incrementalUpdate(Store& st, const Text& newText, const ChangeDesc& c
 bool resumeParse(Store& st, const Text& text, qint64 maxNanos, TreeUpdate* out);
 void computeTightness(Store& st, int listId);
 bool verifyEnabled();
-bool storesEquivalent(const Store& a, const Store& b, QString* why); // SyntaxTree::equivalent
+// SyntaxTree::equivalent; `line` receives the first line where they differ (-1 when unknown).
+bool storesEquivalent(const Store& a, const Store& b, QString* why, int* line = nullptr);
 QString checkInvariants(const Store& st); // "" when the arena is structurally consistent
 
 } // namespace oc::md::detail
