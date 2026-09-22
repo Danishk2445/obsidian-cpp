@@ -6,17 +6,16 @@
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/ribbon.h"
-#include "ui/shell/side_dock.h"
 #include "ui/shell/status_bar.h"
 #include "ui/shell/window_frame.h"
 #include "ui/widgets/icon_button.h"
+#include "ui/workspace/workspace.h"
 
 #include <QCloseEvent>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QJsonObject>
 #include <QPainter>
-#include <QSplitter>
 
 namespace oc {
 
@@ -32,36 +31,14 @@ MainWindow::MainWindow(VaultSession* session, bool frameless, QWidget* parent)
         setWindowFlag(Qt::FramelessWindowHint, true);
     setMinimumSize(400, 300);
 
-    auto* h = new QHBoxLayout(this);
-    h->setContentsMargins(0, 0, 0, 0);
-    h->setSpacing(0);
+    m_layout = new QHBoxLayout(this);
+    m_layout->setContentsMargins(0, 0, 0, 0);
+    m_layout->setSpacing(0);
 
     m_ribbon = new Ribbon(this);
-    h->addWidget(m_ribbon);
-
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_splitter->setChildrenCollapsible(false);
-    m_splitter->setHandleWidth(1);
-    m_left = new SideDock(SideDock::Side::Left, m_splitter);
-    m_right = new SideDock(SideDock::Side::Right, m_splitter);
-    m_left->setMinimumWidth(180);
-    m_right->setMinimumWidth(180);
-    auto* placeholder = new QWidget(m_splitter);
-    m_splitter->insertWidget(0, m_left);
-    m_splitter->insertWidget(1, placeholder);
-    m_splitter->insertWidget(2, m_right);
-    m_center = placeholder;
-    m_splitter->setStretchFactor(0, 0);
-    m_splitter->setStretchFactor(1, 1);
-    m_splitter->setStretchFactor(2, 0);
-    h->addWidget(m_splitter, 1);
-    connect(m_splitter, &QSplitter::splitterMoved, this, [this] {
-        const QList<int> sizes = m_splitter->sizes();
-        if (!isLeftCollapsed())
-            m_leftWidth = sizes.value(0);
-        if (!isRightCollapsed())
-            m_rightWidth = sizes.value(2);
-    });
+    m_layout->addWidget(m_ribbon);
+    m_placeholder = new QWidget(this); // until setWorkspace()
+    m_layout->addWidget(m_placeholder, 1);
 
     // Top-right cluster: right sidebar toggle + window buttons.
     m_topRight = new QWidget(this);
@@ -92,61 +69,67 @@ MainWindow::MainWindow(VaultSession* session, bool frameless, QWidget* parent)
         connect(tm, &ThemeManager::themeChanged, this, qOverload<>(&QWidget::update));
 
     resize(1200, 800);
-    m_splitter->setSizes({m_leftWidth, 600, m_rightWidth});
+    updateToggles();
     updateReserve();
 }
 
-MainWindow::~MainWindow() = default;
-
-void MainWindow::setCenter(QWidget* center)
+MainWindow::~MainWindow()
 {
-    QWidget* old = m_center;
-    m_splitter->replaceWidget(1, center);
-    m_center = center;
-    if (old)
-        old->deleteLater();
-    m_splitter->setStretchFactor(1, 1);
-    updateReserve();
-    layoutFloating();
+    // Tear the workspace down first: its views may still use the session (a child of this window).
+    delete m_workspace.data();
 }
 
-bool MainWindow::isLeftCollapsed() const { return m_left->isHidden(); }
-bool MainWindow::isRightCollapsed() const { return m_right->isHidden(); }
+void MainWindow::setWorkspace(Workspace* workspace)
+{
+    if (m_workspace == workspace)
+        return;
+    delete m_workspace.data();
+    m_workspace = workspace;
+    if (!workspace)
+        return;
+    workspace->setParent(this);
+    QWidget* w = workspace->widget();
+    if (m_placeholder) {
+        m_layout->replaceWidget(m_placeholder, w);
+        m_placeholder->deleteLater();
+        m_placeholder = nullptr;
+    } else {
+        m_layout->addWidget(w, 1);
+    }
+    m_layout->setStretchFactor(w, 1);
+    w->show();
+    connect(workspace, &Workspace::layoutChanged, this, [this] {
+        updateToggles();
+        layoutFloating();
+    });
+    updateToggles();
+    updateReserve();
+}
+
+bool MainWindow::isLeftCollapsed() const { return m_workspace && m_workspace->isSideCollapsed(Workspace::Side::Left); }
+bool MainWindow::isRightCollapsed() const { return !m_workspace || m_workspace->isSideCollapsed(Workspace::Side::Right); }
 
 void MainWindow::setLeftCollapsed(bool collapsed)
 {
-    if (collapsed == isLeftCollapsed())
-        return;
-    if (collapsed)
-        m_leftWidth = m_left->width();
-    m_left->setVisible(!collapsed);
-    if (!collapsed) {
-        QList<int> s = m_splitter->sizes();
-        const int total = s.value(0) + s.value(1);
-        s[0] = m_leftWidth;
-        s[1] = std::max(200, total - m_leftWidth);
-        m_splitter->setSizes(s);
-    }
-    m_ribbon->sidebarToggle()->setToolTip(collapsed ? tr("Expand") : tr("Collapse"));
-    updateReserve();
+    if (m_workspace)
+        m_workspace->setSideCollapsed(Workspace::Side::Left, collapsed);
+    updateToggles();
 }
 
 void MainWindow::setRightCollapsed(bool collapsed)
 {
-    if (collapsed == isRightCollapsed())
-        return;
-    if (collapsed)
-        m_rightWidth = m_right->width();
-    m_right->setVisible(!collapsed);
-    if (!collapsed) {
-        QList<int> s = m_splitter->sizes();
-        const int total = s.value(1) + s.value(2);
-        s[2] = m_rightWidth;
-        s[1] = std::max(200, total - m_rightWidth);
-        m_splitter->setSizes(s);
-    }
-    m_rightToggle->setToolTip(collapsed ? tr("Expand") : tr("Collapse"));
+    if (m_workspace)
+        m_workspace->setSideCollapsed(Workspace::Side::Right, collapsed);
+    updateToggles();
     updateReserve();
+}
+
+void MainWindow::updateToggles()
+{
+    const bool left = isLeftCollapsed(), right = isRightCollapsed();
+    m_ribbon->sidebarToggle()->setToolTip(left ? tr("Expand") : tr("Collapse"));
+    m_ribbon->setCollapsed(left);
+    m_rightToggle->setToolTip(right ? tr("Expand") : tr("Collapse"));
 }
 
 int MainWindow::topRightReserve() const { return m_topRight->sizeHint().width() + 4; }
@@ -155,7 +138,6 @@ void MainWindow::updateReserve()
 {
     const int reserve = topRightReserve();
     const bool centerRightmost = isRightCollapsed();
-    m_right->setHeaderRightReserve(centerRightmost ? 0 : reserve);
     emit topRightReserveChanged(centerRightmost ? reserve : 0, centerRightmost);
     layoutFloating();
 }
@@ -206,11 +188,7 @@ void MainWindow::saveWindowState() const
                   {QStringLiteral("y"), g.y()},
                   {QStringLiteral("width"), g.width()},
                   {QStringLiteral("height"), g.height()},
-                  {QStringLiteral("isMaximized"), isMaximized()},
-                  {QStringLiteral("leftWidth"), m_leftWidth},
-                  {QStringLiteral("rightWidth"), m_rightWidth},
-                  {QStringLiteral("leftCollapsed"), isLeftCollapsed()},
-                  {QStringLiteral("rightCollapsed"), isRightCollapsed()}};
+                  {QStringLiteral("isMaximized"), isMaximized()}};
     JsonFile::write(ClonePaths::vaultConfigDir(m_session->id()) + QStringLiteral("/window.json"), o);
 }
 
@@ -221,11 +199,6 @@ void MainWindow::restoreWindowState()
         return;
     const int w = o.value(QStringLiteral("width")).toInt(1200), hgt = o.value(QStringLiteral("height")).toInt(800);
     resize(std::max(400, w), std::max(300, hgt));
-    m_leftWidth = o.value(QStringLiteral("leftWidth")).toInt(300);
-    m_rightWidth = o.value(QStringLiteral("rightWidth")).toInt(300);
-    m_splitter->setSizes({m_leftWidth, std::max(200, width() - 44 - m_leftWidth - m_rightWidth), m_rightWidth});
-    setLeftCollapsed(o.value(QStringLiteral("leftCollapsed")).toBool());
-    setRightCollapsed(o.value(QStringLiteral("rightCollapsed")).toBool());
     if (o.value(QStringLiteral("isMaximized")).toBool())
         setWindowState(windowState() | Qt::WindowMaximized);
 }

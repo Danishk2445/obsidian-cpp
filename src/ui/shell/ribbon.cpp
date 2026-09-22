@@ -3,6 +3,7 @@
 #include "render/theme/theme.h"
 #include "ui/widgets/icon_button.h"
 
+#include <QEvent>
 #include <QPainter>
 #include <QVBoxLayout>
 
@@ -76,13 +77,36 @@ void Ribbon::setActionHidden(const QString& id, bool hidden)
             b->setHidden(hidden);
 }
 
+void Ribbon::setCollapsed(bool collapsed)
+{
+    if (m_collapsed == collapsed)
+        return;
+    m_collapsed = collapsed;
+    update();
+}
+
 void Ribbon::paintEvent(QPaintEvent*)
 {
     const ThemePtr t = currentTheme();
     QPainter p(this);
-    p.fillRect(rect(), t->color(QStringLiteral("--ribbon-background"), t->color(QStringLiteral("--background-secondary"))));
+    const QColor bg = t->color(QStringLiteral("--ribbon-background"), t->color(QStringLiteral("--background-secondary")));
+    // .workspace-ribbon.mod-left.is-collapsed uses --ribbon-background-collapsed.
+    p.fillRect(rect(), m_collapsed ? t->color(QStringLiteral("--ribbon-background-collapsed"), bg) : bg);
+    // The header part (.workspace-ribbon.mod-left:before) takes the title bar colors, brighter while the
+    // window is focused, with a bottom border like the tab headers next to it.
+    const bool focused = window() && window()->isActiveWindow();
+    p.fillRect(QRect(0, 0, width(), 40),
+               t->color(focused ? QStringLiteral("--titlebar-background-focused") : QStringLiteral("--titlebar-background"), bg));
+    p.fillRect(QRect(0, 39, width(), 1), t->color(QStringLiteral("--tab-outline-color")));
     // right divider below the header row
     p.fillRect(QRect(width() - 1, 40, 1, height() - 40), t->color(QStringLiteral("--divider-color")));
+}
+
+void Ribbon::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::ActivationChange)
+        update();
+    QWidget::changeEvent(e);
 }
 
 } // namespace oc
