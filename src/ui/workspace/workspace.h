@@ -132,6 +132,20 @@ public:
     void loadLayout();                     // restore from config (or default layout)
     void requestSaveLayout();              // debounced write of workspace.json to the clone config
 
+    // ---- M1 additions (workspace:* commands) — additive, not part of the original freeze ----------
+    // Obsidian duplicateLeaf(): a new leaf (per mode) showing the same view state, eState and history.
+    WorkspaceLeaf* duplicateLeaf(WorkspaceLeaf* leaf, NewLeaf mode);
+    WorkspaceLeaf* newTab();     // workspace:new-tab — appends an empty tab to the most recent root group
+    void nextTab();              // workspace:next-tab — wraps within the active leaf's group
+    void previousTab();          // workspace:previous-tab
+    void goToTab(int index);     // workspace:goto-tab-N (0-based; ignored when out of range)
+    void goToLastTab();          // workspace:goto-last-tab
+    void closeActiveLeaf();      // workspace:close — like Obsidian, a pinned leaf is unpinned instead
+    void togglePinActiveLeaf();  // workspace:toggle-pin
+    bool canUndoCloseLeaf() const;
+    int sideWidth(Side side) const;
+    void setSideWidth(Side side, int px);
+
 signals:
     void activeLeafChanged(oc::WorkspaceLeaf* leaf);
     void fileOpened(oc::TFile* file);

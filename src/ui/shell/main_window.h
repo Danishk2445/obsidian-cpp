@@ -3,7 +3,6 @@
 #include <QPointer>
 #include <QWidget>
 
-class QSplitter;
 class QHBoxLayout;
 
 namespace oc {
@@ -12,14 +11,14 @@ class IconButton;
 class NoticeManager;
 class OverlayLayer;
 class Ribbon;
-class SideDock;
 class StatusBar;
 class VaultSession;
 class WindowControls;
 class WindowFrameController;
+class Workspace;
 
 // One window per vault. Layout mirrors Obsidian's .workspace:
-//   [ribbon 44px][left sidedock][root split (tab groups)][right sidedock]   + floating status bar
+//   [ribbon 44px][workspace: left sidedock | root split (tab groups) | right sidedock] + floating status bar
 // With the default "hidden" frame the window is frameless: the 40px header rows double as the title
 // bar and the window buttons sit in the top-right corner.
 class MainWindow : public QWidget {
@@ -30,16 +29,17 @@ public:
 
     VaultSession* session() const { return m_session; }
     Ribbon* ribbon() const { return m_ribbon; }
-    SideDock* leftDock() const { return m_left; }
-    SideDock* rightDock() const { return m_right; }
     StatusBar* statusBar() const { return m_statusBar; }
     OverlayLayer* overlay() const { return m_overlay; }
     NoticeManager* notices() const { return m_notices; }
+    IconButton* rightSidebarToggle() const { return m_rightToggle; }
 
-    // The root workspace (tab groups). Ownership transfers to the window.
-    void setCenter(QWidget* center);
-    QWidget* center() const { return m_center; }
+    // Places the workspace next to the ribbon. The window owns it and destroys it before anything else
+    // (so views are closed while the session is still alive).
+    void setWorkspace(Workspace* workspace);
+    Workspace* workspace() const { return m_workspace; }
 
+    // Sidebar collapse state lives in the workspace (workspace.json: left/right.collapsed).
     bool isLeftCollapsed() const;
     bool isRightCollapsed() const;
     void setLeftCollapsed(bool collapsed);
@@ -65,14 +65,14 @@ protected:
 private:
     void layoutFloating();
     void updateReserve();
+    void updateToggles();
 
     VaultSession* m_session;
     bool m_frameless;
     Ribbon* m_ribbon;
-    QSplitter* m_splitter;
-    SideDock* m_left;
-    SideDock* m_right;
-    QWidget* m_center = nullptr;
+    QHBoxLayout* m_layout;
+    QWidget* m_placeholder;
+    QPointer<Workspace> m_workspace;
     QWidget* m_topRight;
     IconButton* m_rightToggle;
     WindowControls* m_controls = nullptr;
@@ -80,8 +80,6 @@ private:
     StatusBar* m_statusBar;
     OverlayLayer* m_overlay;
     NoticeManager* m_notices;
-    int m_leftWidth = 300;
-    int m_rightWidth = 300;
 };
 
 } // namespace oc

@@ -78,7 +78,7 @@ void IconButton::paintEvent(QPaintEvent*)
         fg = t->color(QStringLiteral("--icon-color"));
     const double opacity = (m_hover || isChecked()) ? 1.0 : t->number(QStringLiteral("--icon-opacity"), 0.85);
     p.setOpacity(opacity);
-    const QPixmap pm = IconProvider::instance().pixmap(m_icon, m_iconPx, fg, 1.75, devicePixelRatioF());
+    const QPixmap pm = IconProvider::instance().pixmap(m_icon, m_iconPx, fg, m_stroke, devicePixelRatioF());
     const QPointF tl((width() - m_iconPx) / 2.0, (height() - m_iconPx) / 2.0);
     p.drawPixmap(tl, pm);
 }

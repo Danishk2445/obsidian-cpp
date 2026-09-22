@@ -5,10 +5,21 @@ oc_add_library(oc_ui
     shell/empty_view.cpp
     shell/main_window.cpp
     shell/ribbon.cpp
-    shell/root_placeholder.cpp
-    shell/side_dock.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
     widgets/icon_button.cpp
+    workspace/placeholder_views.cpp
+    workspace/placeholder_views.h
+    workspace/vault_access.cpp
+    workspace/vault_access.h
+    workspace/vault_link_fallback.cpp
+    workspace/view.cpp
+    workspace/view.h
+    workspace/view_registry.cpp
+    workspace/view_registry.h
+    workspace/workspace.cpp
+    workspace/workspace.h
+    workspace/workspace_p.h
+    workspace/workspace_widgets.cpp
   PUBLIC_DEPS oc_core oc_render Qt6::Widgets
 )
