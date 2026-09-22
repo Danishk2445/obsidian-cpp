@@ -1,6 +1,10 @@
 #include "editor/editor_view.h"
 
+#include "editor/editor_hooks.h"
+#include "editor/live_preview_decorator.h"
+#include "editor/markdown_commands.h"
 #include "editor/source_decorator.h"
+#include "render/widgets/inline_widgets.h"
 #include "render/theme/theme.h"
 
 #include <QApplication>
@@ -35,6 +39,7 @@ CharCat categorize(QChar c)
 EditorView::EditorView(QWidget* parent)
     : QAbstractScrollArea(parent)
     , m_decorator(std::make_unique<SourceDecorator>(nullptr))
+    , m_lp(std::make_unique<LivePreviewDecorator>(nullptr))
 {
     setFrameShape(QFrame::NoFrame);
     setFocusPolicy(Qt::StrongFocus);
@@ -61,10 +66,18 @@ EditorView::~EditorView()
     }
 }
 
+LineDecorator* EditorView::activeDecorator() const
+{
+    if (m_mode == Mode::Source)
+        return m_decorator.get();
+    return m_lp.get();
+}
+
 void EditorView::applyTheme()
 {
     m_styles = StyleSheet::build(*currentTheme());
     m_decorator->setStyleSheet(m_styles.get());
+    m_lp->setStyleSheet(m_styles.get());
     m_layout.setStyleSheet(m_styles);
     updateGeometryAndLayout();
     viewport()->update();
@@ -79,7 +92,10 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
     }
     m_doc = std::move(doc);
     m_decorator->setDocument(m_doc.get());
+    m_lp->setDocument(m_doc.get());
     m_sel = Selection::cursor(0);
+    m_lp->setSelection(m_sel);
+    m_revealed = m_sel;
     m_scrollTop = 0;
     if (m_doc) {
         m_docConn = connect(m_doc.get(), &Document::changed, this, &EditorView::onDocumentChanged);
@@ -98,6 +114,11 @@ void EditorView::setMode(Mode mode)
     if (m_mode == mode)
         return;
     m_mode = mode;
+    m_lp->setReading(mode == Mode::Reading);
+    m_lp->setSelection(m_sel);
+    m_revealed = m_sel;
+    m_layout.setDecorator(activeDecorator());
+    viewport()->setCursor(mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor);
     m_layout.invalidateAll();
     updateGeometryAndLayout();
     viewport()->update();
@@ -132,6 +153,7 @@ void EditorView::setExtraDecorations(std::function<void(int, LineDecoration&)> f
 {
     m_extra = std::move(fn);
     m_decorator->extra = m_extra;
+    m_lp->extra = m_extra;
     refreshDecorations();
 }
 
@@ -156,6 +178,7 @@ void EditorView::updateGeometryAndLayout()
         lineWidth = std::min(lineWidth, fileW);
     }
     m_contentLeft = std::max(m_marginX, std::floor((w - lineWidth) / 2));
+    m_lp->setContentWidth(lineWidth);
     m_layout.setContentWidth(lineWidth);
     ensureVisibleLayout();
     updateScrollbar();
@@ -453,7 +476,8 @@ void EditorView::onDocumentChanged(const DocUpdate& u)
     ensureVisibleLayout();
     if (ownScroll)
         scrollToPos(m_sel.main().head);
-    invalidateSelectionLines(oldSel, m_sel);
+    if (m_mode == Mode::LivePreview && m_drag == DragUnit::None)
+        syncRevealSelection(m_revealed.map(u.tr.changes.desc()));
     viewport()->update();
     restartBlink();
     emit selectionChanged();
@@ -469,9 +493,24 @@ void EditorView::onSyntaxProgress(const md::TreeUpdate& u)
     }
 }
 
-void EditorView::invalidateSelectionLines(const Selection&, const Selection&)
+void EditorView::invalidateSelectionLines(const Selection& a, const Selection& b)
 {
-    // Source mode decorations don't depend on the selection. Live preview overrides this (M2).
+    if (m_mode != Mode::LivePreview || m_drag != DragUnit::None)
+        return; // source/reading decorations don't depend on the selection; reveal is frozen while dragging
+    syncRevealSelection(a);
+    Q_UNUSED(b);
+}
+
+void EditorView::syncRevealSelection(const Selection& old)
+{
+    if (m_mode != Mode::LivePreview)
+        return;
+    const Selection now = m_sel;
+    m_lp->setSelection(now);
+    for (const auto& [from, to] : m_lp->affectedLines(old.clamped(m_doc->text().length()), now))
+        m_layout.invalidateLines(from, to);
+    m_revealed = now;
+    ensureVisibleLayout();
 }
 
 void EditorView::emitCursor()
@@ -637,7 +676,11 @@ void EditorView::paste()
     if (!m_doc || isReadOnly())
         return;
     const QMimeData* md = QGuiApplication::clipboard()->mimeData();
-    if (md && md->hasText())
+    if (!md)
+        return;
+    if (EditorHooks::global().runPaste(*this, *md))
+        return;
+    if (md->hasText())
         pasteText(md->text());
 }
 
@@ -1078,6 +1121,8 @@ void EditorView::keyPressEvent(QKeyEvent* e)
 
     switch (e->key()) {
     case Qt::Key_Backspace:
+        if (!ctrl && !alt && mdcmd::deleteMarkupBackward(*this))
+            return;
         deleteBackward(ctrl || alt);
         return;
     case Qt::Key_Delete:
@@ -1090,17 +1135,23 @@ void EditorView::keyPressEvent(QKeyEvent* e)
     case Qt::Key_Return:
     case Qt::Key_Enter:
         if (!ctrl && !alt) {
+            if (!shift && mdcmd::newlineAndContinueMarkup(*this))
+                return;
             insertNewline();
             return;
         }
         break;
     case Qt::Key_Tab:
         if (!ctrl && !alt) {
+            if (mdcmd::indentListItem(*this, true))
+                return;
             indentSelection(true);
             return;
         }
         break;
     case Qt::Key_Backtab:
+        if (mdcmd::indentListItem(*this, false))
+            return;
         indentSelection(false);
         return;
     case Qt::Key_K:
@@ -1122,6 +1173,11 @@ void EditorView::keyPressEvent(QKeyEvent* e)
     const QString text = e->text();
     const bool altGr = (mods & (Qt::ControlModifier | Qt::AltModifier)) == (Qt::ControlModifier | Qt::AltModifier);
     if (!text.isEmpty() && (!ctrl || altGr) && !meta && text.at(0).isPrint()) {
+        const SelRange main = m_sel.main();
+        if (EditorHooks::global().runInput(*this, main.from(), main.to(), text))
+            return;
+        if (mdcmd::autoPairInput(*this, text))
+            return;
         replaceSelections(text, QStringLiteral("input.type"));
         return;
     }
@@ -1266,6 +1322,31 @@ void EditorView::mousePressEvent(QMouseEvent* e)
     if (e->button() != Qt::LeftButton)
         return;
 
+    if (m_mode != Mode::Source && !(e->modifiers() & (Qt::ShiftModifier | Qt::AltModifier))) {
+        const QPointF docPt = viewportToDoc(e->position());
+        if (auto bh = m_layout.blockAt(docPt)) {
+            const QPointF local = docPt - bh->rect.topLeft();
+            if (bh->widget->click(local, e->modifiers())) {
+                m_layout.invalidateLines(bh->fromLine, bh->toLine);
+                ensureVisibleLayout();
+                updateScrollbar();
+                viewport()->update();
+                return;
+            }
+            const QString link = bh->widget->linkAt(local);
+            if (!link.isEmpty()) {
+                emit linkActivated(link, 0, e->modifiers() & Qt::ControlModifier);
+                return;
+            }
+            if (m_mode == Mode::Reading)
+                return;
+        }
+        if (handleWidgetClick(docPt))
+            return;
+        if (handleLinkClick(m_layout.hitTest(docPt), e->modifiers()))
+            return;
+    }
+
     const int dblInterval = QGuiApplication::styleHints()->mouseDoubleClickInterval();
     if (m_lastClickTime.isValid() && m_lastClickTime.elapsed() < dblInterval && (p - m_lastClickPos).manhattanLength() < 5)
         m_clickCount = m_clickCount % 3 + 1;
@@ -1354,9 +1435,55 @@ void EditorView::autoScrollTick()
 void EditorView::mouseReleaseEvent(QMouseEvent* e)
 {
     Q_UNUSED(e);
+    const bool wasDragging = m_drag != DragUnit::None;
     m_drag = DragUnit::None;
     m_autoScroll.stop();
+    if (wasDragging && m_mode == Mode::LivePreview) {
+        // Reveal was frozen during the drag; apply it now for the final selection.
+        syncRevealSelection(m_revealed);
+        viewport()->update();
+    }
     updatePrimarySelection();
+}
+
+bool EditorView::handleWidgetClick(const QPointF& docPt)
+{
+    auto hit = m_layout.widgetAt(docPt);
+    if (!hit || !m_doc)
+        return false;
+    if (auto* cb = dynamic_cast<CheckboxWidget*>(hit->widget.get())) {
+        if (isReadOnly() && m_mode != Mode::Reading)
+            return true;
+        // Toggle the status char inside "[ ]" (Obsidian: any non-space counts as checked -> ' ').
+        const qsizetype ls = m_doc->text().lineStart(hit->line);
+        const qsizetype pos = ls + hit->docFrom + 1;
+        Transaction tr;
+        tr.changes = ChangeSet::of({{pos, pos + 1, cb->checked() ? QStringLiteral(" ") : QStringLiteral("x")}}, m_doc->text().length());
+        tr.selection = m_sel;
+        tr.userEvent = QStringLiteral("input.toggle-checkbox");
+        tr.scrollIntoView = false;
+        m_doc->dispatch(tr, this, m_sel);
+        return true;
+    }
+    return false;
+}
+
+bool EditorView::handleLinkClick(qsizetype pos, Qt::KeyboardModifiers mods)
+{
+    auto hit = m_lp->linkAt(pos);
+    if (!hit)
+        return false;
+    // In live preview a link is followed only when it's rendered (not being edited).
+    if (m_mode == Mode::LivePreview) {
+        bool active = false;
+        for (const SelRange& r : m_sel.ranges())
+            active |= r.from() <= hit->to && r.to() >= hit->from;
+        if (active)
+            return false;
+    }
+    const bool newLeaf = mods & Qt::ControlModifier;
+    emit linkActivated(hit->target, int(hit->kind), newLeaf);
+    return true;
 }
 
 void EditorView::contextMenuEvent(QContextMenuEvent* e)

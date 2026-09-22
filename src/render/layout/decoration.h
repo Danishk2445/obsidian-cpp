@@ -55,13 +55,38 @@ struct LineDecoration {
     qreal indent = 0;        // left padding (px) applied to every visual line
     int hangingColumn = -1;  // wrapped lines start at the x of this column (list/quote content)
     qreal tabStop = 0;       // px; 0 = tabSize spaces of the base font
-    int quoteDepth = 0;      // quote bars drawn at the left (live preview / reading)
+    int quoteDepth = 0;      // quote bars drawn at the left (block/reading rendering)
+    QList<int> quoteColumns; // live preview: a quote bar at the x of each '>' marker column
+    qreal guideOffset = 0;   // px added to a guide column's x
     CodeEdge code = CodeEdge::None;
     bool hideCaret = false;
+    bool hidden = false;     // line not shown at all (reading view comments, folds)
+    qreal fixedHeight = -1;  // >= 0: the line's unit is exactly this tall (reading view blank lines)
     bool hrRule = false;     // draw a horizontal rule across the line (live preview)
     QList<int> guideColumns; // indentation guide positions (columns) for list lines
 
     quint64 signature() const;
+};
+
+// A widget replacing a range of whole lines (rendered table, callout, math block, embed...).
+class BlockWidget {
+public:
+    virtual ~BlockWidget() = default;
+    virtual qreal layout(qreal width) = 0;                      // lays out for `width`, returns the height
+    virtual void paint(QPainter* p, const QRectF& rect) = 0;
+    virtual quint64 signature() const = 0;
+    // Document offset for a click at `local` (relative to the widget's top-left), or -1 (= block start).
+    virtual qsizetype docPosAt(const QPointF& local) const { Q_UNUSED(local); return -1; }
+    // Handle a click internally (fold toggles, checkboxes...). Return true if consumed.
+    virtual bool click(const QPointF& local, Qt::KeyboardModifiers mods) { Q_UNUSED(local); Q_UNUSED(mods); return false; }
+    // Link under `local` ("" if none): wikilink target / URL.
+    virtual QString linkAt(const QPointF& local) const { Q_UNUSED(local); return {}; }
+};
+
+struct BlockRange {
+    int fromLine = 0;
+    int toLine = 0; // exclusive
+    std::shared_ptr<BlockWidget> widget;
 };
 
 // Produces decorations for lines. Implementations: source-mode styling (block tree), live preview,
@@ -72,6 +97,8 @@ public:
     virtual LineDecoration decorate(int line) = 0;
     virtual StyleId quickLineStyle(int line) = 0;
     virtual qreal quickVerticalPadding(int line) { Q_UNUSED(line); return 0; }
+    // Block widgets starting in [fromLine, toLine), sorted and non-overlapping.
+    virtual void blockRanges(int fromLine, int toLine, QList<BlockRange>& out) { Q_UNUSED(fromLine); Q_UNUSED(toLine); Q_UNUSED(out); }
 };
 
 } // namespace oc

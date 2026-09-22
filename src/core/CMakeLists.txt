@@ -10,6 +10,8 @@ oc_add_library(oc_core
     documents/local_storage.cpp
     fuzzy/fuzzy.cpp
     time/moment_format.cpp
+    metadata/link_resolver.cpp
+    metadata/metadata_cache.cpp
     vault_session.cpp
-  PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets
+  PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
 )

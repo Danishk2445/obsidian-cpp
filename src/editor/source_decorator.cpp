@@ -1,6 +1,6 @@
 #include "editor/source_decorator.h"
 
-#include "core/documents/document.h"
+#include "markdown/doc_source.h"
 #include "render/services/code_highlighter.h"
 
 namespace oc {

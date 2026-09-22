@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/vault/vault.h"
+#include "markdown/doc_source.h"
 #include "markdown/syntax_tree.h"
 #include "text/history.h"
 #include "text/transaction.h"
@@ -25,7 +26,7 @@ struct DocUpdate {
 // Saving is byte-exact: the file is re-encoded from the per-line EOLs/BOM of the text and written
 // only when the bytes differ from what's on disk, with a compare-and-swap against the disk state we
 // last saw. External changes are diffed in (clean buffer) or 3-way merged (dirty buffer).
-class Document : public QObject {
+class Document : public QObject, public md::DocSource {
     Q_OBJECT
 public:
     Document(DocumentStorage* storage, QString path, QObject* parent = nullptr);
@@ -37,8 +38,9 @@ public:
     bool load(QString* error = nullptr);
     bool isLoaded() const { return m_loaded; }
 
-    const Text& text() const { return m_text; }
-    quint64 version() const { return m_version; }
+    const Text& text() const override { return m_text; }
+    quint64 version() const override { return m_version; }
+    QString sourcePath() const override { return m_path; }
     Eol newlineEol() const { return m_eol; }
     bool hasBom() const { return m_bom; }
     bool hadInvalidUtf8() const { return m_invalidUtf8; }
@@ -47,7 +49,7 @@ public:
     void setReadOnly(bool ro); // e.g. vault offline
 
     md::SyntaxTree& syntax() { return m_syntax; }
-    const md::SyntaxTree& syntax() const { return m_syntax; }
+    const md::SyntaxTree& syntax() const override { return m_syntax; }
     // Make sure the tree is exact through `line` (budgeted parses may lag behind).
     void ensureParsedThrough(int line);
 

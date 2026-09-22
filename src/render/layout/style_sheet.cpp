@@ -166,6 +166,7 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
         f.setFontUnderline(true);
         f.setUnderlineStyle(QTextCharFormat::DotLine);
     }
+    s->m_specs[size_t(StyleId::Invisible)].format.setForeground(QColor(0, 0, 0, 0));
     fg(StyleId::CodeComment, t.color(QStringLiteral("--code-comment"), faint));
     fg(StyleId::CodeKeyword, t.color(QStringLiteral("--code-keyword")));
     fg(StyleId::CodeFunction, t.color(QStringLiteral("--code-function")));

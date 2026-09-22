@@ -13,3 +13,7 @@ oc_add_test(core_commands_test SOURCES core/commands_test.cpp DEPS oc_core Qt6::
 oc_add_test(core_moment_test SOURCES core/moment_format_test.cpp DEPS oc_core)
 oc_add_test(core_fuzzy_test SOURCES core/fuzzy_test.cpp DEPS oc_core)
 oc_add_test(perf_fuzzy_test SOURCES perf/fuzzy_perf_test.cpp DEPS oc_core LABELS perf)
+oc_add_test(editor_mdcmd_test SOURCES editor/markdown_commands_test.cpp DEPS oc_editor QT)
+oc_add_test(editor_greentext_test SOURCES editor/greentext_guard_test.cpp DEPS oc_editor QT)
+oc_add_test(core_link_resolver_test SOURCES core/link_resolver_test.cpp DEPS oc_core)
+oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GUI)
