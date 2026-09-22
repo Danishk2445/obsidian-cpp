@@ -1,6 +1,8 @@
 #include "editor/editor_view.h"
 
+#include "editor/editor_hooks.h"
 #include "editor/live_preview_decorator.h"
+#include "editor/markdown_commands.h"
 #include "editor/source_decorator.h"
 #include "render/widgets/inline_widgets.h"
 #include "render/theme/theme.h"
@@ -674,7 +676,11 @@ void EditorView::paste()
     if (!m_doc || isReadOnly())
         return;
     const QMimeData* md = QGuiApplication::clipboard()->mimeData();
-    if (md && md->hasText())
+    if (!md)
+        return;
+    if (EditorHooks::global().runPaste(*this, *md))
+        return;
+    if (md->hasText())
         pasteText(md->text());
 }
 
@@ -1115,6 +1121,8 @@ void EditorView::keyPressEvent(QKeyEvent* e)
 
     switch (e->key()) {
     case Qt::Key_Backspace:
+        if (!ctrl && !alt && mdcmd::deleteMarkupBackward(*this))
+            return;
         deleteBackward(ctrl || alt);
         return;
     case Qt::Key_Delete:
@@ -1127,17 +1135,23 @@ void EditorView::keyPressEvent(QKeyEvent* e)
     case Qt::Key_Return:
     case Qt::Key_Enter:
         if (!ctrl && !alt) {
+            if (!shift && mdcmd::newlineAndContinueMarkup(*this))
+                return;
             insertNewline();
             return;
         }
         break;
     case Qt::Key_Tab:
         if (!ctrl && !alt) {
+            if (mdcmd::indentListItem(*this, true))
+                return;
             indentSelection(true);
             return;
         }
         break;
     case Qt::Key_Backtab:
+        if (mdcmd::indentListItem(*this, false))
+            return;
         indentSelection(false);
         return;
     case Qt::Key_K:
@@ -1159,6 +1173,11 @@ void EditorView::keyPressEvent(QKeyEvent* e)
     const QString text = e->text();
     const bool altGr = (mods & (Qt::ControlModifier | Qt::AltModifier)) == (Qt::ControlModifier | Qt::AltModifier);
     if (!text.isEmpty() && (!ctrl || altGr) && !meta && text.at(0).isPrint()) {
+        const SelRange main = m_sel.main();
+        if (EditorHooks::global().runInput(*this, main.from(), main.to(), text))
+            return;
+        if (mdcmd::autoPairInput(*this, text))
+            return;
         replaceSelections(text, QStringLiteral("input.type"));
         return;
     }

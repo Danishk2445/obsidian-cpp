@@ -10,3 +10,5 @@ oc_add_test(core_document_test SOURCES core/document_test.cpp DEPS oc_core Qt6::
 oc_add_test(editor_view_test SOURCES editor/editor_view_test.cpp DEPS oc_editor QT)
 oc_add_test(perf_editor_test SOURCES perf/editor_perf_test.cpp DEPS oc_editor Qt6::Test GUI LABELS perf)
 oc_add_test(core_commands_test SOURCES core/commands_test.cpp DEPS oc_core Qt6::Test GUI)
+oc_add_test(editor_mdcmd_test SOURCES editor/markdown_commands_test.cpp DEPS oc_editor QT)
+oc_add_test(editor_greentext_test SOURCES editor/greentext_guard_test.cpp DEPS oc_editor QT)

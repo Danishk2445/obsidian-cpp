@@ -1,6 +1,9 @@
 oc_add_library(oc_editor
   SOURCES
+    editor_hooks.cpp
     editor_view.cpp
+    markdown_commands.cpp
+    plugins/greentext_guard.cpp
     live_preview_decorator.cpp
     source_decorator.cpp
     widgets/block_widgets.cpp
