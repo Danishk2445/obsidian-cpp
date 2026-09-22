@@ -27,7 +27,11 @@ public:
 
     void beginDocument();
     // chain[i] = node of stack level i + 1; chain[depth] = the open leaf node (when state has one).
-    void beginAt(int line, const PState& state, const std::vector<int>& chain);
+    // sealedLeaf: the open leaf is a lookahead-sensitive leaf of the old tree that line `line`
+    // closes (known from the old parse); it is closed without being finalized again.
+    void beginAt(int line, const PState& state, const std::vector<int>& chain, bool sealedLeaf = false);
+    // A sealed leaf was not closed plainly by the first line (the caller falls back to a full parse).
+    bool broken() const { return m_broken; }
 
     quint32 stateId();
     bool lookaheadOpen() const { return isLookahead(m_leaf.st.kind); }
@@ -40,14 +44,6 @@ public:
     bool leafOpen() const { return m_leaf.st.kind != LKind::None; }
     int base() const { return m_base; }
 
-    std::vector<BlockNode> fresh;
-    std::vector<qint32> freshParent;
-    std::vector<qint32> freshSubEnd; // -1 while open
-    std::vector<Adopted> adopted;
-    QList<LinkRefDefinition> refdefs; // collected, document order
-    bool headingSeen = false;         // a heading node was created
-
-private:
     struct OpenC {
         CState st;
         int node = 0;
@@ -59,6 +55,31 @@ private:
         int from = 0;
         bool tableVisited = false;
     };
+
+    // Resync with a lookahead-sensitive leaf (paragraph / indented code) open at line L: its final
+    // shape depends only on its own lines once it is closed, so when line L closes it plainly (no
+    // setext / table conversion, no continuation) the parser can be rolled back to "state at L with
+    // that leaf finalized at L" and resync there.
+    struct Checkpoint {
+        int line = -1;
+        size_t fresh = 0;
+        int leafNode = -1;
+        std::vector<OpenC> stack;
+        bool headingSeen = false;
+        LineRec oldRec; // the stored record of line L (its final role may come from later lines)
+    };
+    void checkpoint(int line, Checkpoint& cp) const;
+    bool closedLookaheadPlainly(const Checkpoint& cp) const; // after parseLine(cp.line)
+    void rollback(const Checkpoint& cp);
+
+    std::vector<BlockNode> fresh;
+    std::vector<qint32> freshParent;
+    std::vector<qint32> freshSubEnd; // -1 while open
+    std::vector<Adopted> adopted;
+    QList<LinkRefDefinition> refdefs; // collected, document order
+    bool headingSeen = false;         // a heading node was created
+
+private:
     friend struct RealSink;
 
     // node helpers
@@ -92,6 +113,7 @@ private:
     bool convertTable(QStringView s, int delimPos);
     void startParagraph(QStringView s, int pos);
     void splitCalloutTitle(); // a callout title paragraph continues: the new line starts the body
+    void parseLineImpl(int L);
 
     Store& m_st;
     const Text& m_text;
@@ -102,6 +124,8 @@ private:
     PState m_tmp;
     quint32 m_stateId = 0;
     bool m_dirty = true;
+    bool m_leafSealed = false;
+    bool m_broken = false;
 
     // per-line
     int m_L = 0;

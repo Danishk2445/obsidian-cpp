@@ -492,7 +492,7 @@ void LineParser::beginDocument()
     m_dirty = true;
 }
 
-void LineParser::beginAt(int line, const PState& state, const std::vector<int>& chain)
+void LineParser::beginAt(int line, const PState& state, const std::vector<int>& chain, bool sealedLeaf)
 {
     Q_UNUSED(line);
     m_stack.clear();
@@ -500,11 +500,15 @@ void LineParser::beginAt(int line, const PState& state, const std::vector<int>& 
     for (size_t i = 0; i < k; ++i)
         m_stack.push_back(OpenC{state.cs[i], chain[i], nodeFrom(chain[i])});
     m_leaf = {};
+    m_leafSealed = false;
     if (state.leaf.kind != LKind::None) {
         m_leaf.st = state.leaf;
         m_leaf.node = chain[k];
         m_leaf.from = nodeFrom(chain[k]);
+        m_leafSealed = sealedLeaf;
     }
+    // Only fresh lookahead leaves are ever finalized (update() restarts before open ones).
+    Q_ASSERT(!isLookahead(m_leaf.st.kind) || m_leafSealed);
     m_dirty = true;
 }
 
@@ -637,6 +641,14 @@ void LineParser::closeContainer(int endLine)
 void LineParser::closeLeaf(int endLine)
 {
     const OpenLeaf lf = m_leaf;
+    if (m_leafSealed) {
+        // Already final in the old tree (its shape depended only on lines before this one).
+        m_leafSealed = false;
+        m_broken = m_broken || endLine != m_L;
+        m_leaf = {};
+        m_dirty = true;
+        return;
+    }
     switch (lf.st.kind) {
     case LKind::None:
         return;
@@ -721,6 +733,10 @@ void LineParser::finalizeParagraph(int endLine)
 
 bool LineParser::convertSetext(int level)
 {
+    if (m_leafSealed) {
+        m_broken = true; // a sealed leaf is closed by its line, never converted
+        return false;
+    }
     const int P = m_leaf.from;
     QList<LinkRefDefinition> defs;
     const int C = scanRefdefs(P, m_L, &defs);
@@ -759,6 +775,10 @@ bool LineParser::convertSetext(int level)
 
 bool LineParser::convertTable(QStringView s, int delimPos)
 {
+    if (m_leafSealed) {
+        m_broken = true;
+        return false;
+    }
     if (m_leaf.tableVisited)
         return false;
     const int H = m_L - 1;
@@ -931,6 +951,10 @@ void LineParser::startParagraph(QStringView s, int pos)
 
 void LineParser::splitCalloutTitle()
 {
+    if (m_leafSealed) {
+        m_broken = true; // a sealed leaf is closed by its line, never continued
+        return;
+    }
     if (m_leaf.st.kind != LKind::Paragraph || m_leaf.st.a != LState::kCalloutTitle)
         return;
     closeNode(m_leaf.node, m_L);
@@ -941,6 +965,15 @@ void LineParser::splitCalloutTitle()
 }
 
 void LineParser::parseLine(int L)
+{
+    parseLineImpl(L);
+    if (m_leafSealed) {
+        m_leafSealed = false; // continued: the old parse did not close it here after all
+        m_broken = true;
+    }
+}
+
+void LineParser::parseLineImpl(int L)
 {
     const QStringView s = m_text.lineView(L);
     LineRec& rec = m_st.lines[size_t(L)];
@@ -1097,6 +1130,59 @@ void LineParser::parseLine(int L)
     }
     rec.role = quint8(m_role);
     rec.col = m_col;
+}
+
+void LineParser::checkpoint(int line, Checkpoint& cp) const
+{
+    cp.line = line;
+    cp.fresh = fresh.size();
+    cp.leafNode = m_leaf.node;
+    cp.stack = m_stack;
+    cp.headingSeen = headingSeen;
+    cp.oldRec = m_st.lines[size_t(line)];
+}
+
+bool LineParser::closedLookaheadPlainly(const Checkpoint& cp) const
+{
+    // The checkpoint's leaf is fresh (update() restarts before any open lookahead leaf).
+    if (!isFresh(cp.leafNode) || m_leaf.node == cp.leafNode)
+        return false;
+    const size_t x = size_t(cp.leafNode - m_base);
+    const NodeType t = fresh[x].type;
+    if ((t != NodeType::Paragraph && t != NodeType::LinkRefDef && t != NodeType::IndentedCode) || freshSubEnd[x] < 0 || fresh[x].toLine > cp.line)
+        return false;
+    // Line L only finalized that leaf (nodes ending by L) and opened new blocks (nodes starting at L).
+    for (size_t i = cp.fresh; i < fresh.size(); ++i) {
+        const BlockNode& n = fresh[i];
+        if (n.fromLine != cp.line && (freshSubEnd[i] < 0 || n.toLine > cp.line))
+            return false;
+    }
+    return true;
+}
+
+void LineParser::rollback(const Checkpoint& cp)
+{
+    size_t keep = cp.fresh;
+    while (keep < fresh.size() && fresh[keep].fromLine < cp.line)
+        ++keep; // finalization of the leaf (the paragraph after its refdefs); new blocks follow
+    fresh.resize(keep);
+    freshParent.resize(keep);
+    freshSubEnd.resize(keep);
+    // Containers that line L closed are open again (the splice gives them the old continuation).
+    m_stack = cp.stack;
+    for (const OpenC& o : m_stack) {
+        if (isFresh(o.node)) {
+            freshSubEnd[size_t(o.node - m_base)] = -1;
+        } else {
+            for (Adopted& a : adopted)
+                if (a.id == o.node)
+                    a.toLine = -1;
+        }
+    }
+    m_leaf = {};
+    m_dirty = true;
+    headingSeen = cp.headingSeen;
+    m_st.lines[size_t(cp.line)] = cp.oldRec;
 }
 
 void LineParser::finish(int endLine)

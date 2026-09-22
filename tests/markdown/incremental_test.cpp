@@ -4,6 +4,7 @@
 // a parse is still incomplete). Also checks that TreeUpdate ranges cover every line whose role,
 // content column or container markers changed, and that `structural` / `headingsChanged` are not
 // under-reported.
+#include "markdown/md_engine.h"
 #include "markdown/syntax_tree.h"
 #include "text/changeset.h"
 #include "text/text.h"
@@ -249,6 +250,24 @@ std::vector<HeadingSig> headingSigs(const SyntaxTree& t, const Text& text)
 
 bool debugSessions() { return qEnvironmentVariableIsSet("OC_INC_DEBUG"); }
 
+// Parser diagnostics since the last reset (which incremental paths the edits exercised).
+struct PathCounts {
+    quint64 runs, full, resyncs, lookahead, pauses, pausesBeforeSplit, sealed, lines;
+};
+
+PathCounts takeCounters()
+{
+    detail::Counters& c = detail::counters();
+    const PathCounts p{c.updates.exchange(0), c.fullReparses.exchange(0), c.resyncs.exchange(0), c.lookaheadResyncs.exchange(0),
+                       c.pauses.exchange(0), c.pausesBeforeSplit.exchange(0), c.sealedRestarts.exchange(0), c.linesParsed.exchange(0)};
+    printf("runs %llu (full-parse fallbacks %llu, sealed restarts %llu), resyncs %llu (after a closing line %llu), pauses %llu "
+           "(before an older split %llu), %.1f lines re-parsed per run\n",
+           static_cast<unsigned long long>(p.runs), static_cast<unsigned long long>(p.full), static_cast<unsigned long long>(p.sealed),
+           static_cast<unsigned long long>(p.resyncs), static_cast<unsigned long long>(p.lookahead), static_cast<unsigned long long>(p.pauses),
+           static_cast<unsigned long long>(p.pausesBeforeSplit), p.runs ? double(p.lines) / double(p.runs) : 0.0);
+    return p;
+}
+
 struct Stats {
     int edits = 0, paused = 0, resumes = 0, editsWhileIncomplete = 0;
 };
@@ -382,6 +401,7 @@ TEST(Incremental, ReplaySeed)
 
 TEST(Incremental, RandomEditsDefaultBudget)
 {
+    takeCounters();
     Stats st;
     const int sessions = envInt("OC_INC_SESSIONS", 600);
     for (int s = 0; s < sessions; ++s) {
@@ -389,10 +409,15 @@ TEST(Incremental, RandomEditsDefaultBudget)
         ASSERT_TRUE(fail.isEmpty()) << "seed " << 1000 + s << "\n" << qPrintable(fail);
     }
     printf("%d edits\n", st.edits);
+    const PathCounts pc = takeCounters();
+    EXPECT_GT(pc.lookahead, 0u);
+    EXPECT_GT(pc.sealed, 0u);
+    EXPECT_LT(pc.full * 20, pc.runs); // full-parse fallbacks stay rare
 }
 
 TEST(Incremental, RandomEditsZeroBudgetAndResume)
 {
+    takeCounters();
     Stats st;
     const int sessions = envInt("OC_INC_SESSIONS", 600);
     for (int s = 0; s < sessions; ++s) {
@@ -401,10 +426,12 @@ TEST(Incremental, RandomEditsZeroBudgetAndResume)
     }
     printf("%d edits, %d paused, %d resume steps\n", st.edits, st.paused, st.resumes);
     EXPECT_GT(st.paused, 0);
+    takeCounters();
 }
 
 TEST(Incremental, RandomEditsWhileIncomplete)
 {
+    takeCounters();
     Stats st;
     const int sessions = envInt("OC_INC_SESSIONS", 600);
     for (int s = 0; s < sessions; ++s) {
@@ -413,6 +440,7 @@ TEST(Incremental, RandomEditsWhileIncomplete)
     }
     printf("%d edits, %d paused, %d edits while incomplete, %d resume steps\n", st.edits, st.paused, st.editsWhileIncomplete, st.resumes);
     EXPECT_GT(st.editsWhileIncomplete, 0);
+    EXPECT_GT(takeCounters().pausesBeforeSplit, 0u);
 }
 
 TEST(Incremental, VerifyModeEnvironmentVariable)

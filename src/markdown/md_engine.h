@@ -11,13 +11,18 @@
 //    hash-consed per tree, so "same state" is an integer compare.
 //  * Paragraphs and indented code are "lookahead-sensitive": their final shape (setext heading,
 //    table header, link reference definitions, trailing blank lines) is only known when they close.
-//    Their PState therefore carries no details; the parser never resyncs nor pauses while one is
-//    open, and a re-parse always starts before them.
+//    Their PState therefore carries no details; the parser never pauses while one is open, a
+//    re-parse always starts before them, and a resync with one open waits until the line that
+//    closes it (LineParser::Checkpoint).
 //  * Every line stores the id of the state at its start. update() re-parses from the first changed
 //    line (moved back to the start of an open lookahead-sensitive leaf, or to 0 when the frontmatter
 //    decision changes), adopting the containers/leaf that are open there from the old tree, until a
 //    line at/after the edit whose new start state equals the stored old one. Nodes in between are
-//    replaced; the new open chain takes over the old open chain's continuation (ranges, children).
+//    replaced; the new open chain takes over the continuation (ranges, children) of the old nodes
+//    covering that line, found structurally (coveringChain() in md_update.cpp).
+//  * Budget pauses keep the old structure below the pause line as stale nodes: the old covering
+//    nodes are cloned to start at the pause line ("split"). resume() / later updates re-parse from
+//    the frontier with the true state stored for it and replace the stale nodes as they go.
 //  * Nodes are a preorder arena (ids are indices) with parent and subtree-end arrays. Container
 //    ranges exclude trailing whitespace-only blank lines; leaf ranges are exact.
 //  * Per-type info lives in append-only side tables indexed by BlockNode::data (garbage from
@@ -28,6 +33,7 @@
 #include <QElapsedTimer>
 #include <QVarLengthArray>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -134,6 +140,10 @@ struct Store {
     int fmClose = -1;        // frontmatter closing line, -1 when the document has none
     int frontier = -1;       // >= 0 while incomplete: lines [0, frontier) are exact
     quint32 frontierState = 0; // true parser state at `frontier`
+    // While incomplete: the last line at which pause clones may start (>= frontier). Pausing again
+    // before an older split leaves that split in place, so a resync is only valid below the frontier
+    // or past lastSplit (the stale structure in between may still be cut at a split).
+    int lastSplit = -1;
     // caches
     mutable std::vector<int> headingIds;
     mutable bool headingsValid = false;
@@ -189,6 +199,19 @@ struct MarkerRec {
 void analyzeMarkers(QStringView line, const PState& st, QVarLengthArray<MarkerRec, 8>& out);
 
 // --- parsing entry points ---------------------------------------------------------------------------
+
+// Diagnostics for tests and benchmarks (relaxed atomics, process-wide; the parser never reads them).
+struct Counters {
+    std::atomic<quint64> updates{0};          // update() / resume() runs
+    std::atomic<quint64> fullReparses{0};     // runs that fell back to a full parse
+    std::atomic<quint64> resyncs{0};          // runs that resynced with the old structure
+    std::atomic<quint64> lookaheadResyncs{0}; // ... right after a line that closed an open paragraph / indented code
+    std::atomic<quint64> pauses{0};           // runs that paused on the budget
+    std::atomic<quint64> pausesBeforeSplit{0};// ... before an older split (the tree keeps two cuts)
+    std::atomic<quint64> sealedRestarts{0};   // runs that restarted with a sealed lookahead leaf
+    std::atomic<quint64> linesParsed{0};      // lines re-parsed by incremental runs
+};
+Counters& counters();
 
 int frontmatterClose(const Text& text); // closing line of a frontmatter block at line 0, or -1
 void fullParse(Store& st, const Text& text);

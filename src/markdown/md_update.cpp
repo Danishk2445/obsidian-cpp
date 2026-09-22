@@ -78,6 +78,7 @@ Store::Store(const Store& o)
     , fmClose(o.fmClose)
     , frontier(o.frontier)
     , frontierState(o.frontierState)
+    , lastSplit(o.lastSplit)
     , inlineCache(std::make_shared<InlineCache>())
 {
 }
@@ -104,6 +105,7 @@ Store& Store::operator=(const Store& o)
         fmClose = tmp.fmClose;
         frontier = tmp.frontier;
         frontierState = tmp.frontierState;
+        lastSplit = tmp.lastSplit;
         headingIds.clear();
         headingsValid = false;
         inlineCache = std::make_shared<InlineCache>();
@@ -167,6 +169,12 @@ int frontmatterClose(const Text& text)
 bool verifyEnabled()
 {
     return qEnvironmentVariableIsSet("OC_VERIFY_INCREMENTAL");
+}
+
+Counters& counters()
+{
+    static Counters c;
+    return c;
 }
 
 namespace {
@@ -379,14 +387,17 @@ struct Run {
     int changeEnd = 0;   // Enew: resync/pause only at lines >= this
     int delta = 0;       // line delta of the change
     int frontier = -1;   // clone line of an incomplete tree (new coords), -1 if complete
+    int lastSplit = -1;  // Store::lastSplit (new coords), -1 if complete
     int ensureLine = -1;
     qint64 maxNanos = 0;
     bool useFrontierState = false;
+    bool sealedLeaf = false; // the lookahead leaf open at R is closed by line R (see incrementalUpdate)
     int R0 = 0, Eold = 0; // changed line range (old coords) for structural comparison
 };
 
 TreeUpdate fullReparseUpdate(Store& st, const Text& newText, int oldLines)
 {
+    counters().fullReparses.fetch_add(1, std::memory_order_relaxed);
     fullParse(st, newText);
     TreeUpdate u;
     u.fromLine = 0;
@@ -429,7 +440,7 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
     for (int id : chain)
         adoptedOldTo.push_back(st.nodes[size_t(id)].toLine);
     LineParser p(st, newText, st.fmClose, A);
-    p.beginAt(run.R, startState, chain);
+    p.beginAt(run.R, startState, chain, run.sealedLeaf);
 
     QElapsedTimer timer;
     timer.start();
@@ -437,32 +448,72 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
     enum class End { Complete, Resync, Pause } end = End::Complete;
     // Resync / pause: the old nodes covering the stop line (see coveringChain()).
     std::vector<int> oldChain;
+    LineParser::Checkpoint cp;
     for (;;) {
         if (L >= newN)
             break;
-        // Never stop at the frontier line itself: the stale structure's clones start there and must
-        // be merged into the new open chain, which only happens when they are covering nodes.
-        if (L >= run.changeEnd && L > run.R && !p.lookaheadOpen() && L != run.frontier) {
+        bool candidate = false; // same state as before, lookahead leaf open: try a resync after L
+        if (L >= run.changeEnd && L > run.R) {
+            // Resync only where the old structure after L is what parsing from its stored state
+            // gives: below the frontier (exact), or past every split (the stale structure there
+            // continues the old parse; the clones at splits in between are covering nodes that the
+            // new open chain takes over). Never at or before a split line inside the stale region,
+            // where clones would stay separate nodes.
             const quint32 cur = p.stateId();
-            if (st.lines[size_t(L)].state == cur) {
-                coveringChain(st, L - run.delta, oldChain);
-                if (chainFitsState(st, oldChain, st.states->get(cur))) {
-                    end = End::Resync;
+            const bool same = (run.frontier < 0 || L < run.frontier || L > run.lastSplit) && st.lines[size_t(L)].state == cur;
+            if (!p.lookaheadOpen()) {
+                if (same) {
+                    coveringChain(st, L - run.delta, oldChain);
+                    if (chainFitsState(st, oldChain, st.states->get(cur))) {
+                        end = End::Resync;
+                        break;
+                    }
+                }
+                if (L > run.ensureLine && ((L - run.R) % 16 == 0 || run.maxNanos <= 0) && timer.nsecsElapsed() > run.maxNanos) {
+                    coveringChain(st, L - run.delta, oldChain);
+                    end = End::Pause;
                     break;
                 }
-            }
-            if (L > run.ensureLine && (run.frontier < 0 || L > run.frontier) && ((L - run.R) % 16 == 0 || run.maxNanos <= 0)
-                && timer.nsecsElapsed() > run.maxNanos) {
-                coveringChain(st, L - run.delta, oldChain);
-                end = End::Pause;
-                break;
+            } else if (same) {
+                candidate = true;
+                p.checkpoint(L, cp);
             }
         }
         p.parseLine(L);
+        if (p.broken()) {
+            *ok = false; // a sealed leaf was not closed by its line: nothing was spliced yet
+            return u;
+        }
+        if (candidate && p.closedLookaheadPlainly(cp)) {
+            // The old parse closed the same leaf at L too (same state, same line): resync at L with
+            // the leaf finalized there. The old covering chain holds containers only.
+            coveringChain(st, L - run.delta, oldChain);
+            const PState& ps = st.states->get(cp.oldRec.state);
+            if (oldChain.size() <= ps.cs.size() && chainFitsState(st, oldChain, ps)) {
+                p.rollback(cp);
+                end = End::Resync;
+                counters().lookaheadResyncs.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+        }
         ++L;
     }
     const int S = L;
     const int Sold = S - run.delta;
+    {
+        Counters& c = counters();
+        c.updates.fetch_add(1, std::memory_order_relaxed);
+        c.linesParsed.fetch_add(quint64(S - run.R), std::memory_order_relaxed);
+        if (run.sealedLeaf)
+            c.sealedRestarts.fetch_add(1, std::memory_order_relaxed);
+        if (end == End::Resync)
+            c.resyncs.fetch_add(1, std::memory_order_relaxed);
+        if (end == End::Pause) {
+            c.pauses.fetch_add(1, std::memory_order_relaxed);
+            if (S < run.lastSplit)
+                c.pausesBeforeSplit.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
     const std::vector<int> newChain = p.openChain();
     quint32 pauseState = 0;
     if (end == End::Pause)
@@ -491,19 +542,27 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
     const int shift = F + C - B;
 
     // Structural comparison (before overwriting the old region).
+    // While nothing is structural, re-created list nodes keep the old tightness (it only depends on
+    // node ranges and types, plus HTML blocks ending in a blank line), so no list is recomputed.
     bool structural = F != B;
     bool headingsChanged = p.headingSeen;
+    bool htmlInRegion = false;
     for (int i = 0; i < B; ++i) {
         const BlockNode& o = st.nodes[size_t(A + i)];
         if (isHeadingType(o.type))
             headingsChanged = true;
+        htmlInRegion = htmlInRegion || o.type == NodeType::HtmlBlock;
         if (structural)
             continue;
-        const BlockNode& nw = p.fresh[size_t(i)];
+        BlockNode& nw = p.fresh[size_t(i)];
+        if (isListType(o.type) && nw.type == o.type)
+            nw.flags = quint16((nw.flags & ~FlagTight) | (o.flags & FlagTight));
         if (o.type != nw.type || o.depth != nw.depth || o.flags != nw.flags || mapBoundary(o.fromLine, run) != nw.fromLine
             || ((end != End::Resync || p.freshSubEnd[size_t(i)] >= 0) && mapBoundary(o.toLine, run) != nw.toLine))
             structural = true;
     }
+    for (int i = B; i < F && !htmlInRegion; ++i)
+        htmlInRegion = p.fresh[size_t(i)].type == NodeType::HtmlBlock;
 
     // Adopted (prefix) chain nodes closed inside the region.
     std::vector<int> touchedLists;
@@ -666,22 +725,29 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
             ++st.refdefGen;
     }
 
-    // Tightness of affected lists.
+    // Tightness of affected lists (see the structural comparison above).
     st.text = newText;
-    std::sort(touchedLists.begin(), touchedLists.end());
-    touchedLists.erase(std::unique(touchedLists.begin(), touchedLists.end()), touchedLists.end());
-    for (int id : touchedLists)
-        if (id < total && isListType(st.nodes[size_t(id)].type))
-            computeTightness(st, id);
+    for (int id : chain)
+        htmlInRegion = htmlInRegion || st.nodes[size_t(id)].type == NodeType::HtmlBlock;
+    if (structural || htmlInRegion || end == End::Pause) {
+        std::sort(touchedLists.begin(), touchedLists.end());
+        touchedLists.erase(std::unique(touchedLists.begin(), touchedLists.end()), touchedLists.end());
+        for (int id : touchedLists)
+            if (id < total && isListType(st.nodes[size_t(id)].type))
+                computeTightness(st, id);
+    }
 
     // Frontier.
     if (end == End::Pause) {
         st.frontier = S;
         st.frontierState = pauseState;
-    } else if (end == End::Complete || run.frontier < 0 || S >= run.frontier) {
+        st.lastSplit = std::max(S, run.lastSplit); // older splits past S stay
+    } else if (end == End::Complete || run.frontier < 0 || S > run.lastSplit) {
         st.frontier = -1;
+        st.lastSplit = -1;
     } else {
         st.frontier = run.frontier; // resynced before the old frontier: it stays
+        st.lastSplit = run.lastSplit;
     }
     st.text = newText;
     st.headingsValid = false;
@@ -785,6 +851,7 @@ void fullParse(Store& st, const Text& text)
     st.fmClose = frontmatterClose(text);
     st.frontier = -1;
     st.frontierState = 0;
+    st.lastSplit = -1;
     LineParser p(st, text, st.fmClose, 0);
     p.beginDocument();
     for (int L = 0; L < n; ++L)
@@ -876,6 +943,14 @@ TreeUpdate incrementalUpdate(Store& st, const Text& newText, const ChangeDesc& c
             F = Enew;
     }
     run.frontier = F;
+    int LS = st.lastSplit;
+    if (LS >= 0) {
+        if (LS >= run.Eold)
+            LS += run.delta;
+        else if (LS > run.R0)
+            LS = Enew;
+    }
+    run.lastSplit = LS;
     run.R = restartAt0 ? 0 : run.R0;
     run.useFrontierState = false;
     if (F >= 0 && F <= run.R) {
@@ -884,8 +959,14 @@ TreeUpdate incrementalUpdate(Store& st, const Text& newText, const ChangeDesc& c
         if (!run.useFrontierState)
             return fullReparseUpdate(st, newText, oldN);
     }
-    // Move back over open lookahead-sensitive leaves (paragraph / indented code).
+    // Move back over open lookahead-sensitive leaves (paragraph / indented code): the one open at
+    // the changed line must be parsed again from its start. At that start another one may be open;
+    // when the leaf found before starts on this line inside a container opened on this line (a new
+    // list item / quote / footnote), this unchanged line closed the older leaf plainly (its shape
+    // depended only on earlier lines), so the walk stops and it is adopted "sealed". Anything else
+    // (refdef / setext / table splits, lazy lines) keeps walking back.
     std::vector<int> chain;
+    int prevLeaf = -1;
     while (run.R > 0 && !run.useFrontierState) {
         const quint32 sid = st.lines[size_t(run.R)].state;
         if (sid == kNoState || sid >= st.states->size())
@@ -895,9 +976,18 @@ TreeUpdate incrementalUpdate(Store& st, const Text& newText, const ChangeDesc& c
             break;
         if (!validChain(st, run.R, ps, chain))
             return fullReparseUpdate(st, newText, oldN);
+        if (prevLeaf > 0) {
+            const int container = st.parents[size_t(prevLeaf)];
+            if (container > 0 && st.nodes[size_t(container)].fromLine == run.R && st.nodes[size_t(prevLeaf)].fromLine == run.R
+                && st.nodes[size_t(chain.back())].toLine <= run.R) {
+                run.sealedLeaf = true;
+                break;
+            }
+        }
         const int start = st.nodes[size_t(chain.back())].fromLine;
         if (start >= run.R)
             return fullReparseUpdate(st, newText, oldN);
+        prevLeaf = chain.back();
         run.R = start;
     }
     if (run.R == 0 && !run.useFrontierState)
@@ -935,6 +1025,7 @@ bool resumeParse(Store& st, const Text& text, qint64 maxNanos, TreeUpdate* out)
     run.changeEnd = st.frontier;
     run.delta = 0;
     run.frontier = st.frontier;
+    run.lastSplit = st.lastSplit;
     run.ensureLine = -1;
     run.maxNanos = maxNanos;
     run.useFrontierState = true;

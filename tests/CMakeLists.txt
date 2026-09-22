@@ -38,3 +38,4 @@ oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Q
 oc_add_test(markdown_spec_diff_test SOURCES markdown/spec_diff_test.cpp DEPS oc_markdown)
 oc_add_test(markdown_incremental_test SOURCES markdown/incremental_test.cpp DEPS oc_markdown)
 oc_add_test(markdown_golden_test SOURCES markdown/golden_test.cpp DEPS oc_markdown)
+oc_add_test(markdown_perf_test SOURCES markdown/parser_perf_test.cpp DEPS oc_markdown LABELS perf)
