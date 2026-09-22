@@ -16,7 +16,9 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QSet>
+#include <QTemporaryFile>
 #include <gtest/gtest.h>
 
 #include <cstdio>
@@ -281,18 +283,25 @@ QStringList splitParagraphs(const QString& html)
     return out;
 }
 
-QString runCmarkGfm(const QString& markdown)
+QString runTool(const QString& program, const QStringList& args, const QString& markdown)
 {
     QProcess p;
-    p.start(QStringLiteral("/usr/bin/cmark-gfm"),
-            {QStringLiteral("--to"), QStringLiteral("html"), QStringLiteral("--unsafe"), QStringLiteral("-e"), QStringLiteral("strikethrough"),
-             QStringLiteral("-e"), QStringLiteral("autolink")});
+    p.start(program, args);
     if (!p.waitForStarted(5000))
-        return QStringLiteral("<cmark-gfm failed to start>");
+        return QStringLiteral("<%1 failed to start>").arg(program);
     p.write(markdown.toUtf8());
     p.closeWriteChannel();
     p.waitForFinished(10000);
     return QString::fromUtf8(p.readAllStandardOutput());
+}
+
+// cmark-gfm with the strikethrough + autolink extensions (the oracle), or its CommonMark core alone.
+QString runCmarkGfm(const QString& markdown, bool extensions = true)
+{
+    QStringList args = {QStringLiteral("--to"), QStringLiteral("html"), QStringLiteral("--unsafe")};
+    if (extensions)
+        args << QStringLiteral("-e") << QStringLiteral("strikethrough") << QStringLiteral("-e") << QStringLiteral("autolink");
+    return runTool(QStringLiteral("/usr/bin/cmark-gfm"), args, markdown);
 }
 
 QList<Case> loadCases()
@@ -403,11 +412,12 @@ TEST(InlineSpec, CommonMarkAndGfmDifferential)
 namespace {
 
 // Runs many independent paragraphs through one cmark-gfm process (separated by a marker paragraph) and
-// returns the HTML of each, or "" where the output is not a single paragraph.
-QStringList cmarkGfmBatch(const QStringList& paragraphs)
+// returns the HTML of each, or "" where the output is not a single paragraph. `prefix` (link reference
+// definitions) is put in front of the document; it must not produce output.
+QStringList cmarkGfmBatch(const QStringList& paragraphs, const QString& prefix)
 {
     static const QString marker = QStringLiteral("QQMARKERQQ");
-    QString doc;
+    QString doc = prefix;
     for (const QString& p : paragraphs)
         doc += p + QStringLiteral("\n\n") + marker + QStringLiteral("\n\n");
     const QString html = runCmarkGfm(doc);
@@ -416,7 +426,7 @@ QStringList cmarkGfmBatch(const QStringList& paragraphs)
         // some input opened a block that swallowed markers (fence, HTML block...): one process each
         parts.clear();
         for (const QString& p : paragraphs)
-            parts << runCmarkGfm(p);
+            parts << runCmarkGfm(prefix + p);
     }
     QStringList out;
     for (qsizetype k = 0; k < paragraphs.size(); ++k)
@@ -424,26 +434,67 @@ QStringList cmarkGfmBatch(const QStringList& paragraphs)
     return out;
 }
 
-void compareWithCmark(const QStringList& inputs, int* compared, QStringList* mismatches)
+QString runMarkdownIt(const QString& markdown)
 {
-    const QStringList ref = cmarkGfmBatch(inputs);
+    QTemporaryFile f; // the markdown-it CLI reads a file, not stdin
+    if (!f.open())
+        return QString();
+    f.write(markdown.toUtf8());
+    f.close();
+    QProcess p;
+    p.start(QStringLiteral("/usr/bin/markdown-it"), {f.fileName()});
+    p.waitForFinished(20000);
+    return QString::fromUtf8(p.readAllStandardOutput());
+}
+
+// Tie-breaker for a mismatch with cmark-gfm: its CommonMark core (0.29) has known bugs, e.g. after a
+// link a later '[' re-enables the link openers before it (nested links), the old per-character
+// openers_bottom of process_emphasis, "![^x](y)" read as '!' + link. When two independent CommonMark
+// 0.31 implementations (md4c, markdown-it; both print cmark's XHTML format) agree with each other but
+// not with cmark-gfm's core, cmark-gfm cannot judge the input: if its extensions do not change its
+// output, our HTML must equal theirs; otherwise the input is only counted.
+bool cmarkCoreQuirk(const QString& markdown, const QString& gfmHtml, const QString& ours)
+{
+    static const bool haveOthers = QFile::exists(QStringLiteral("/usr/bin/md2html")) && QFile::exists(QStringLiteral("/usr/bin/markdown-it"));
+    if (!haveOthers)
+        return false;
+    const QString core = runCmarkGfm(markdown, false);
+    const QString md4c = runTool(QStringLiteral("/usr/bin/md2html"), {QStringLiteral("-x")}, markdown);
+    if (md4c == core || runMarkdownIt(markdown) != md4c)
+        return false;
+    return core != gfmHtml || ours == md4c;
+}
+
+struct DiffStats {
+    int compared = 0;
+    int coreQuirks = 0; // inputs hitting a cmark-gfm core bug (see cmarkCoreQuirk())
+    QStringList mismatches;
+};
+
+void compareWithCmark(const QStringList& inputs, DiffStats* stats, const QList<LinkRefDefinition>& prefixRefs = {}, const QString& prefix = {})
+{
+    const QStringList ref = cmarkGfmBatch(inputs, prefix);
     for (qsizetype k = 0; k < inputs.size(); ++k) {
         if (ref[k].isEmpty())
             continue;
-        QList<LinkRefDefinition> refs;
+        QList<LinkRefDefinition> refs = prefixRefs;
         const QStringList contents = prepareParagraphs(inputs[k], &refs);
         if (contents.size() != 1)
             continue;
         const InlineTreePtr tree = parseInline(contents[0], refs);
         if (usesObsidianSyntax(*tree))
             continue;
-        ++*compared;
+        ++stats->compared;
         const QString ours = test::renderParagraph(*tree, true);
-        if (ours != ref[k]) {
-            QString esc = inputs[k];
-            esc.replace(QLatin1Char('\\'), QStringLiteral("\\\\")).replace(QLatin1Char('\n'), QStringLiteral("\\n"));
-            *mismatches << QStringLiteral("input: %1\n  cmark-gfm: %2\n  ours:      %3").arg(esc, ref[k].trimmed(), ours.trimmed());
+        if (ours == ref[k])
+            continue;
+        if (cmarkCoreQuirk(prefix + inputs[k], ref[k], ours)) {
+            ++stats->coreQuirks;
+            continue;
         }
+        QString esc = inputs[k];
+        esc.replace(QLatin1Char('\\'), QStringLiteral("\\\\")).replace(QLatin1Char('\n'), QStringLiteral("\\n"));
+        stats->mismatches << QStringLiteral("input: %1\n  cmark-gfm: %2\n  ours:      %3").arg(esc, ref[k].trimmed(), ours.trimmed());
     }
 }
 
@@ -472,12 +523,14 @@ TEST(InlineSpec, CmarkGfmEdgeCases)
         QStringLiteral("[http://a.b](http://c.d)"), QStringLiteral("[a](b) http://c.d"), QStringLiteral("![http://a.b](c)"), QStringLiteral("<http://a.b>www.c.d"),
         QStringLiteral("**http://a.b**c"), QStringLiteral("http://a.b/**c**"), QStringLiteral("`http://a.b` http://c.d"), QStringLiteral("http://a.b/`c`"),
         QStringLiteral("www.a.b/c(d)e)"), QStringLiteral("www.a.b/(((c)))"), QStringLiteral("http://a.b/c&lt;"), QStringLiteral("x@y.z)"),
+        // non-ASCII characters end cmark-gfm's (byte-wise) domain check: later underscores are not seen
+        QStringLiteral("http://a.bcé_x"), QStringLiteral("https://é_a.b_c"), QStringLiteral("www.a.bé_c"), QStringLiteral("www.aé.b_c.d_e"),
+        QStringLiteral("http://a_b.c_d—x"), QStringLiteral("http://日本_x.y_z"), QStringLiteral("www.😀.a_b"), QStringLiteral("http://a.b«_c"),
     };
-    int compared = 0;
-    QStringList mismatches;
-    compareWithCmark(inputs, &compared, &mismatches);
-    std::printf("[inline-spec] edge cases: %d compared, %lld mismatches\n", compared, qlonglong(mismatches.size()));
-    for (const QString& m : mismatches)
+    DiffStats stats;
+    compareWithCmark(inputs, &stats);
+    std::printf("[inline-spec] edge cases: %d compared, %lld mismatches\n", stats.compared, qlonglong(stats.mismatches.size()));
+    for (const QString& m : stats.mismatches)
         ADD_FAILURE() << qPrintable(m);
 }
 
@@ -494,6 +547,11 @@ bool hasKnownCmarkQuirk(const QString& s)
     // cmark-gfm merges escaped chars / entities into the text its email autolinker scans, and loses
     // track of links nested through an autolink (emails inside link text get linked)
     if (s.contains(u'@') && (s.contains(u'\\') || s.contains(u'&') || (s.contains(u'<') && s.contains(QLatin1StringView("](")))))
+        return true;
+    // cmark-gfm's email autolinker restarts at a second '@' of a domain ("a@b.co@b") without resetting
+    // its dot count, so it links "b.co@b" although GFM requires a '.' in the domain
+    static const QRegularExpression doubleAt(QStringLiteral("@[A-Za-z0-9._-]*@"));
+    if (s.contains(doubleAt))
         return true;
     // cmark-gfm skips '~' (strikethrough) when computing the flanking of neighbouring delimiter runs
     for (const char* pair : {"*~", "~*", "_~", "~_"})
@@ -530,44 +588,83 @@ bool hasKnownCmarkQuirk(const QString& s)
     return false;
 }
 
+struct FuzzProfile {
+    const char* name;
+    QString alphabet;
+    QStringList chunks;
+    QString prefix;                   // reference definitions in front of every batch
+    QList<LinkRefDefinition> refs;    // the same definitions for parseInline()
+};
+
+LinkRefDefinition refDef(const char* label, const char* dest, const char* title = "")
+{
+    return LinkRefDefinition{rules::normalizeLinkLabel(QString::fromUtf8(label)), QString::fromUtf8(dest), QString::fromUtf8(title), 0};
+}
+
+QList<FuzzProfile> fuzzProfiles()
+{
+    FuzzProfile plain;
+    plain.name = "plain";
+    plain.alphabet = QStringLiteral("ab *_`[]()!<>&;\\\".,:/@-\nx'w");
+    plain.chunks = {QStringLiteral("**"),       QStringLiteral("__"),       QStringLiteral("~~"),        QStringLiteral("http://a.bc"),
+                    QStringLiteral("www.a.bc"), QStringLiteral("a@b.co"),   QStringLiteral("&amp;"),     QStringLiteral("&#35;"),
+                    QStringLiteral("<b>"),      QStringLiteral("</b>"),     QStringLiteral("<a href=\"x\">"), QStringLiteral("](b)"),
+                    QStringLiteral("](<c d>)"), QStringLiteral("[x]"),      QStringLiteral("![y"),       QStringLiteral("``"),
+                    QStringLiteral("  \n"),     QStringLiteral("\\\n"),     QStringLiteral("é"),         QStringLiteral("](b \"t\")"),
+                    QStringLiteral("***"),      QStringLiteral("_*"),       QStringLiteral("<x@y.zz>"),  QStringLiteral("<http://q.r>")};
+    // Wider character set (tabs, digits, Unicode punctuation, NBSP, Obsidian-ish characters that must stay
+    // text on their own) and reference links against a fixed set of definitions.
+    FuzzProfile wide;
+    wide.name = "wide+refs";
+    wide.alphabet = QStringLiteral("ab *_`[]()!<>&;\\\"'.,:/@-\n\tx1=|^#$%{}+?w") + QChar(0x2014) + QChar(0xAB) + QChar(0xA0) + QChar(0xE9);
+    wide.chunks = {QStringLiteral("[x]"),        QStringLiteral("[y][]"),       QStringLiteral("[Foo  bar][x]"), QStringLiteral("![x]"),
+                   QStringLiteral("[FOO BAR]"),  QStringLiteral("][y]"),        QStringLiteral("[ẞ]"),          QStringLiteral("[z]"),
+                   QStringLiteral("](u 't')"),   QStringLiteral("](<>)"),       QStringLiteral("]( b )"),       QStringLiteral("](a(b)c)"),
+                   QStringLiteral("**"),         QStringLiteral("__"),          QStringLiteral("~~"),           QStringLiteral("``"),
+                   QStringLiteral("http://a.b"), QStringLiteral("www.a.b/c"),   QStringLiteral("&quot;"),       QStringLiteral("&#x41;"),
+                   QStringLiteral("<i>"),        QStringLiteral("</i>"),        QStringLiteral("<!-- c -->"),   QStringLiteral("<?p?>"),
+                   QStringLiteral("  \n"),       QStringLiteral("\\\n"),        QStringLiteral("\\*"),          QStringLiteral("\\["),
+                   QStringLiteral("***"),        QStringLiteral("*_"),          QStringLiteral("`a`"),          QStringLiteral("[^x")};
+    wide.prefix = QStringLiteral("[x]: /u\n[y]: </v w> \"t\"\n[Foo  Bar]: /f 'q'\n[ẞ]: /ss\n\n");
+    wide.refs = {refDef("x", "/u"), refDef("y", "/v w", "t"), refDef("Foo  Bar", "/f", "q"), refDef("ẞ", "/ss")};
+    return {plain, wide};
+}
+
 } // namespace
 
-// Random CommonMark/GFM inputs (no Obsidian syntax) compared with cmark-gfm.
+// Random CommonMark/GFM inputs (no Obsidian syntax) compared with cmark-gfm (md4c and markdown-it break
+// ties where cmark-gfm's CommonMark core is wrong, see cmarkCoreQuirk()).
 TEST(InlineSpec, RandomDifferentialWithCmarkGfm)
 {
     if (!QFile::exists(QStringLiteral("/usr/bin/cmark-gfm")))
         GTEST_SKIP() << "cmark-gfm not installed";
-    const QString alphabet = QStringLiteral("ab *_`[]()!<>&;\\\".,:/@-\nx'w");
-    const QStringList chunks = {QStringLiteral("**"),       QStringLiteral("__"),       QStringLiteral("~~"),        QStringLiteral("http://a.bc"),
-                                QStringLiteral("www.a.bc"), QStringLiteral("a@b.co"),   QStringLiteral("&amp;"),     QStringLiteral("&#35;"),
-                                QStringLiteral("<b>"),      QStringLiteral("</b>"),     QStringLiteral("<a href=\"x\">"), QStringLiteral("](b)"),
-                                QStringLiteral("](<c d>)"), QStringLiteral("[x]"),      QStringLiteral("![y"),       QStringLiteral("``"),
-                                QStringLiteral("  \n"),     QStringLiteral("\\\n"),     QStringLiteral("é"),         QStringLiteral("](b \"t\")"),
-                                QStringLiteral("***"),      QStringLiteral("_*"),       QStringLiteral("<x@y.zz>"),  QStringLiteral("<http://q.r>")};
-    // OC_INLINE_FUZZ_ITERS / OC_INLINE_FUZZ_SEED widen the search locally
-    const int iters = qEnvironmentVariableIsSet("OC_INLINE_FUZZ_ITERS") ? qEnvironmentVariableIntValue("OC_INLINE_FUZZ_ITERS") : 4000;
-    QRandomGenerator r(qEnvironmentVariableIsSet("OC_INLINE_FUZZ_SEED") ? quint32(qEnvironmentVariableIntValue("OC_INLINE_FUZZ_SEED")) : 20260922u);
-    QStringList inputs;
-    for (int iter = 0; iter < iters; ++iter) {
-        QString s;
-        const int len = 1 + r.bounded(24);
-        for (int k = 0; k < len; ++k) {
-            if (r.bounded(3) == 0)
-                s += chunks[r.bounded(int(chunks.size()))];
-            else
-                s += alphabet[r.bounded(int(alphabet.size()))];
+    // OC_INLINE_FUZZ_ITERS / OC_INLINE_FUZZ_SEED widen the search locally (iterations per profile)
+    const int iters = qEnvironmentVariableIsSet("OC_INLINE_FUZZ_ITERS") ? qEnvironmentVariableIntValue("OC_INLINE_FUZZ_ITERS") : 3000;
+    const quint32 seed = qEnvironmentVariableIsSet("OC_INLINE_FUZZ_SEED") ? quint32(qEnvironmentVariableIntValue("OC_INLINE_FUZZ_SEED")) : 20260922u;
+    for (const FuzzProfile& prof : fuzzProfiles()) {
+        QRandomGenerator r(seed);
+        QStringList inputs;
+        for (int iter = 0; iter < iters; ++iter) {
+            QString s;
+            const int len = 1 + r.bounded(24);
+            for (int k = 0; k < len; ++k) {
+                if (r.bounded(3) == 0)
+                    s += prof.chunks[r.bounded(int(prof.chunks.size()))];
+                else
+                    s += prof.alphabet[r.bounded(int(prof.alphabet.size()))];
+            }
+            // keep paragraphs self-contained in the batch: no reference definitions, no blank lines
+            if (s.contains(QLatin1StringView("]:")) || s.contains(QLatin1StringView("\n\n")) || s.trimmed().isEmpty() || hasKnownCmarkQuirk(s))
+                continue;
+            inputs << s;
         }
-        // keep paragraphs self-contained in the batch: no reference definitions, no blank lines
-        if (s.contains(QLatin1StringView("]:")) || s.contains(QLatin1StringView("\n\n")) || s.trimmed().isEmpty() || hasKnownCmarkQuirk(s))
-            continue;
-        inputs << s;
+        DiffStats stats;
+        for (qsizetype from = 0; from < inputs.size(); from += 500)
+            compareWithCmark(inputs.mid(from, 500), &stats, prof.refs, prof.prefix);
+        std::printf("[inline-spec] random differential (%s): %d compared, %lld mismatches, %d cmark-gfm core quirks\n",
+                    prof.name, stats.compared, qlonglong(stats.mismatches.size()), stats.coreQuirks);
+        for (const QString& m : stats.mismatches.mid(0, 40))
+            std::printf("[inline-spec] %s\n", qPrintable(m));
+        EXPECT_TRUE(stats.mismatches.isEmpty()) << prof.name;
     }
-    int compared = 0;
-    QStringList mismatches;
-    for (qsizetype from = 0; from < inputs.size(); from += 500)
-        compareWithCmark(inputs.mid(from, 500), &compared, &mismatches);
-    std::printf("[inline-spec] random differential: %d compared, %lld mismatches\n", compared, qlonglong(mismatches.size()));
-    for (const QString& m : mismatches.mid(0, 40))
-        std::printf("[inline-spec] %s\n", qPrintable(m));
-    EXPECT_TRUE(mismatches.isEmpty());
 }

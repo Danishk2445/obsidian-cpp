@@ -60,24 +60,35 @@ bool startsWithAt(QStringView s, qsizetype i, QLatin1StringView what, Qt::CaseSe
 }
 
 // cmark-gfm check_domain(): returns the length of the domain part scanned from `from` (0 = invalid).
+// cmark-gfm walks UTF-8 bytes: a non-ASCII character is accepted by its lead byte, then its first
+// continuation byte fails the host-char test and ends the scan (underscores after it are not seen).
+// That is mirrored by stopping right after the first non-ASCII character.
 qsizetype checkDomain(QStringView s, qsizetype from, qsizetype size, bool allowShort)
 {
     if (size < 1)
         return 0;
+    auto charLen = [&](qsizetype k) { return QChar::isHighSurrogate(s[from + k].unicode()) && k + 1 < size ? 2 : 1; };
     qsizetype np = 0, uscore1 = 0, uscore2 = 0;
     qsizetype i = 1;
-    for (; i < size - 1; ++i) {
-        if (s[from + i] == u'\\' && i < size - 2)
-            ++i;
-        const char16_t c = s[from + i].unicode();
-        if (c == u'_') {
-            ++uscore2;
-        } else if (c == u'.') {
-            uscore1 = uscore2;
-            uscore2 = 0;
-            ++np;
-        } else if (!isValidHostChar(s, from + i) && c != u'-') {
-            break;
+    if (s[from].unicode() >= 0x80) {
+        i = charLen(0); // the byte after the (unchecked) first character is a continuation byte
+    } else {
+        for (; i < size - 1; ++i) {
+            if (s[from + i] == u'\\' && i < size - 2)
+                ++i;
+            const char16_t c = s[from + i].unicode();
+            if (c == u'_') {
+                ++uscore2;
+            } else if (c == u'.') {
+                uscore1 = uscore2;
+                uscore2 = 0;
+                ++np;
+            } else if (!isValidHostChar(s, from + i) && c != u'-') {
+                break;
+            } else if (c >= 0x80) {
+                i += charLen(i);
+                break;
+            }
         }
     }
     if ((uscore1 > 0 || uscore2 > 0) && np <= 10)
