@@ -5,6 +5,7 @@ oc_add_library(oc_core
     config/clone_paths.cpp
     config/config_store.cpp
     config/json_file.cpp
+    config/vault_config.cpp
     config/vault_registry.cpp
     documents/document.cpp
     documents/document_manager.cpp
