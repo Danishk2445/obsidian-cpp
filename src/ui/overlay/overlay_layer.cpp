@@ -36,7 +36,8 @@ void OverlayLayer::setBlocking(QWidget* child, bool blocking)
 
 void OverlayLayer::refresh()
 {
-    m_blocking.removeIf([](const QPointer<QWidget>& w) { return !w || !w->isVisible(); });
+    // isHidden(), not isVisible(): a modal shown while the layer itself is still hidden must keep blocking.
+    m_blocking.removeIf([](const QPointer<QWidget>& w) { return !w || w->isHidden(); });
     QRegion region;
     bool any = false;
     for (QObject* o : children()) {

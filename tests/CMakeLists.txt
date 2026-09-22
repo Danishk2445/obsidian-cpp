@@ -40,5 +40,8 @@ oc_add_test(editor_spell_test SOURCES editor/spell_test.cpp DEPS oc_editor Qt6::
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_editor_suggest_test SOURCES ui/editor_suggest_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_page_preview_test SOURCES ui/page_preview_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_modal_test SOURCES ui/modal_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_file_explorer_test SOURCES ui/file_explorer_test.cpp ui/file_explorer_test_support.h DEPS oc_ui Qt6::Test GUI LABELS threads)
+oc_add_test(perf_file_explorer_test SOURCES perf/file_explorer_perf_test.cpp DEPS oc_ui Qt6::Test GUI LABELS perf)
 oc_add_test(ui_attachments_test SOURCES ui/attachments_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_note_plugins_test SOURCES ui/note_plugins_ui_test.cpp DEPS oc_ui Qt6::Test GUI)
