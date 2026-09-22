@@ -28,6 +28,8 @@
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
 #include "ui/plugins/note_plugins_ui.h"
+#include "ui/views/file_explorer/file_actions.h"
+#include "ui/views/file_explorer/file_explorer_view.h"
 #include "ui/shell/ribbon.h"
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
@@ -319,6 +321,7 @@ void Application::populateWindow(MainWindow* w)
     auto* registry = new ViewRegistry;
     registerCoreViews(*registry);
     registerMarkdownView(*registry);
+    registerFileExplorerView(*registry); // replaces the placeholder
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
@@ -330,6 +333,7 @@ void Application::populateWindow(MainWindow* w)
     CommandRegistry* commands = session->commands();
     registerAppCommands(*commands, w);
     registerMarkdownCommands(*commands, workspace);
+    registerFileExplorerCommands(*commands, session);
     registerNotePluginCommands(*commands, w);
     {
         Command c;
@@ -358,21 +362,7 @@ void Application::populateWindow(MainWindow* w)
                 win->notices()->show(msg);
         });
         fm->setConfirmLinkUpdate([win](int links, int filesCount) {
-            QMessageBox box(win);
-            box.setWindowTitle(tr("Update links"));
-            box.setText(tr("Do you want to update internal links that link to this file?"));
-            box.setInformativeText(tr("This will affect %1 in %2.")
-                                       .arg(links == 1 ? tr("%1 link").arg(links) : tr("%1 links").arg(links),
-                                            filesCount == 1 ? tr("%1 file").arg(filesCount) : tr("%1 files").arg(filesCount)));
-            QPushButton* always = box.addButton(tr("Always update"), QMessageBox::AcceptRole);
-            QPushButton* once = box.addButton(tr("Just once"), QMessageBox::AcceptRole);
-            box.addButton(tr("Do not update"), QMessageBox::RejectRole);
-            box.exec();
-            if (box.clickedButton() == always)
-                return FileManager::LinkUpdateChoice::AlwaysUpdate;
-            if (box.clickedButton() == once)
-                return FileManager::LinkUpdateChoice::JustOnce;
-            return FileManager::LinkUpdateChoice::DoNotUpdate;
+            return win ? promptLinkUpdate(win->overlay(), links, filesCount) : FileManager::LinkUpdateChoice::DoNotUpdate;
         });
     }
 
