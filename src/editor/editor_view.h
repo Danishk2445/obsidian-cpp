@@ -89,6 +89,7 @@ public:
     QPointF docToViewport(const QPointF& docPt) const;
     QPointF viewportToDoc(const QPointF& vp) const;
     QRectF caretRectInViewport() const;
+    QRectF caretRectAt(qsizetype pos) const; // viewport coordinates of a caret at `pos`
     qsizetype positionAt(const QPoint& viewportPos);
 
     // A widget shown above the first line that scrolls with the text (Obsidian's inline title and

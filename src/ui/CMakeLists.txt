@@ -12,6 +12,7 @@ oc_add_library(oc_ui
     views/markdown/editor_search_bar.cpp
     views/markdown/inline_title.cpp
     views/markdown/markdown_commands.cpp
+    views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp

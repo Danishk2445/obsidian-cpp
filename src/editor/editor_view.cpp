@@ -375,6 +375,15 @@ QRectF EditorView::caretRectInViewport() const
     return QRectF(docToViewport(r.topLeft()), r.size());
 }
 
+QRectF EditorView::caretRectAt(qsizetype pos) const
+{
+    if (!m_doc)
+        return {};
+    auto* self = const_cast<EditorView*>(this);
+    const QRectF r = self->m_layout.caretRect(std::clamp<qsizetype>(pos, 0, m_doc->text().length()));
+    return QRectF(docToViewport(r.topLeft()), r.size());
+}
+
 void EditorView::scrollToPos(qsizetype pos, bool center)
 {
     if (!m_doc)

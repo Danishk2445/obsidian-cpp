@@ -13,6 +13,7 @@ namespace oc {
 
 class Document;
 class EditorSearchBar;
+class EditorSuggest;
 class FoldStore;
 class InlineTitle;
 class ViewRegistry;
@@ -53,6 +54,7 @@ public:
     void showSearch(bool replace); // editor:open-search / editor:open-search-replace
     EditorSearchBar* searchBar() const { return m_searchBar; }
     InlineTitle* inlineTitle() const { return m_title; }
+    EditorSuggest* editorSuggest() const { return m_suggest; }
     bool save();                 // editor:save-file
     void applySettings();        // re-read the vault config (readable line length, folding, ...)
 
@@ -76,8 +78,10 @@ private:
     EditorView* m_editor;
     EditorSearchBar* m_searchBar;
     InlineTitle* m_title;
+    EditorSuggest* m_suggest;
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
+    QMetaObject::Connection m_configConn;
     bool m_restoringFolds = false;
 };
 

@@ -1,5 +1,7 @@
 #include "app/application.h"
 
+#include "app/scenario_runner.h"
+
 #include "core/commands/command_registry.h"
 #include "core/config/clone_paths.h"
 #include "core/config/config_store.h"
@@ -67,7 +69,7 @@ int Application::start()
 {
     // Headless screenshots: the offscreen platform's cursor starts at (10, 10), over the ribbon's
     // sidebar toggle. Park it outside before any window is shown so nothing renders hovered.
-    if (!m_opts.screenshot.isEmpty() && QGuiApplication::platformName() == u"offscreen")
+    if ((!m_opts.screenshot.isEmpty() || !m_opts.script.isEmpty()) && QGuiApplication::platformName() == u"offscreen")
         QCursor::setPos(-10000, -10000);
     m_registry->load();
     if (!m_opts.theme.isEmpty())
@@ -235,7 +237,9 @@ MainWindow* Application::openVault(const QString& rawPath)
     });
     m_windows.push_back(w);
     w->show();
-    if (!m_opts.screenshot.isEmpty())
+    if (!m_opts.script.isEmpty())
+        (new ScenarioRunner(w, m_opts.script, this))->start(); // takes its own screenshots
+    else if (!m_opts.screenshot.isEmpty())
         finishHeadless(w);
     return w;
 }

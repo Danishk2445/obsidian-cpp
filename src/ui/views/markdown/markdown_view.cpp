@@ -1,5 +1,7 @@
 #include "ui/views/markdown/markdown_view.h"
 
+#include "ui/views/markdown/editor_suggest.h"
+
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
@@ -53,6 +55,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     , m_editor(new EditorView(this))
     , m_searchBar(new EditorSearchBar(m_editor, this))
     , m_title(new InlineTitle)
+    , m_suggest(new EditorSuggest(this, m_editor))
 {
     setObjectName(QStringLiteral("ocMarkdownView"));
     auto* v = new QVBoxLayout(this);
@@ -121,17 +124,16 @@ void MarkdownView::loadFile(TFile* file)
     saveFolds();
     m_foldSave.stop();
     m_editor->setDocument(nullptr);
+    m_suggest->documentChanged();
     m_doc.reset();
     m_file = file;
-    if (VaultSession* s = session(); s && s->vaultConfig()) {
+    if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
         static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle"};
-        connect(s->vaultConfig(), &VaultConfig::configChanged, this,
-                [this](const QString& key) {
-                    for (const char* k : keys)
-                        if (key == QLatin1String(k))
-                            applySettings();
-                },
-                Qt::UniqueConnection);
+        m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
+            for (const char* k : keys)
+                if (key == QLatin1String(k))
+                    applySettings();
+        });
     }
     applySettings();
     if (file) {
@@ -145,6 +147,7 @@ void MarkdownView::loadFile(TFile* file)
                     guard->release(doc);
             });
             m_editor->setDocument(m_doc);
+            m_suggest->documentChanged();
             restoreFolds();
         } else if (NoticeManager* n = noticesFor(this)) {
             n->show(tr("Failed to open \"%1\": %2").arg(file->path(), err.isEmpty() ? tr("no document manager") : err));

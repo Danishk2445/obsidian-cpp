@@ -6,6 +6,7 @@
 #include <QVariant>
 #include <QWidget>
 
+#include <climits>
 #include <functional>
 
 class QLineEdit;
@@ -99,6 +100,27 @@ private:
     bool m_open = false;
 };
 
+// Obsidian's .prompt-instructions row ("↑↓ to navigate  ↵ to open ..."), wrapping to the width.
+class PromptInstructions : public QWidget {
+public:
+    explicit PromptInstructions(QWidget* parent = nullptr);
+    void setItems(const QList<SuggestModal::Instruction>& items);
+    const QList<SuggestModal::Instruction>& items() const { return m_items; }
+    void setCentered(bool centered) { m_centered = centered; update(); }
+    int naturalWidth() const; // everything on one row, incl. padding
+    QSize sizeHint() const override;
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int w) const override;
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+
+private:
+    QList<QList<int>> layoutRows(int width) const;
+    QList<SuggestModal::Instruction> m_items;
+    bool m_centered = true;
+};
+
 // The painted, virtualized list inside a SuggestModal (also used by editor suggest popups).
 class SuggestionList : public QAbstractScrollArea {
     Q_OBJECT
@@ -109,9 +131,12 @@ public:
     const QList<Suggestion>& suggestions() const { return m_items; }
     int selectedIndex() const { return m_selected; }
     void setSelectedIndex(int index, bool scroll = true); // wraps around
+    void clearSelection();                                // no row selected (selectedIndex() == -1)
+    int preferredWidth() const;                           // widest row's natural width (incl. padding)
     void pageUp();
     void pageDown();
     int contentHeight() const; // total height of all rows incl. padding
+    int contentHeightForWidth(int width, int cap = INT_MAX) const; // the same, laid out at `width`
     void setPadding(int px) { m_pad = px; relayoutRows(); }
     int indexAt(const QPoint& viewportPos) const;
     QRect rowRect(int index) const; // viewport coordinates
