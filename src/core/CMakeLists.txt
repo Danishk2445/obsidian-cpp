@@ -16,7 +16,14 @@ oc_add_library(oc_core
     recovery/file_recovery.cpp
     recovery/snapshot_store.cpp
     util/word_count.cpp
+    vault/fs_scan.cpp
+    vault/fs_watcher.cpp
+    vault/ignore_rules.cpp
+    vault/trash.cpp
+    vault/vault.cpp
+    vault/vault_io.cpp
+    vault/vault_sync.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
-  PRIVATE_DEPS SQLite::SQLite3 zstd::libzstd
+  PRIVATE_DEPS KF6::KIOCore SQLite::SQLite3 zstd::libzstd
 )
