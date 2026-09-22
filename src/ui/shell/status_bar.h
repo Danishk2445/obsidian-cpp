@@ -23,10 +23,12 @@ signals:
     void itemClicked(const QString& id);
 
 protected:
+    bool event(QEvent* e) override;
     void paintEvent(QPaintEvent*) override;
     bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private:
+    void anchor(); // fit to contents, bottom-right corner of the parent
     QHBoxLayout* m_layout;
     QList<QPair<QString, QLabel*>> m_items;
 };

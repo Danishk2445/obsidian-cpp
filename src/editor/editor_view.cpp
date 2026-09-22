@@ -525,6 +525,14 @@ bool EditorView::viewportEvent(QEvent* e)
 {
     if (e->type() == QEvent::Leave)
         setHoverLine(-1);
+    else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
+        // the top widget's content changed (updateGeometry() posts this to its parent)
+        const int w = int(m_layout.contentWidth());
+        const qreal h = m_topWidget->isHidden() ? 0
+                        : (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
+        if (!qFuzzyCompare(h + 1, m_topWidgetH + 1))
+            updateTopWidget();
+    }
     return QAbstractScrollArea::viewportEvent(e);
 }
 

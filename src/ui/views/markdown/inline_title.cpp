@@ -32,16 +32,17 @@ InlineTitle::InlineTitle(QWidget* parent)
 void InlineTitle::applyStyle()
 {
     const ThemePtr t = currentTheme();
-    // .inline-title: --h1-size / --h1-weight / --h1-line-height, letter-spacing -0.015em, --h1-color
+    // .inline-title: --inline-title-size/-weight/-line-height/-color (= the h1 values), letter-spacing -0.015em
     const double base = t->px(QStringLiteral("--font-text-size"), -1, 16);
-    const double size = std::round(base * t->number(QStringLiteral("--h1-size"), 1.618) * 100) / 100;
+    const double size = t->px(QStringLiteral("--inline-title-size"), base, base * 1.618);
     QFont f = t->textFont(size);
-    f.setWeight(QFont::Weight(int(t->number(QStringLiteral("--h1-weight"), 700))));
+    f.setWeight(QFont::Weight(int(t->number(QStringLiteral("--inline-title-weight"), 700))));
     f.setLetterSpacing(QFont::AbsoluteSpacing, -0.015 * size);
+    m_marginBottom = int(std::round(t->px(QStringLiteral("--inline-title-margin-bottom"), size, size * 0.5)));
     document()->setDefaultFont(f);
     setFont(f);
     QPalette pal = palette();
-    pal.setColor(QPalette::Text, t->color(QStringLiteral("--h1-color"), t->color(QStringLiteral("--text-normal"))));
+    pal.setColor(QPalette::Text, t->color(QStringLiteral("--inline-title-color"), t->color(QStringLiteral("--text-normal"))));
     pal.setColor(QPalette::Base, Qt::transparent);
     pal.setColor(QPalette::Highlight, t->color(QStringLiteral("--text-selection")));
     pal.setColor(QPalette::HighlightedText, t->color(QStringLiteral("--text-normal")));
@@ -52,13 +53,13 @@ void InlineTitle::applyStyle()
     QTextCursor c(document());
     c.select(QTextCursor::Document);
     QTextBlockFormat bf;
-    bf.setLineHeight(t->number(QStringLiteral("--h1-line-height"), 1.2) * 100, QTextBlockFormat::ProportionalHeight);
+    bf.setLineHeight(t->number(QStringLiteral("--inline-title-line-height"), 1.2) * 100, QTextBlockFormat::ProportionalHeight);
     c.mergeBlockFormat(bf);
     updateGeometry();
     update();
 }
 
-int InlineTitle::bottomMargin() const { return int(std::round(font().pixelSize() > 0 ? font().pixelSize() * 0.5 : font().pointSizeF() * 0.5 * 96 / 72)); }
+int InlineTitle::bottomMargin() const { return m_marginBottom; }
 
 void InlineTitle::setTitle(const QString& title)
 {

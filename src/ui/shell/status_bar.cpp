@@ -43,7 +43,7 @@ QLabel* StatusBar::addItem(const QString& id, const QString& text)
     l->installEventFilter(this);
     m_layout->addWidget(l);
     m_items.push_back({id, l});
-    adjustSize();
+    anchor();
     return l;
 }
 
@@ -59,7 +59,7 @@ void StatusBar::setItemText(const QString& id, const QString& text)
 {
     if (QLabel* l = item(id)) {
         l->setText(text);
-        adjustSize();
+        anchor();
     }
 }
 
@@ -67,8 +67,23 @@ void StatusBar::setItemVisible(const QString& id, bool visible)
 {
     if (QLabel* l = item(id)) {
         l->setVisible(visible);
-        adjustSize();
+        anchor();
     }
+}
+
+void StatusBar::anchor()
+{
+    adjustSize();
+    if (QWidget* p = parentWidget())
+        move(p->width() - width(), p->height() - height());
+}
+
+bool StatusBar::event(QEvent* e)
+{
+    const bool handled = QWidget::event(e);
+    if (e->type() == QEvent::LayoutRequest) // an item's size changed: keep hugging the bottom-right corner
+        anchor();
+    return handled;
 }
 
 bool StatusBar::eventFilter(QObject* obj, QEvent* ev)

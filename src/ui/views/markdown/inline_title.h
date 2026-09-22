@@ -37,6 +37,7 @@ private:
     void commit();
     QString m_title;
     bool m_editable = true;
+    int m_marginBottom = 13;
 };
 
 } // namespace oc
