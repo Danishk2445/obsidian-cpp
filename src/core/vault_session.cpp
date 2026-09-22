@@ -2,6 +2,7 @@
 
 #include "core/config/clone_paths.h"
 #include "core/config/config_store.h"
+#include "core/config/vault_config.h"
 
 #include <QFileInfo>
 
@@ -12,6 +13,7 @@ VaultSession::VaultSession(QString id, QString root, QObject* parent)
     , m_id(std::move(id))
     , m_root(std::move(root))
     , m_config(new ConfigStore(ClonePaths::vaultConfigDir(m_id), this))
+    , m_vaultConfig(new VaultConfig(m_config, this))
 {
 }
 

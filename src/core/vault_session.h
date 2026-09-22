@@ -6,7 +6,9 @@
 namespace oc {
 
 class ConfigStore;
+class MetadataCache;
 class Vault;
+class VaultConfig;
 class DocumentManager;
 class CommandRegistry;
 class Workspace;
@@ -25,14 +27,17 @@ public:
     QString name() const;
 
     ConfigStore* config() const { return m_config; }
+    VaultConfig* vaultConfig() const { return m_vaultConfig; } // app.json/appearance.json options (getConfig)
 
     // Services (like Obsidian's `app.*`), wired by the Application when the window is created.
     Vault* vault() const { return m_vault; }
+    MetadataCache* metadata() const { return m_metadata; }
     DocumentManager* documents() const { return m_documents; }
     CommandRegistry* commands() const { return m_commands; }
     Workspace* workspace() const { return m_workspace; }
     ViewRegistry* viewRegistry() const { return m_viewRegistry; }
     void setVault(Vault* v) { m_vault = v; }
+    void setMetadata(MetadataCache* m) { m_metadata = m; }
     void setDocuments(DocumentManager* d) { m_documents = d; }
     void setCommands(CommandRegistry* c) { m_commands = c; }
     void setWorkspace(Workspace* w) { m_workspace = w; }
@@ -40,6 +45,7 @@ public:
 
 private:
     Vault* m_vault = nullptr;
+    MetadataCache* m_metadata = nullptr;
     DocumentManager* m_documents = nullptr;
     CommandRegistry* m_commands = nullptr;
     Workspace* m_workspace = nullptr;
@@ -48,6 +54,7 @@ private:
     QString m_id;
     QString m_root;
     ConfigStore* m_config;
+    VaultConfig* m_vaultConfig;
 };
 
 } // namespace oc
