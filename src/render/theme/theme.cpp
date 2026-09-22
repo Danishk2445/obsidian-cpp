@@ -259,6 +259,27 @@ Theme::Scheme ThemeManager::effectiveScheme() const
     return Theme::Scheme::Dark; // Obsidian's default body class is theme-dark
 }
 
+ThemePtr ThemeManager::themeFor(Theme::Scheme scheme) const
+{
+    QHash<QString, QString> vars = m_body;
+    auto merge = [&](const QHash<QString, QString>& layer) {
+        for (auto it = layer.cbegin(); it != layer.cend(); ++it)
+            vars.insert(it.key(), it.value());
+    };
+    merge(scheme == Theme::Scheme::Dark ? m_dark : m_light);
+    merge(m_ovBody);
+    merge(scheme == Theme::Scheme::Dark ? m_ovDark : m_ovLight);
+    if (m_accent.isValid()) {
+        float h = 0, s = 0, l = 0;
+        m_accent.getHslF(&h, &s, &l);
+        vars.insert(QStringLiteral("--accent-h"), QString::number(std::max(0.0f, h) * 360.0f, 'f', 1));
+        vars.insert(QStringLiteral("--accent-s"), QString::number(s * 100.0f, 'f', 1) + QLatin1Char('%'));
+        vars.insert(QStringLiteral("--accent-l"), QString::number(l * 100.0f, 'f', 1) + QLatin1Char('%'));
+    }
+    vars.insert(QStringLiteral("--font-text-size"), QString::number(m_fonts.baseFontSize) + QStringLiteral("px"));
+    return std::make_shared<Theme>(scheme, std::move(vars), m_fonts, m_generation + 1000000);
+}
+
 void ThemeManager::apply()
 {
     const Theme::Scheme scheme = effectiveScheme();
