@@ -17,5 +17,6 @@ oc_add_test(editor_greentext_test SOURCES editor/greentext_guard_test.cpp DEPS o
 oc_add_test(core_link_resolver_test SOURCES core/link_resolver_test.cpp DEPS oc_core)
 oc_add_test(core_link_updater_test SOURCES core/link_updater_test.cpp DEPS oc_core)
 oc_add_test(core_file_recovery_test SOURCES core/file_recovery_test.cpp DEPS oc_core)
+oc_add_test(core_word_count_test SOURCES core/word_count_test.cpp DEPS oc_core)
 oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GUI)
 oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6::Test GUI)
