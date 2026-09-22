@@ -86,7 +86,9 @@ public:
     QList<WorkspaceLeaf*> leaves;
     int currentTab = 0;
     bool stacked = false; // round-tripped; stacked rendering is not implemented
-    TabGroupWidget* w = nullptr;
+    // The widget is deleted later than the model item (deleteLater: it may be handling the event that
+    // removed the item); the destructor detaches it from the model so it never touches a freed item.
+    QPointer<TabGroupWidget> w;
 };
 
 using WorkspaceImpl = WorkspaceTabs::Impl;
@@ -106,7 +108,7 @@ public:
     QList<WorkspaceItem*> children;
     int width = 300;        // sidedocks only
     bool collapsed = false; // sidedocks only
-    SplitWidget* w = nullptr;
+    QPointer<SplitWidget> w; // see WorkspaceTabs::w
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -238,7 +240,10 @@ struct Workspace::Impl {
     // ---- notifications ------------------------------------------------------------------------
     void beginBatch() { ++batchDepth; }
     void endBatch();
-    void structureChanged(); // widgets resync + tops + save + layoutChanged()
+    void structureChanged(); // dimensions + widgets resync + tops + save + layoutChanged()
+    // Obsidian's WorkspaceSplit.recomputeChildrenDimensions(), for every split: children share the
+    // space equally unless all of them have a dimension, which are then rescaled to sum to 100.
+    void normalizeDimensions();
     void syncWidgets();
     void updateTopFlags();
     void refreshChrome(); // repaint headers (active group / focus / titles)
@@ -302,6 +307,7 @@ public:
     void sync();
     void relayout();
     WorkspaceSplit* split() const { return m_split; }
+    void detachModel() { m_split = nullptr; } // the model item is being deleted
 
 protected:
     void resizeEvent(QResizeEvent*) override;
@@ -321,6 +327,7 @@ class TabHeaderBar : public QWidget {
     Q_OBJECT
 public:
     TabHeaderBar(WorkspaceImpl* d, WorkspaceTabs* tabs, QWidget* parent);
+    void detachModel(); // the model item is being deleted
 
     void setSidedock(bool sidedock);
     void setTop(bool top);
@@ -364,6 +371,7 @@ private:
     void paintRootTab(QPainter& p, int index, const TabGeom& g);
     void paintSideTab(QPainter& p, int index, const TabGeom& g);
     void updateHover(const QPoint& pos);
+    void refreshDragRegion();
     void showTabMenu(int index, const QPoint& globalPos);
     void showTabList();
     WorkspaceLeaf* leafAt(int index) const;
@@ -395,6 +403,7 @@ class TabGroupWidget : public QWidget {
 public:
     TabGroupWidget(WorkspaceImpl* d, WorkspaceTabs* tabs);
     void sync();
+    void detachModel(); // the model item is being deleted
     TabHeaderBar* header() const { return m_header; }
     WorkspaceTabs* tabs() const { return m_tabs; }
     void releaseLeaves();

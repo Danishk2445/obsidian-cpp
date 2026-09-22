@@ -20,7 +20,10 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QRandomGenerator>
+
+#include <cmath>
 
 namespace oc {
 
@@ -80,6 +83,9 @@ bool explicitlyHidden(const QWidget* w)
 {
     return w->testAttribute(Qt::WA_WState_ExplicitShowHide) && w->testAttribute(Qt::WA_WState_Hidden);
 }
+
+// Obsidian's WorkspaceItem.setDimension(): values outside (0, 100) mean "unset" (flex-grow 1).
+double validDimension(double dim) { return dim > 0 && dim < 100 ? dim : 0; }
 } // namespace
 
 QString fileBaseName(const QString& path)
@@ -111,6 +117,10 @@ protected:
     bool eventFilter(QObject* obj, QEvent* ev) override
     {
         const QEvent::Type t = ev->type();
+        if (t == QEvent::KeyPress && d->drag.active && static_cast<QKeyEvent*>(ev)->key() == Qt::Key_Escape) {
+            d->endDrag({}, false); // Escape cancels a tab drag (like an HTML drag in Obsidian)
+            return true;
+        }
         if (t != QEvent::MouseButtonPress && t != QEvent::FocusIn)
             return false;
         if (!obj->isWidgetType() || !d->widget || d->destroying)
@@ -179,7 +189,12 @@ WorkspaceSplit::WorkspaceSplit(WorkspaceImpl* d, Role role, bool vertical)
 {
 }
 
-WorkspaceSplit::~WorkspaceSplit() = default;
+WorkspaceSplit::~WorkspaceSplit()
+{
+    if (w)
+        w->detachModel();
+}
+
 QWidget* WorkspaceSplit::widget() const { return w; }
 
 WorkspaceTabs::WorkspaceTabs(Workspace::Impl* d)
@@ -188,7 +203,12 @@ WorkspaceTabs::WorkspaceTabs(Workspace::Impl* d)
 {
 }
 
-WorkspaceTabs::~WorkspaceTabs() = default;
+WorkspaceTabs::~WorkspaceTabs()
+{
+    if (w)
+        w->detachModel();
+}
+
 QWidget* WorkspaceTabs::widget() const { return w; }
 
 // ---------------------------------------------------------------------------------------------
@@ -425,6 +445,8 @@ void Workspace::Impl::setViewState(WorkspaceLeaf* leaf, const QJsonObject& viewS
         lw->refresh();
     if (active == leaf)
         updateActiveFile();
+    if (leaf->m_view != cur && leaf->m_tabs)
+        structureChanged(); // Obsidian: a new view is a layout change ("layout-change", saved)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1024,11 +1046,44 @@ void Workspace::Impl::structureChanged()
         batchDirty = true;
         return;
     }
+    // Obsidian's updateLayout(): whatever emptied the root (closing, dragging the last tab into a
+    // sidedock), it gets a tab group with an empty leaf again.
+    if (root) {
+        bool any = false;
+        forEachLeaf(root, [&](WorkspaceLeaf*) { any = true; });
+        if (!any) {
+            ensureRootLeaf(); // re-enters structureChanged() when its batch ends
+            return;
+        }
+    }
+    normalizeDimensions();
     syncWidgets();
     updateTopFlags();
     refreshChrome();
     q->requestSaveLayout();
     emit q->layoutChanged();
+}
+
+void Workspace::Impl::normalizeDimensions()
+{
+    std::function<void(WorkspaceSplit*)> visit = [&](WorkspaceSplit* s) {
+        double sum = 0;
+        bool all = !s->children.isEmpty();
+        for (const WorkspaceItem* c : std::as_const(s->children)) {
+            all = all && c->dimension > 0;
+            sum += c->dimension;
+        }
+        // Rescale only when needed so stable layouts serialize unchanged (no floating point drift).
+        const bool rescale = all && std::abs(sum - 100) > 1e-6;
+        for (WorkspaceItem* c : std::as_const(s->children)) {
+            c->dimension = all ? validDimension(rescale ? c->dimension * 100 / sum : c->dimension) : 0;
+            if (WorkspaceSplit* cs = c->asSplit())
+                visit(cs);
+        }
+    };
+    for (WorkspaceSplit* s : {root, left, right})
+        if (s)
+            visit(s);
 }
 
 void Workspace::Impl::syncWidgets()
@@ -1243,7 +1298,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
         const bool vertical = o.value(QStringLiteral("direction")).toString() != u"horizontal";
         auto* s = new WorkspaceSplit(this, role, vertical);
         s->id = idOf(o);
-        s->dimension = o.value(QStringLiteral("dimension")).toDouble(0);
+        s->dimension = validDimension(o.value(QStringLiteral("dimension")).toDouble(0));
         s->extra = without(o, {"id", "type", "dimension", "children", "direction", "width", "collapsed"});
         if (s->isSidedock()) {
             s->width = std::max(1, int(std::lround(o.value(QStringLiteral("width")).toDouble(kDefaultSideWidth))));
@@ -1257,7 +1312,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
             }
         }
         if (role == WorkspaceSplit::Role::Nested && s->children.isEmpty()) {
-            delete s->w;
+            delete s->w.data();
             delete s;
             return nullptr;
         }
@@ -1266,7 +1321,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
     if (type == u"tabs") {
         auto* t = new WorkspaceTabs(this);
         t->id = idOf(o);
-        t->dimension = o.value(QStringLiteral("dimension")).toDouble(0);
+        t->dimension = validDimension(o.value(QStringLiteral("dimension")).toDouble(0));
         t->extra = without(o, {"id", "type", "dimension", "children", "currentTab", "stacked"});
         t->stacked = o.value(QStringLiteral("stacked")).toBool();
         const QJsonArray children = o.value(QStringLiteral("children")).toArray();
@@ -1276,7 +1331,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
                 parseLeaf(n, t);
         }
         if (t->leaves.isEmpty()) {
-            delete t->w;
+            delete t->w.data();
             delete t;
             return nullptr;
         }
@@ -1287,7 +1342,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
         // Pre-tabs layouts put leaves directly into splits: wrap them in a tab group.
         auto* t = new WorkspaceTabs(this);
         t->id = genId();
-        t->dimension = o.value(QStringLiteral("dimension")).toDouble(0);
+        t->dimension = validDimension(o.value(QStringLiteral("dimension")).toDouble(0));
         parseLeaf(o, t);
         return t;
     }
@@ -1512,6 +1567,11 @@ Workspace::Workspace(VaultSession* session, ViewRegistry* registry, MainWindow* 
         });
     if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
         connect(app, &QGuiApplication::focusWindowChanged, this, [this] { d->refreshChrome(); });
+    // Quitting without closing the window (session end, QApplication::quit()) flushes a pending save.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
+        if (d->layoutReady && d->saveTimer.isActive())
+            d->saveNow();
+    });
     if (window) {
         connect(window, &MainWindow::closing, this, [this] {
             if (d->layoutReady)
@@ -1837,7 +1897,12 @@ bool Workspace::restore(const QJsonObject& json)
     WorkspaceItem* leftItem = leftO.isEmpty() ? nullptr : d->parseItem(leftO, WorkspaceSplit::Role::Left, leaves);
     WorkspaceItem* rightItem = rightO.isEmpty() ? nullptr : d->parseItem(rightO, WorkspaceSplit::Role::Right, leaves);
 
+    if (d->drag.active)
+        d->endDrag({}, false);
     d->beginBatch();
+    // The parsed tree was built directly (not through insertItem()/insertLeaf()), so nothing else
+    // marks the batch dirty: without this the widgets are never synced and the layout renders blank.
+    d->structureChanged();
     d->clearLayout();
     d->root = asTop(mainItem, WorkspaceSplit::Role::Root, true);
     d->left = asTop(leftItem, WorkspaceSplit::Role::Left, false);

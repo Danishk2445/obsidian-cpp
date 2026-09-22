@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QHBoxLayout>
 #include <QHelpEvent>
 #include <QLabel>
@@ -39,6 +40,7 @@ constexpr int kHeaderHeight = 40;
 constexpr double kTabTop = 7;       // container-inner margin-top 6 + padding-top 1
 constexpr double kTabWidth = 200;   // --tab-width
 constexpr double kMinTabWidth = 48; // below 3rem Obsidian hides inactive close buttons
+constexpr double kMinTabBox = 6;    // root tabs: min-width 0 + padding 0 3px; the strip only scrolls below
 constexpr int kDragThreshold = 6;
 constexpr int kMinPaneSize = 200; // Obsidian's minimum pane size while resizing
 constexpr int kMinSideWidth = 200;
@@ -201,6 +203,8 @@ SplitWidget::SplitWidget(WorkspaceImpl* d, WorkspaceSplit* split)
 
 void SplitWidget::sync()
 {
+    if (!m_split)
+        return;
     for (WorkspaceItem* c : std::as_const(m_split->children)) {
         QWidget* w = c->widget();
         if (w->parentWidget() != this)
@@ -249,25 +253,26 @@ void SplitWidget::sync()
 
 void SplitWidget::relayout()
 {
+    if (!m_split)
+        return;
     const auto& ch = m_split->children;
     const int n = int(ch.size());
     if (auto* empty = findChild<QLabel*>(QStringLiteral("ocSidedockEmpty"), Qt::FindDirectChildrenOnly); empty && empty->isVisible())
         empty->setGeometry(30, 20, std::max(0, width() - 60), std::max(0, height() - 40));
     if (n == 0)
         return;
-    bool allDims = true;
-    for (const WorkspaceItem* c : ch)
-        allDims = allDims && c->dimension > 0;
+    // Children are flex items (flex: 1 0 0) whose flex-grow is their dimension, or 1 when unset.
+    auto weight = [](const WorkspaceItem* c) { return c->dimension > 0 ? c->dimension : 1.0; };
     double total = 0;
     for (const WorkspaceItem* c : ch)
-        total += allDims ? c->dimension : 1.0;
+        total += weight(c);
     const bool vertical = m_split->vertical;
     const int extent = vertical ? width() : height();
     const int top = d->frameless() ? 0 : kHeaderHeight; // --divider-vertical-height
     int pos = 0;
     double acc = 0;
     for (int i = 0; i < n; ++i) {
-        acc += allDims ? ch[i]->dimension : 1.0;
+        acc += weight(ch[i]);
         const int end = i == n - 1 ? extent : int(std::lround(acc / total * extent));
         const QRect r = vertical ? QRect(pos, 0, std::max(0, end - pos), height()) : QRect(0, pos, width(), std::max(0, end - pos));
         ch[i]->widget()->setGeometry(r);
@@ -282,6 +287,8 @@ void SplitWidget::relayout()
 
 void SplitWidget::startHandleDrag(QPoint globalPos)
 {
+    if (!m_split)
+        return;
     const QPoint local = mapFromGlobal(globalPos);
     m_dragSizes.clear();
     for (const WorkspaceItem* c : std::as_const(m_split->children))
@@ -291,6 +298,8 @@ void SplitWidget::startHandleDrag(QPoint globalPos)
 
 void SplitWidget::dragHandle(int index, QPoint globalPos)
 {
+    if (!m_split)
+        return;
     const auto& ch = m_split->children;
     const int n = int(ch.size());
     if (index < 0 || index >= n - 1)
@@ -342,7 +351,7 @@ void SplitWidget::paintEvent(QPaintEvent*)
 {
     const ThemePtr t = currentTheme();
     QPainter p(this);
-    p.fillRect(rect(), m_split->isSidedock() ? tok(t, "--background-secondary") : tok(t, "--background-primary"));
+    p.fillRect(rect(), m_split && m_split->isSidedock() ? tok(t, "--background-secondary") : tok(t, "--background-primary"));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -388,6 +397,8 @@ void TabHeaderBar::setTop(bool top)
     m_top = top;
     if (!top)
         setProperty("ocDragRegion", false);
+    else
+        refreshDragRegion();
     update();
 }
 
@@ -400,11 +411,19 @@ void TabHeaderBar::setRightReserve(int px)
     update();
 }
 
-WorkspaceLeaf* TabHeaderBar::leafAt(int index) const { return m_group->leaves.value(index); }
+WorkspaceLeaf* TabHeaderBar::leafAt(int index) const { return m_group ? m_group->leaves.value(index) : nullptr; }
+
+void TabHeaderBar::detachModel()
+{
+    m_group = nullptr;
+    m_tabs.clear();
+    m_hoverTab = m_pressTab = -1;
+    m_dragging = false;
+}
 
 bool TabHeaderBar::closeVisible(int index) const
 {
-    if (m_sidedock || index < 0 || index >= m_tabs.size())
+    if (m_sidedock || !m_group || index < 0 || index >= m_tabs.size())
         return false;
     const WorkspaceLeaf* leaf = leafAt(index);
     if (!leaf)
@@ -418,6 +437,8 @@ bool TabHeaderBar::closeVisible(int index) const
 
 void TabHeaderBar::relayout()
 {
+    if (!m_group)
+        return;
     const int n = int(m_group->leaves.size());
     m_tabs.resize(n);
     const int cur = m_group->currentTab;
@@ -456,6 +477,7 @@ void TabHeaderBar::relayout()
             g.showIcon = true;
             x += 34 + 3;
         }
+        refreshDragRegion();
         return;
     }
     m_newTab->show();
@@ -463,10 +485,12 @@ void TabHeaderBar::relayout()
     const double content = width() - padL - padR;
     // inner (tabs) margin box = tabs + 20; "+" margin box 34; tab list margin box 30.
     const double availStrip = std::max(0.0, content - 20 - 34 - 30);
+    // .mod-root .workspace-tab-header: flex 1 1 0, width --tab-width, min-width 0 — the tabs share the
+    // strip, up to 200px each, and keep shrinking when it's too narrow.
     double tw = n > 0 ? std::min(kTabWidth, availStrip / n) : kTabWidth;
     if (m_lockedWidth > 0)
         tw = std::min(tw, m_lockedWidth);
-    tw = std::max(tw, kMinTabWidth);
+    tw = std::max(tw, kMinTabBox);
     const double stripW = n * tw;
     const double visibleStrip = std::min(stripW, availStrip);
     if (cur >= 0 && cur < n)
@@ -490,12 +514,21 @@ void TabHeaderBar::relayout()
         } else {
             g.icon = {};
         }
-        g.close = QRectF(cr - 20, cy - 10, 20, 20);
+        g.close = QRectF(cr - 20, cy - 10, 20, 20).intersected(g.inner); // the inner clips (overflow hidden)
         g.title = QRectF(titleL, g.inner.top(), std::max(0.0, cr - titleL), g.inner.height());
     }
     const int newTabX = int(std::lround(padL + visibleStrip + 20 - 4));
     m_newTab->move(newTabX, 8);
     m_tabList->move(int(std::lround(width() - padR - 4 - 26)), 8);
+    refreshDragRegion();
+}
+
+void TabHeaderBar::refreshDragRegion()
+{
+    // Tabs can move under a still pointer (new tab, closed tab, resize): re-evaluate what's under it
+    // so a click on a tab never starts a window move (the frame controller reads the property on press).
+    if (underMouse())
+        updateHover(mapFromGlobal(QCursor::pos()));
 }
 
 QRect TabHeaderBar::tabRect(int index) const
@@ -595,6 +628,9 @@ void TabHeaderBar::paintRootTab(QPainter& p, int index, const TabGeom& g)
         p.fillRect(QRectF(dx, std::round(g.inner.center().y() - 10), 1, 20), tok(t, "--tab-divider-color"));
     }
 
+    // The contents are clipped by .workspace-tab-header-inner (overflow hidden) in narrow tabs.
+    p.save();
+    p.setClipRect(g.inner, Qt::IntersectClip);
     // Title / icon colors (body.is-focused / .mod-active variants).
     QColor textColor;
     if (focused)
@@ -630,7 +666,7 @@ void TabHeaderBar::paintRootTab(QPainter& p, int index, const TabGeom& g)
                 bp.addRoundedRect(g.close, 4, 4);
                 p.fillPath(bp, tok(t, "--background-modifier-active-hover"));
             }
-            p.drawPixmap(QPointF(g.close.left() + 2, g.close.top() + 2), icon(QStringLiteral("pin"), 16, tok(t, "--text-accent"), 2.0, dpr));
+            p.drawPixmap(QPointF(g.close.right() - 18, g.close.top() + 2), icon(QStringLiteral("pin"), 16, tok(t, "--text-accent"), 2.0, dpr));
         } else {
             if (overClose && active) {
                 QPainterPath bp;
@@ -639,9 +675,10 @@ void TabHeaderBar::paintRootTab(QPainter& p, int index, const TabGeom& g)
             }
             QColor cc = overClose ? tok(t, "--tab-text-color-focused-active-current")
                                   : (active ? tok(t, "--tab-text-color-focused-active") : tok(t, "--tab-text-color-focused"));
-            p.drawPixmap(QPointF(g.close.left() + 2, g.close.top() + 2), icon(QStringLiteral("x"), 16, cc, 2.0, dpr));
+            p.drawPixmap(QPointF(g.close.right() - 18, g.close.top() + 2), icon(QStringLiteral("x"), 16, cc, 2.0, dpr));
         }
     }
+    p.restore();
 }
 
 void TabHeaderBar::paintSideTab(QPainter& p, int index, const TabGeom& g)
@@ -676,6 +713,8 @@ void TabHeaderBar::paintEvent(QPaintEvent*)
     p.fillRect(rect(), bg);
     p.fillRect(QRectF(0, kHeaderHeight - 1, width(), 1), tok(t, "--tab-outline-color"));
     // The tab strip scrolls inside .workspace-tab-header-container-inner (overflow hidden).
+    if (!m_group)
+        return;
     p.save();
     p.setClipRect(QRectF(m_clipL, 0, std::max(0.0, m_clipR - m_clipL), height()));
     if (m_sidedock) {
@@ -891,6 +930,8 @@ void TabHeaderBar::showTabMenu(int index, const QPoint& globalPos)
 
 void TabHeaderBar::showTabList()
 {
+    if (!m_group)
+        return;
     WorkspaceImpl* dd = d;
     QMenu menu(this);
     int unpinned = 0;
@@ -928,6 +969,8 @@ TabGroupWidget::TabGroupWidget(WorkspaceImpl* d, WorkspaceTabs* tabs)
 
 void TabGroupWidget::sync()
 {
+    if (!m_tabs)
+        return;
     WorkspaceSplit* top = d->topSplit(m_tabs);
     m_header->setSidedock(top && top->isSidedock());
     WorkspaceLeaf* cur = m_tabs->current();
@@ -955,9 +998,17 @@ void TabGroupWidget::releaseLeaves()
     }
 }
 
+void TabGroupWidget::detachModel()
+{
+    m_tabs = nullptr;
+    m_header->detachModel();
+}
+
 void TabGroupWidget::layoutChildren()
 {
     m_header->setGeometry(0, 0, width(), kHeaderHeight);
+    if (!m_tabs)
+        return;
     for (WorkspaceLeaf* l : std::as_const(m_tabs->leaves))
         if (LeafWidget* lw = d->leafWidget(l); lw && lw->parentWidget() == this)
             lw->setGeometry(0, kHeaderHeight, width(), std::max(0, height() - kHeaderHeight));
@@ -1465,20 +1516,25 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* d
     DropTarget t;
     if (!widget || !root)
         return t;
-    // The ribbon (and its sidebar toggle) drops into the left sidedock.
+    // Obsidian's getDropLocation(): the ribbon (with the left sidebar toggle) drops into the left
+    // sidedock, the right sidebar toggle into the right one; a collapsed sidedock highlights its toggle.
     if (MainWindow* mw = window()) {
+        auto over = [&](const QWidget* w) { return w && w->isVisible() && w->rect().contains(w->mapFromGlobal(globalPos)); };
         Ribbon* r = mw->ribbon();
-        if (r && r->isVisible() && r->rect().contains(r->mapFromGlobal(globalPos))) {
-            if (left->children.size() == 1 && left->children.first()->isTabs()
-                && left->children.first()->asTabs()->leaves == QList<WorkspaceLeaf*>{const_cast<WorkspaceLeaf*>(dragged)})
-                return t;
+        QWidget* rightToggle = mw->rightSidebarToggle();
+        const bool overRibbon = over(r);
+        if (overRibbon || over(rightToggle)) {
+            WorkspaceSplit* side = overRibbon ? left : right;
+            if (side->children.size() == 1 && side->children.first()->isTabs()
+                && side->children.first()->asTabs()->leaves == QList<WorkspaceLeaf*>{const_cast<WorkspaceLeaf*>(dragged)})
+                return t; // its only tab: nothing would change
             t.kind = DropTarget::Kind::Side;
-            t.side = left;
-            if (left->collapsed) {
-                QWidget* toggle = r->sidebarToggle();
-                t.rect = QRect(toggle->mapTo(widget->window(), QPoint(0, 0)) - widget->mapTo(widget->window(), QPoint(0, 0)), toggle->size());
+            t.side = side;
+            if (side->collapsed) {
+                QWidget* toggle = overRibbon ? static_cast<QWidget*>(r->sidebarToggle()) : rightToggle;
+                t.rect = QRect(widget->mapFromGlobal(toggle->mapToGlobal(QPoint(0, 0))), toggle->size());
             } else {
-                t.rect = left->w->geometry();
+                t.rect = side->w->geometry();
             }
             return t;
         }

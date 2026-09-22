@@ -4,9 +4,12 @@
 
 #include "ui/workspace_test_support.h"
 
+#include "ui/shell/main_window.h"
+#include "ui/shell/ribbon.h"
 #include "ui/widgets/icon_button.h"
 
 #include <QApplication>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QTest>
 #include <QVBoxLayout>
@@ -113,11 +116,20 @@ TEST_F(WorkspaceWidgetTest, RootTabGeometryFollowsObsidianCss)
     EXPECT_NEAR(h->tabRect(1).left(), 18 + expected, 1);
     EXPECT_NEAR(h->newTabButton()->x(), 18 + 3 * expected + 6, 1);
     EXPECT_EQ(h->tabListButton()->x(), 450 - 8 - 4 - 26);
-    // Very narrow: tabs stop shrinking at 48px and the strip scrolls to the current tab.
+    // Narrow: the tabs keep sharing the strip (min-width 0); below 3rem the inactive ones lose their
+    // close button, even when hovered.
     m_host->resize(700, 600);
     QCoreApplication::processEvents();
-    EXPECT_GE(h->tabRect(0).width(), 48);
-    EXPECT_LT(h->tabRect(0).width(), expected);
+    const double narrow = (h->width() - 16 - 84) / 3.0;
+    ASSERT_LT(narrow, 48);
+    EXPECT_NEAR(h->tabRect(0).width(), narrow, 1);
+    EXPECT_NEAR(h->tabRect(2).right(), 18 + 3 * narrow, 2);
+    sendMouse(h, QEvent::MouseMove, h->tabRect(0).center(), Qt::NoButton, Qt::NoButton);
+    const QPoint closeSpot(h->tabRect(0).right() - 8, h->tabRect(0).center().y());
+    click(h, closeSpot);
+    EXPECT_EQ(describe(d()->root), "V[T(A*,B,C),T(X*)]"); // activated, not closed
+    // Even a very narrow active tab keeps its close button inside the tab.
+    EXPECT_TRUE(h->tabRect(0).contains(h->closeRect(0)));
 }
 
 TEST_F(WorkspaceWidgetTest, ClickingATabActivatesIt)
@@ -243,6 +255,28 @@ TEST_F(WorkspaceWidgetTest, DraggingATabOntoAHeaderMovesOrReordersIt)
     EXPECT_EQ(describe(A), "T(C,B*)");
 }
 
+TEST_F(WorkspaceWidgetTest, EscapeCancelsATabDrag)
+{
+    buildTwoGroups();
+    WorkspaceTabs* A = rootTabs(m_ws.get(), 0);
+    WorkspaceTabs* X = rootTabs(m_ws.get(), 1);
+    TabHeaderBar* h = header(A);
+    const QPoint start = h->tabRect(0).center();
+    sendMouse(h, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    sendMouse(h, QEvent::MouseMove, start + QPoint(20, 0), Qt::NoButton, Qt::LeftButton);
+    ASSERT_TRUE(d()->drag.active);
+    const QPoint target = h->mapFromGlobal(ws()->mapToGlobal(inGroup(X, 0.9, 0.6)));
+    sendMouse(h, QEvent::MouseMove, target, Qt::NoButton, Qt::LeftButton);
+    ASSERT_TRUE(d()->drag.target.isValid());
+    QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(h, &esc);
+    EXPECT_FALSE(d()->drag.active);
+    EXPECT_FALSE(d()->overlay && d()->overlay->isVisible());
+    sendMouse(h, QEvent::MouseButtonRelease, target, Qt::LeftButton, Qt::NoButton);
+    EXPECT_EQ(describe(d()->root), "V[T(A,B,C*),T(X*)]"); // nothing moved
+    EXPECT_EQ(QApplication::overrideCursor(), nullptr);
+}
+
 TEST_F(WorkspaceWidgetTest, DraggingIntoAndOutOfSidedocks)
 {
     buildTwoGroups();
@@ -363,6 +397,86 @@ TEST_F(WorkspaceWidgetTest, SidedockHandleResizesAndCollapses)
     EXPECT_EQ(m_ws->sideWidth(Side::Left), 200);
 }
 
+TEST_F(WorkspaceWidgetTest, RestoredLayoutIsShown)
+{
+    // Regression: restore() builds the tree directly; its widgets must still be synced and shown.
+    const QJsonObject json = parseJson(R"({
+      "main": {"id": "m1", "type": "split", "direction": "vertical", "children": [
+        {"id": "t1", "type": "tabs", "currentTab": 1, "children": [
+          {"id": "l1", "type": "leaf", "state": {"type": "graph", "state": {"name": "One"}}},
+          {"id": "l2", "type": "leaf", "state": {"type": "graph", "state": {"name": "Two"}}},
+          {"id": "l3", "type": "leaf", "state": {"type": "kanban", "state": {}}}
+        ]},
+        {"id": "t2", "type": "tabs", "dimension": 40, "children": [
+          {"id": "l4", "type": "leaf", "state": {"type": "empty", "state": {}}}
+        ]}
+      ]},
+      "left": {"id": "s1", "type": "split", "direction": "horizontal", "width": 260, "children": [
+        {"id": "t3", "type": "tabs", "children": [
+          {"id": "l5", "type": "leaf", "state": {"type": "file-explorer", "state": {}}},
+          {"id": "l6", "type": "leaf", "state": {"type": "search", "state": {}}}
+        ]}
+      ]},
+      "right": {"id": "s2", "type": "split", "direction": "horizontal", "width": 240, "children": [
+        {"id": "t4", "type": "tabs", "children": [
+          {"id": "l7", "type": "leaf", "state": {"type": "outline", "state": {}}}
+        ]}
+      ]},
+      "active": "l2"
+    })");
+    ASSERT_TRUE(m_ws->restore(json));
+    QCoreApplication::processEvents();
+    EXPECT_EQ(describe(d()->root), "V[T(One,Two*,kanban),T(_*)]");
+    for (WorkspaceSplit* s : {d()->root, d()->left, d()->right}) {
+        EXPECT_TRUE(s->w->isVisible());
+        d()->forEachTabs(s, [&](WorkspaceTabs* t) {
+            EXPECT_TRUE(t->w->isVisible()) << qPrintable(describe(t));
+            EXPECT_EQ(t->w->parentWidget(), s == t->parent ? static_cast<QWidget*>(s->w) : t->parent->w);
+            EXPECT_GT(t->w->width(), 0);
+            EXPECT_EQ(header(t)->tabCount(), t->leaves.size());
+            for (WorkspaceLeaf* l : std::as_const(t->leaves))
+                EXPECT_EQ(d()->leafWidget(l)->isVisible(), l == t->current()) << qPrintable(l->id());
+        });
+    }
+    EXPECT_EQ(d()->left->w->width(), 260);
+    EXPECT_EQ(d()->right->w->width(), 240);
+    WorkspaceLeaf* two = d()->leafById("l2");
+    ASSERT_TRUE(two);
+    EXPECT_EQ(m_ws->activeLeaf(), two);
+    EXPECT_TRUE(two->view()->isVisible());
+    EXPECT_TRUE(d()->leafWidget(two)->header()->isVisible());
+    // Only one group has a dimension: like Obsidian, the groups then share the root equally.
+    EXPECT_NEAR(rootTabs(m_ws.get(), 0)->w->width(), rootTabs(m_ws.get(), 1)->w->width(), 1);
+    // Restoring again (e.g. a workspace layout switch) replaces everything and stays visible.
+    ASSERT_TRUE(m_ws->restore(m_ws->serialize()));
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(rootTabs(m_ws.get(), 0)->w->isVisible());
+    EXPECT_TRUE(d()->leafWidget(d()->leafById("l2"))->isVisible());
+}
+
+TEST_F(WorkspaceWidgetTest, RemovedGroupWidgetsOutliveTheirModelSafely)
+{
+    // Removing a group deletes its model item now and its widgets later (deleteLater): events reaching
+    // the widgets in between (theme change, resize) must not touch the freed item (ASan checks this).
+    buildTwoGroups();
+    WorkspaceTabs* X = rootTabs(m_ws.get(), 1);
+    QPointer<TabGroupWidget> xw = X->w;
+    QPointer<TabHeaderBar> xh = X->w->header();
+    X->leaves[0]->detach();
+    EXPECT_EQ(describe(d()->root), "V[T(A,B,C*)]");
+    ASSERT_TRUE(xw);
+    ThemeManager::instance()->setMode(ThemeManager::Mode::Light);
+    ThemeManager::instance()->setMode(ThemeManager::Mode::Dark);
+    xw->resize(320, 240);
+    xh->relayout();
+    xh->grab();
+    sendMouse(xh, QEvent::MouseButtonPress, QPoint(30, 20), Qt::LeftButton, Qt::LeftButton);
+    sendMouse(xh, QEvent::MouseButtonRelease, QPoint(30, 20), Qt::LeftButton, Qt::NoButton);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    EXPECT_FALSE(xw);
+    EXPECT_FALSE(xh);
+}
+
 TEST_F(WorkspaceWidgetTest, ThemeChangesRestyleTheHeaders)
 {
     TabHeaderBar* h = header(rootTabs(m_ws.get(), 0));
@@ -373,4 +487,56 @@ TEST_F(WorkspaceWidgetTest, ThemeChangesRestyleTheHeaders)
     ThemeManager::instance()->setMode(ThemeManager::Mode::Dark);
     EXPECT_NE(dark, light);
     EXPECT_GT(light.lightness(), dark.lightness());
+}
+
+// With a real main window: the ribbon and the right sidebar toggle are drop targets for the
+// sidedocks (Obsidian's getDropLocation()); a collapsed sidedock highlights its toggle button.
+class WorkspaceWindowTest : public WorkspaceFixture {};
+
+TEST_F(WorkspaceWindowTest, RibbonAndRightToggleDropIntoTheSidedocks)
+{
+    auto window = std::make_unique<MainWindow>(m_session.get(), false);
+    auto* ws = new Workspace(m_session.get(), &m_registry, window.get());
+    window->setWorkspace(ws);
+    ws->loadLayout();
+    window->resize(1200, 800);
+    window->show();
+    QCoreApplication::processEvents();
+    WorkspaceImpl* d = impl(ws);
+    WorkspaceLeaf* a = ws->activeRootLeaf();
+    a->setViewState(graph("A"));
+    WorkspaceLeaf* b = ws->getLeaf(NewLeaf::Tab);
+    b->setViewState(graph("B"));
+    ASSERT_TRUE(ws->isSideCollapsed(Side::Right));
+
+    IconButton* toggle = window->rightSidebarToggle();
+    Target t = d->dropTargetAt(a, toggle->mapToGlobal(toggle->rect().center()));
+    EXPECT_EQ(t.kind, Target::Kind::Side);
+    EXPECT_EQ(t.side, d->right);
+    EXPECT_EQ(t.rect, QRect(ws->widget()->mapFromGlobal(toggle->mapToGlobal(QPoint(0, 0))), toggle->size()));
+    ASSERT_TRUE(d->applyDrop(a, t));
+    EXPECT_EQ(describe(d->right), "H[T(Backlinks,Outgoing links,Tags,Outline,A*)]");
+    EXPECT_TRUE(ws->isSideCollapsed(Side::Right)); // dropped without expanding it
+    EXPECT_EQ(describe(d->root), "V[T(B*)]");
+
+    Ribbon* ribbon = window->ribbon();
+    t = d->dropTargetAt(b, ribbon->mapToGlobal(QPoint(ribbon->width() / 2, 300)));
+    EXPECT_EQ(t.kind, Target::Kind::Side);
+    EXPECT_EQ(t.side, d->left);
+    EXPECT_EQ(t.rect, d->left->w->geometry()); // expanded: the whole sidedock
+    ASSERT_TRUE(d->applyDrop(b, t));
+    EXPECT_EQ(describe(d->left), "H[T(Files,Search,Bookmarks,B*)]");
+    EXPECT_EQ(ws->activeLeaf(), b);
+    EXPECT_EQ(describe(d->root), "V[T(_*)]");
+
+    // Collapsed left sidedock: the ribbon's toggle is highlighted.
+    ws->setSideCollapsed(Side::Left, true);
+    QCoreApplication::processEvents();
+    WorkspaceLeaf* e = ws->activeRootLeaf();
+    e->setViewState(graph("E"));
+    ws->getLeaf(NewLeaf::Tab);
+    t = d->dropTargetAt(e, ribbon->mapToGlobal(QPoint(ribbon->width() / 2, 300)));
+    QWidget* leftToggle = ribbon->sidebarToggle();
+    EXPECT_EQ(t.rect, QRect(ws->widget()->mapFromGlobal(leftToggle->mapToGlobal(QPoint(0, 0))), leftToggle->size()));
+    window.reset(); // the window deletes the workspace (before the session goes away)
 }

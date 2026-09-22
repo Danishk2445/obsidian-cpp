@@ -19,6 +19,7 @@
 
 #include <QApplication>
 #include <QCryptographicHash>
+#include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -45,6 +46,10 @@ Application::~Application() = default;
 
 int Application::start()
 {
+    // Headless screenshots: the offscreen platform's cursor starts at (10, 10), over the ribbon's
+    // sidebar toggle. Park it outside before any window is shown so nothing renders hovered.
+    if (!m_opts.screenshot.isEmpty() && QGuiApplication::platformName() == u"offscreen")
+        QCursor::setPos(-10000, -10000);
     m_registry->load();
     if (!m_opts.theme.isEmpty())
         m_themes->setMode(ThemeManager::modeFromObsidianName(m_opts.theme));

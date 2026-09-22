@@ -23,6 +23,11 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `created/modified/deleted/renamed(…, bool external)`, `onlineChanged`, trash modes, ignore rules.
 - `src/ui/workspace/{view,view_registry,workspace}.h` — `View`/`FileView`, `ViewRegistry`, `Workspace`/
   `WorkspaceLeaf` (Obsidian getLeaf/openFile/setViewState semantics, workspace.json shape).
+  Additive M1 extensions of `Workspace` (for the `workspace:*` commands): `duplicateLeaf`, `newTab`, `nextTab`,
+  `previousTab`, `goToTab`, `goToLastTab`, `closeActiveLeaf`, `togglePinActiveLeaf`, `canUndoCloseLeaf`,
+  `sideWidth`/`setSideWidth`. Views: `EmptyView` ("empty"), `PlaceholderView` (unregistered types, round-trips
+  their state) and `registerCoreViews()` (sidebar placeholders) live in `ui/shell/empty_view.h` and
+  `ui/workspace/placeholder_views.h`; internals (model tree, widgets, drag & drop) in `workspace_p.h`.
 - `src/core/vault_session.h` — per-vault service bundle (`vault()`, `documents()`, `commands()`, `workspace()`,
   `viewRegistry()`, `config()`), i.e. Obsidian's `app`.
 

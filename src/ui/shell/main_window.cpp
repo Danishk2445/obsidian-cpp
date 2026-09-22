@@ -90,7 +90,7 @@ void MainWindow::setWorkspace(Workspace* workspace)
     workspace->setParent(this);
     QWidget* w = workspace->widget();
     if (m_placeholder) {
-        m_layout->replaceWidget(m_placeholder, w);
+        delete m_layout->replaceWidget(m_placeholder, w); // the caller owns the replaced layout item
         m_placeholder->deleteLater();
         m_placeholder = nullptr;
     } else {

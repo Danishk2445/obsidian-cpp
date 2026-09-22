@@ -2,8 +2,10 @@
 
 #include "render/theme/theme.h"
 #include "ui/workspace/view_registry.h"
+#include "ui/workspace/workspace.h"
 
 #include <QCoreApplication>
+#include <QLabel>
 #include <QPainter>
 
 namespace oc {
@@ -14,8 +16,34 @@ PlaceholderView::PlaceholderView(WorkspaceLeaf* leaf, QString type, QWidget* par
 {
     setObjectName(QStringLiteral("ocPlaceholderView"));
     setTitle(tr("Plugin no longer active"));
-    setDescription(tr("The plugin that created this tab (%1) has gone away.").arg(m_type));
-    setToolTip(QStringLiteral("This pane doesn't look like anything to me."));
+    setDescription(tr("The plugin that created this tab (%1) has gone away.").arg(m_type),
+                   QStringLiteral("This pane doesn't look like anything to me."));
+    clearActions();
+    addAction(tr("Close"), [this] {
+        if (WorkspaceLeaf* l = this->leaf())
+            l->detach();
+    });
+    m_closeAll = addAction(QString(), [this] {
+        if (Workspace* ws = workspace())
+            for (WorkspaceLeaf* l : ws->leavesOfType(m_type))
+                l->detach();
+    });
+    m_closeAll->hide();
+}
+
+void PlaceholderView::onOpen()
+{
+    if (Workspace* ws = workspace())
+        connect(ws, &Workspace::layoutChanged, this, &PlaceholderView::updateCloseAll, Qt::UniqueConnection);
+    updateCloseAll();
+}
+
+void PlaceholderView::updateCloseAll()
+{
+    Workspace* ws = workspace();
+    const qsizetype n = ws ? ws->leavesOfType(m_type).size() : 0;
+    m_closeAll->setText(tr("Close all “%1” tabs (%2)").arg(m_type).arg(n));
+    m_closeAll->setVisible(n > 1);
 }
 
 void PlaceholderView::setOriginalViewState(const QJsonObject& viewState)

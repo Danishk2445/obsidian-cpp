@@ -7,12 +7,14 @@ namespace oc {
 
 class ViewRegistry;
 
-// Shown for a leaf whose view type isn't registered (Obsidian: "Plugin no longer active"). Keeps the
+// Shown for a leaf whose view type isn't registered (Obsidian: "Plugin no longer active", titled with
+// the type, ghost icon; actions "Close" and "Close all “type” tabs (N)" when N > 1). Keeps the
 // original view state (state, icon, title) so the layout round-trips unchanged.
 class PlaceholderView : public EmptyView {
     Q_OBJECT
 public:
     PlaceholderView(WorkspaceLeaf* leaf, QString type, QWidget* parent = nullptr);
+    void onOpen() override;
 
     QString viewType() const override { return m_type; }
     QString displayText() const override { return m_type; }
@@ -25,9 +27,11 @@ public:
     QJsonObject originalViewState(bool pinned) const;
 
 private:
+    void updateCloseAll();
     QString m_type;
     QJsonObject m_state;
     QJsonObject m_original;
+    QLabel* m_closeAll = nullptr;
 };
 
 // Temporary sidebar views until the real ones land (file explorer, search, bookmarks, backlinks,

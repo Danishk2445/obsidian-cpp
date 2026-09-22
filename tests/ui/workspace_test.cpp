@@ -7,8 +7,11 @@
 #include "core/config/json_file.h"
 #include "ui/shell/empty_view.h"
 
+#include <QApplication>
 #include <QFile>
 #include <QJsonArray>
+#include <QLabel>
+#include <QMouseEvent>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -133,6 +136,22 @@ TEST_F(WorkspaceModelTest, UnknownViewTypesAndKeysRoundTripUnchanged)
     EXPECT_EQ(unknown->icon(), "ghost");
     EXPECT_EQ(ws->leavesOfType("kanban").size(), 1);
     EXPECT_EQ(ws->lastOpenFiles(), QStringList({"Board.md", "Welcome.md"}));
+
+    // Obsidian's unknown pane only offers "Close" (+ "Close all" once there are several of the type).
+    auto* ph = static_cast<PlaceholderView*>(unknown->view());
+    EXPECT_EQ(ph->actionTexts(), QStringList({"Close"}));
+    WorkspaceLeaf* copy = ws->duplicateLeaf(unknown, NewLeaf::Tab);
+    ASSERT_TRUE(copy);
+    EXPECT_EQ(copy->viewState()["state"], unknown->viewState()["state"]);
+    EXPECT_EQ(ph->actionTexts(), QStringList({"Close", "Close all “kanban” tabs (2)"}));
+    QLabel* closeAll = nullptr;
+    for (QLabel* l : ph->findChildren<QLabel*>())
+        if (l->text().startsWith("Close all"))
+            closeAll = l;
+    ASSERT_TRUE(closeAll);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(2, 2), QPointF(2, 2), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(closeAll, &release);
+    EXPECT_TRUE(ws->leavesOfType("kanban").isEmpty());
 }
 
 TEST_F(WorkspaceModelTest, RestoreRejectsLayoutsWithoutMain)
@@ -261,18 +280,74 @@ TEST_F(WorkspaceModelTest, SplitAndCloseCollapseRules)
     before->setViewState(graph("B"));
     EXPECT_EQ(describe(d->root), "V[T(B*),T(R*),H[T(S*),T(S2*)]]");
 
+    d->root->children[0]->dimension = 25;
+    d->root->children[1]->dimension = 25;
     d->root->children[2]->dimension = 50;
     s->detach(); // H[...] with one child collapses into it and keeps its dimension
     EXPECT_EQ(describe(d->root), "V[T(B*),T(R*),T(S2*)]");
+    EXPECT_DOUBLE_EQ(d->root->children[0]->dimension, 25);
     EXPECT_DOUBLE_EQ(d->root->children[2]->dimension, 50);
-    s2->detach();
+    s2->detach(); // the remaining dimensions are rescaled to 100
+    EXPECT_DOUBLE_EQ(d->root->children[0]->dimension, 50);
+    EXPECT_DOUBLE_EQ(d->root->children[1]->dimension, 50);
     before->detach();
     EXPECT_EQ(describe(d->root), "V[T(R*)]");
+    EXPECT_EQ(d->root->children[0]->dimension, 0); // a lone child has no dimension (100 = unset)
     const QString rid = r->id();
     r->detach(); // the root always keeps a group with an empty leaf
     EXPECT_EQ(describe(d->root), "V[T(_*)]");
     EXPECT_NE(ws->activeRootLeaf()->id(), rid);
     EXPECT_EQ(ws->activeLeaf(), ws->activeRootLeaf());
+}
+
+TEST_F(WorkspaceModelTest, DimensionsAreNormalizedLikeObsidian)
+{
+    // Obsidian's recomputeChildrenDimensions(): all-or-nothing, rescaled to 100; setDimension()
+    // treats values outside (0, 100) as unset.
+    auto ws = makeWorkspace(false);
+    WorkspaceImpl* d = impl(ws.get());
+    auto group = [](const char* id, const char* name, const char* dim) {
+        return QString(R"({"id": "%1", "type": "tabs", %3 "children": [
+                 {"id": "l%1", "type": "leaf", "state": {"type": "graph", "state": {"name": "%2"}}}]})")
+            .arg(QLatin1String(id), QLatin1String(name), QLatin1String(dim));
+    };
+    auto layout = [&](const QString& a, const QString& b, const QString& c) {
+        return parseJson(QString(R"({"main": {"id": "m", "type": "split", "direction": "vertical", "children": [%1, %2, %3]}})")
+                             .arg(a, b, c)
+                             .toUtf8()
+                             .constData());
+    };
+    ASSERT_TRUE(ws->restore(layout(group("a", "A", R"("dimension": 30,)"), group("b", "B", R"("dimension": 20,)"),
+                                   group("c", "C", R"("dimension": 50,)"))));
+    EXPECT_DOUBLE_EQ(d->root->children[0]->dimension, 30);
+    EXPECT_DOUBLE_EQ(d->root->children[2]->dimension, 50);
+    ASSERT_TRUE(ws->restore(layout(group("a", "A", R"("dimension": 15,)"), group("b", "B", R"("dimension": 10,)"),
+                                   group("c", "C", R"("dimension": 25,)"))));
+    EXPECT_DOUBLE_EQ(d->root->children[0]->dimension, 30);
+    EXPECT_DOUBLE_EQ(d->root->children[1]->dimension, 20);
+    EXPECT_DOUBLE_EQ(d->root->children[2]->dimension, 50);
+    // One child without a dimension (or with an invalid one): everybody shares equally.
+    ASSERT_TRUE(ws->restore(layout(group("a", "A", R"("dimension": 30,)"), group("b", "B", ""),
+                                   group("c", "C", R"("dimension": 50,)"))));
+    for (WorkspaceItem* c : d->root->children)
+        EXPECT_EQ(c->dimension, 0);
+    ASSERT_TRUE(ws->restore(layout(group("a", "A", R"("dimension": 30,)"), group("b", "B", R"("dimension": 150,)"),
+                                   group("c", "C", R"("dimension": 50,)"))));
+    for (WorkspaceItem* c : d->root->children)
+        EXPECT_EQ(c->dimension, 0);
+    EXPECT_FALSE(ws->serialize()["main"].toObject()["children"].toArray()[0].toObject().contains("dimension"));
+
+    // Splitting keeps the others and halves the split pane (Obsidian's splitLeaf()).
+    ASSERT_TRUE(ws->restore(layout(group("a", "A", R"("dimension": 30,)"), group("b", "B", R"("dimension": 20,)"),
+                                   group("c", "C", R"("dimension": 50,)"))));
+    ws->splitLeaf(d->leafById("lc"), Qt::Horizontal);
+    EXPECT_EQ(describe(d->root), "V[T(A*),T(B*),T(C*),T(_*)]");
+    EXPECT_DOUBLE_EQ(d->root->children[2]->dimension, 25);
+    EXPECT_DOUBLE_EQ(d->root->children[3]->dimension, 25);
+    ws->splitLeaf(d->leafById("la"), Qt::Vertical); // a nested split takes over A's dimension
+    EXPECT_EQ(describe(d->root), "V[H[T(A*),T(_*)],T(B*),T(C*),T(_*)]");
+    EXPECT_DOUBLE_EQ(d->root->children[0]->dimension, 30);
+    EXPECT_EQ(d->root->children[0]->asSplit()->children[0]->dimension, 0);
 }
 
 TEST_F(WorkspaceModelTest, ClosingTheActiveTabSelectsItsRightNeighbour)
