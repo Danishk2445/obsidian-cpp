@@ -247,6 +247,8 @@ std::vector<HeadingSig> headingSigs(const SyntaxTree& t, const Text& text)
     return out;
 }
 
+bool debugSessions() { return qEnvironmentVariableIsSet("OC_INC_DEBUG"); }
+
 struct Stats {
     int edits = 0, paused = 0, resumes = 0, editsWhileIncomplete = 0;
 };
@@ -271,7 +273,13 @@ QString session(quint32 seed, int edits, int budgetMode, Stats& stats)
             budget.ensureLine = g.pick(3) == 0 ? g.pick(next.lineCount() + 1) : -1;
         }
         log += QStringLiteral("edit %1: %2\n").arg(e).arg(cs.desc().debugString());
+        if (debugSessions())
+            fprintf(stderr, "=== edit %d (%s) budget %lld ensure %d\n--- text before:\n%s\n--- tree before:\n%s--- text after:\n%s\n", e,
+                    qPrintable(cs.desc().debugString()), budget.maxNanos, budget.ensureLine, qPrintable(beforeText.toString()),
+                    qPrintable(tree.dump(beforeText)), qPrintable(next.toString()));
         const TreeUpdate u = tree.update(next, cs.desc(), budget);
+        if (debugSessions())
+            fprintf(stderr, "--- after update (complete=%d validUpTo=%d):\n%s", u.complete, tree.validUpTo(), qPrintable(tree.dump(next)));
         text = next;
         ++stats.edits;
         if (!wasComplete)
@@ -292,6 +300,8 @@ QString session(quint32 seed, int edits, int budgetMode, Stats& stats)
             TreeUpdate ru;
             while (tree.resume(text, g.pick(2) ? 0 : 20'000, &ru)) {
                 ++stats.resumes;
+                if (debugSessions())
+                    fprintf(stderr, "--- after resume step (validUpTo=%d):\n%s", tree.validUpTo(), qPrintable(tree.dump(text)));
                 if (const QString why = checkTree(tree); !why.isEmpty())
                     return log + QStringLiteral("invariants after resume: ") + why;
                 if (++guard > 100000)
@@ -360,6 +370,16 @@ int envInt(const char* name, int def)
 
 } // namespace
 
+// Replays one session: OC_INC_SEED=<seed> OC_INC_MODE=<0|1|2> OC_INC_EDITS=<n> [OC_INC_DEBUG=1 for dumps].
+TEST(Incremental, ReplaySeed)
+{
+    if (!qEnvironmentVariableIsSet("OC_INC_SEED"))
+        GTEST_SKIP() << "set OC_INC_SEED to replay one session";
+    Stats st;
+    const QString fail = session(quint32(envInt("OC_INC_SEED", 0)), envInt("OC_INC_EDITS", 25), envInt("OC_INC_MODE", 1), st);
+    EXPECT_TRUE(fail.isEmpty()) << qPrintable(fail);
+}
+
 TEST(Incremental, RandomEditsDefaultBudget)
 {
     Stats st;
@@ -405,6 +425,42 @@ TEST(Incremental, VerifyModeEnvironmentVariable)
         ASSERT_TRUE(fail.isEmpty()) << qPrintable(fail);
     }
     qunsetenv("OC_VERIFY_INCREMENTAL");
+}
+
+// Regression: a budgeted update pauses at line 1, leaving the old list (cloned from line 1) as
+// stale structure; the stored state of line 2 still has the old item open although its range ended
+// at line 1 (trailing blank lines). resume() then paused at line 2 and looked the old open nodes up
+// from that state; the item was missing, the list clone was dropped without re-parenting its
+// child, and the child became its own parent.
+TEST(Incremental, ResumePausesInsideTrimmedTrailingBlankLines)
+{
+    const QStringList docs = {QStringLiteral("- a\n\n\n- b"), QStringLiteral("1. first\n\n       code\n\n\n1. next\n2. more"),
+                              QStringLiteral("> - a\n>\n>\n> - b\n\nafter")};
+    for (const QString& doc : docs) {
+        for (const QString& insert : {QStringLiteral("```"), QStringLiteral("$$"), QStringLiteral("> [!tip] x")}) {
+            Text text = Text::fromString(doc);
+            SyntaxTree tree;
+            tree.parse(text);
+            const ChangeSet cs = ChangeSet::of(ChangeSpec{0, text.lineLength(0), insert}, text.length());
+            text = cs.apply(text);
+            TreeUpdate u = tree.update(text, cs.desc(), ParseBudget{-1, 0});
+            ASSERT_TRUE(checkTree(tree).isEmpty()) << qPrintable(checkTree(tree));
+            exercise(tree, text);
+            int steps = 0;
+            while (!u.complete) {
+                u.complete = !tree.resume(text, 0, &u);
+                ASSERT_TRUE(checkTree(tree).isEmpty()) << qPrintable(doc) << " / " << qPrintable(insert) << " step " << steps << ": "
+                                                       << qPrintable(checkTree(tree)) << "\n"
+                                                       << qPrintable(tree.dump(text));
+                exercise(tree, text);
+                ASSERT_LT(++steps, 1000);
+            }
+            SyntaxTree full;
+            full.parse(text);
+            QString why;
+            EXPECT_TRUE(SyntaxTree::equivalent(tree, full, &why)) << qPrintable(doc) << " / " << qPrintable(insert) << ": " << qPrintable(why);
+        }
+    }
 }
 
 TEST(Incremental, LargeDocumentStructuralEdits)

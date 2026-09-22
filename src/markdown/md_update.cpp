@@ -229,6 +229,36 @@ bool validChain(const Store& st, int line, const PState& ps, std::vector<int>& c
     return true;
 }
 
+// Old nodes that start before line `l` and extend past it, outermost first (a path from a child
+// of the Document down). These are exactly the possible non-suffix parents of nodes starting at
+// >= l, so a resync or a pause at `l` hands their continuation over. Derived from the arena alone:
+// behind a pause the stored line states describe structure the stale tree no longer has (e.g. a
+// trimmed list item that was still open), so the state cannot be used to find these nodes.
+void coveringChain(const Store& st, int l, std::vector<int>& out)
+{
+    out.clear();
+    int x = st.lastNodeBefore(l);
+    while (x > 0 && st.nodes[size_t(x)].toLine <= l)
+        x = st.parents[size_t(x)];
+    for (; x > 0; x = st.parents[size_t(x)])
+        out.push_back(x);
+    std::reverse(out.begin(), out.end());
+}
+
+// A covering chain is a prefix of the open levels of state `ps` (containers, then the leaf).
+bool chainFitsState(const Store& st, const std::vector<int>& cov, const PState& ps)
+{
+    const size_t d = ps.cs.size();
+    if (cov.size() > d + (ps.leaf.kind != LKind::None ? 1 : 0))
+        return false;
+    for (size_t j = 0; j < cov.size(); ++j) {
+        const NodeType t = st.nodes[size_t(cov[j])].type;
+        if (j < d ? !kindMatches(ps.cs[j].kind, t) : !leafMatches(ps.leaf.kind, t))
+            return false;
+    }
+    return true;
+}
+
 int trimBackLines(const Store& st, int endLine, int from, int depth)
 {
     int e = endLine;
@@ -253,63 +283,71 @@ void recomputeAllTightness(Store& st)
             computeTightness(st, id);
 }
 
+// Keeps the entries of `table` that nodes still reference (a pause clone shares its original's).
+template<class T>
+class SideCompactor {
+public:
+    explicit SideCompactor(std::vector<T>& table) : m_table(table), m_map(table.size(), -1) {}
+    void remap(qint32& data)
+    {
+        qint32& m = m_map[size_t(data)];
+        if (m < 0) {
+            m = qint32(m_kept.size());
+            m_kept.push_back(m_table[size_t(data)]);
+        }
+        data = m;
+    }
+    ~SideCompactor() { m_table = std::move(m_kept); }
+
+private:
+    std::vector<T>& m_table;
+    std::vector<qint32> m_map;
+    std::vector<T> m_kept;
+};
+
 void maybeCompactSideTables(Store& st)
 {
     const size_t total = st.sideEntries();
     if (total < 4096 || total < 3 * st.nodes.size())
         return;
-    std::vector<HeadingInfo> headings;
-    std::vector<FenceInfo> fences;
-    std::vector<ListInfo> lists;
-    std::vector<ListItemInfo> items;
-    std::vector<CalloutInfo> callouts;
-    std::vector<TableInfo> tables;
-    std::vector<FootnoteDefInfo> footnotes;
+    SideCompactor<HeadingInfo> headings(st.headings);
+    SideCompactor<FenceInfo> fences(st.fences);
+    SideCompactor<ListInfo> lists(st.lists);
+    SideCompactor<ListItemInfo> items(st.items);
+    SideCompactor<CalloutInfo> callouts(st.callouts);
+    SideCompactor<TableInfo> tables(st.tables);
+    SideCompactor<FootnoteDefInfo> footnotes(st.footnotes);
     for (BlockNode& n : st.nodes) {
         if (n.data < 0)
             continue;
         switch (n.type) {
         case NodeType::AtxHeading:
         case NodeType::SetextHeading:
-            headings.push_back(st.headings[size_t(n.data)]);
-            n.data = int(headings.size() - 1);
+            headings.remap(n.data);
             break;
         case NodeType::FencedCode:
-            fences.push_back(std::move(st.fences[size_t(n.data)]));
-            n.data = int(fences.size() - 1);
+            fences.remap(n.data);
             break;
         case NodeType::BulletList:
         case NodeType::OrderedList:
-            lists.push_back(st.lists[size_t(n.data)]);
-            n.data = int(lists.size() - 1);
+            lists.remap(n.data);
             break;
         case NodeType::ListItem:
-            items.push_back(st.items[size_t(n.data)]);
-            n.data = int(items.size() - 1);
+            items.remap(n.data);
             break;
         case NodeType::Callout:
-            callouts.push_back(std::move(st.callouts[size_t(n.data)]));
-            n.data = int(callouts.size() - 1);
+            callouts.remap(n.data);
             break;
         case NodeType::Table:
-            tables.push_back(std::move(st.tables[size_t(n.data)]));
-            n.data = int(tables.size() - 1);
+            tables.remap(n.data);
             break;
         case NodeType::FootnoteDef:
-            footnotes.push_back(std::move(st.footnotes[size_t(n.data)]));
-            n.data = int(footnotes.size() - 1);
+            footnotes.remap(n.data);
             break;
         default:
             break;
         }
     }
-    st.headings = std::move(headings);
-    st.fences = std::move(fences);
-    st.lists = std::move(lists);
-    st.items = std::move(items);
-    st.callouts = std::move(callouts);
-    st.tables = std::move(tables);
-    st.footnotes = std::move(footnotes);
 }
 
 void installRefdefs(Store& st, QList<LinkRefDefinition> defs)
@@ -324,6 +362,10 @@ void installRefdefs(Store& st, QList<LinkRefDefinition> defs)
 
 void verifyAgainstFullParse(const Store& st)
 {
+    if (const QString bad = checkInvariants(st); !bad.isEmpty())
+        qFatal("OC_VERIFY_INCREMENTAL: inconsistent tree after an update: %s", qPrintable(bad));
+    if (!st.complete())
+        return; // a paused tree is only exact below the frontier
     Store full;
     fullParse(full, st.text);
     QString why;
@@ -393,30 +435,27 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
     timer.start();
     int L = run.R;
     enum class End { Complete, Resync, Pause } end = End::Complete;
+    // Resync / pause: the old nodes covering the stop line (see coveringChain()).
     std::vector<int> oldChain;
-    PState oldState;
     for (;;) {
         if (L >= newN)
             break;
-        if (L >= run.changeEnd && L > run.R && !p.lookaheadOpen()) {
+        // Never stop at the frontier line itself: the stale structure's clones start there and must
+        // be merged into the new open chain, which only happens when they are covering nodes.
+        if (L >= run.changeEnd && L > run.R && !p.lookaheadOpen() && L != run.frontier) {
             const quint32 cur = p.stateId();
-            if (L != run.frontier && st.lines[size_t(L)].state == cur) {
-                oldState = st.states->get(cur);
-                if (validChain(st, L - run.delta, oldState, oldChain)) {
+            if (st.lines[size_t(L)].state == cur) {
+                coveringChain(st, L - run.delta, oldChain);
+                if (chainFitsState(st, oldChain, st.states->get(cur))) {
                     end = End::Resync;
                     break;
                 }
             }
-            if (L > run.ensureLine && (run.frontier < 0 || L >= run.frontier) && ((L - run.R) % 16 == 0 || run.maxNanos <= 0)
+            if (L > run.ensureLine && (run.frontier < 0 || L > run.frontier) && ((L - run.R) % 16 == 0 || run.maxNanos <= 0)
                 && timer.nsecsElapsed() > run.maxNanos) {
-                const quint32 oldId = st.lines[size_t(L)].state;
-                if (oldId != kNoState && oldId < st.states->size()) {
-                    oldState = st.states->get(oldId);
-                    // clone only the old nodes that cover the pause line
-                    st.chainAt(L - run.delta, int(oldState.cs.size()), oldState.leaf.kind != LKind::None, oldChain);
-                    end = End::Pause;
-                    break;
-                }
+                coveringChain(st, L - run.delta, oldChain);
+                end = End::Pause;
+                break;
             }
         }
         p.parseLine(L);
@@ -432,6 +471,8 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
         p.finish(S);
 
     // ---- splice -----------------------------------------------------------------------------------
+    // Old nodes [A, Bend) are replaced by the fresh ones (+ the pause clones). Every old node >= Bend
+    // (the suffix) has its parent either in the suffix or in oldChain (the covering chain).
     const int Bend = end == End::Complete ? oldNodeCount : st.firstNodeAtOrAfter(Sold);
     // Old values of the old chain (before anything is overwritten).
     struct OldInfo {
@@ -443,12 +484,8 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
         for (int id : oldChain)
             oldInfo.push_back(OldInfo{st.nodes[size_t(id)], st.subEnd[size_t(id)]});
     }
-    // Clones (pause): old chain nodes that cover the pause line.
-    int C = 0;
-    if (end == End::Pause) {
-        while (C < int(oldInfo.size()) && oldInfo[size_t(C)].node.toLine > Sold)
-            ++C;
-    }
+    // Clones (pause): the old covering nodes continue from the pause line as stale nodes.
+    const int C = end == End::Pause ? int(oldInfo.size()) : 0;
     const int F = int(p.fresh.size());
     const int B = Bend - A;
     const int shift = F + C - B;
@@ -515,26 +552,29 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
     }
     auto mapOld = [&](int x) -> int { return x >= Bend ? x + shift : x; };
 
-    // New chain (resync): take over the old chain's ranges and suffix children.
+    // New chain (resync). The state at S equals the old one, so the levels the old covering chain
+    // occupies continue exactly like the old nodes did (range end, suffix children, unclosed flag);
+    // the deeper open levels end at S: a container whose remaining lines were trailing blank lines,
+    // a table / HTML block that line S ends, or a fence / math / comment block whose container
+    // ends at S (closed as unclosed, like LineParser::closeLeaf does).
     int toLine = S;
     if (end == End::Resync) {
-        for (size_t j = 0; j < oldInfo.size(); ++j) {
+        for (size_t j = 0; j < newChain.size(); ++j) {
             const int nw = newChain[j];
             BlockNode& n = st.nodes[size_t(nw)];
-            const OldInfo& o = oldInfo[j];
             const bool leaf = isLeaf(n.type);
-            int newTo = o.node.toLine + run.delta;
-            if (!leaf && newTo <= S)
-                newTo = trimBackLines(st, S, n.fromLine, n.depth);
-            if (newTo != o.node.toLine + run.delta) {
-                structural = true;
-                fromLine = std::min(fromLine, std::min(newTo, o.node.toLine + run.delta));
-                toLine = std::max(toLine, std::max(newTo, o.node.toLine + run.delta));
+            if (j < oldInfo.size()) {
+                const OldInfo& o = oldInfo[j];
+                n.toLine = o.node.toLine + run.delta;
+                if (leaf)
+                    n.flags = quint16((n.flags & ~FlagUnclosed) | (o.node.flags & FlagUnclosed));
+                st.subEnd[size_t(nw)] = std::max(A + F, o.subEnd > Bend ? o.subEnd + shift : 0);
+            } else {
+                n.toLine = leaf ? S : trimBackLines(st, S, n.fromLine, n.depth);
+                if (n.type == NodeType::FencedCode || n.type == NodeType::MathBlock || n.type == NodeType::CommentBlock)
+                    n.flags |= FlagUnclosed;
+                st.subEnd[size_t(nw)] = A + F;
             }
-            n.toLine = newTo;
-            if (leaf)
-                n.flags = quint16((n.flags & ~FlagUnclosed) | (o.node.flags & FlagUnclosed));
-            st.subEnd[size_t(nw)] = std::max(A + F, o.subEnd > Bend ? o.subEnd + shift : 0);
             if (isListType(n.type))
                 touchedLists.push_back(nw);
         }
@@ -544,7 +584,7 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
         const OldInfo& o = oldInfo[size_t(j)];
         BlockNode n = o.node;
         n.fromLine = S;
-        n.toLine = std::max(o.node.toLine + run.delta, S + 1);
+        n.toLine = o.node.toLine + run.delta; // > S: the node covers the pause line
         st.nodes[size_t(A + F + j)] = n;
         st.parents[size_t(A + F + j)] = j == 0 ? 0 : A + F + j - 1;
         st.subEnd[size_t(A + F + j)] = std::max(suffixStart, o.subEnd > Bend ? o.subEnd + shift : 0);
@@ -558,8 +598,9 @@ TreeUpdate runReparse(Store& st, const Text& newText, const Run& run, bool* ok)
             return p0 + shift;
         for (size_t j = 0; j < oldChain.size(); ++j)
             if (oldChain[j] == p0)
-                return target[j] >= 0 ? target[j] : (j > 0 && target[j - 1] >= 0 ? target[j - 1] : 0);
-        return p0;
+                return target[j];
+        Q_ASSERT_X(p0 == 0, "SyntaxTree::update", "suffix node parented outside the covering chain");
+        return 0;
     };
     if (shift != 0 || run.delta != 0) {
         for (int x = suffixStart; x < total; ++x) {
@@ -869,7 +910,7 @@ TreeUpdate incrementalUpdate(Store& st, const Text& newText, const ChangeDesc& c
     TreeUpdate u = runReparse(st, newText, run, &ok);
     if (!ok)
         return fullReparseUpdate(st, newText, oldN);
-    if (u.complete && verifyEnabled())
+    if (verifyEnabled())
         verifyAgainstFullParse(st);
     return u;
 }
@@ -901,7 +942,7 @@ bool resumeParse(Store& st, const Text& text, qint64 maxNanos, TreeUpdate* out)
     TreeUpdate u = runReparse(st, text, run, &ok);
     if (!ok)
         u = fullReparseUpdate(st, text, st.lineCount());
-    if (u.complete && verifyEnabled())
+    if (verifyEnabled())
         verifyAgainstFullParse(st);
     if (out)
         *out = u;
