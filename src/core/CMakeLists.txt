@@ -9,6 +9,11 @@ oc_add_library(oc_core
     documents/document.cpp
     documents/local_storage.cpp
     fuzzy/fuzzy.cpp
+    search/search_document.cpp
+    search/search_engine.cpp
+    search/search_match.cpp
+    search/search_query.cpp
+    search/search_snippet.cpp
     time/moment_format.cpp
     metadata/link_resolver.cpp
     metadata/metadata_cache.cpp

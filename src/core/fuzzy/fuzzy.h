@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/util/match_range.h"
+
 #include <QList>
 #include <QString>
 #include <QStringView>
@@ -8,13 +10,6 @@
 #include <vector>
 
 namespace oc {
-
-// A [from, to) range of UTF-16 indices, for highlighting.
-struct MatchRange {
-    int from = 0;
-    int to = 0;
-    bool operator==(const MatchRange&) const = default;
-};
 
 // Result of FuzzyQuery::match(). Higher scores are better; scores are only comparable between results of
 // the same query. `matches` are the matched UTF-16 indices in the target, ascending.

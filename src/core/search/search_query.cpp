@@ -41,56 +41,7 @@ bool isHex(QChar c)
     return (c >= u'0' && c <= u'9') || (c >= u'a' && c <= u'f') || (c >= u'A' && c <= u'F');
 }
 
-// JavaScript regex source -> PCRE2 (QRegularExpression). Handles the constructs that differ: \uXXXX and
-// \u{...} escapes, the match-anything class [^] and the match-nothing class [].
-QString jsRegexToPcre(const QString& js)
-{
-    QString out;
-    out.reserve(js.size() + 8);
-    bool inClass = false;
-    qsizetype i = 0;
-    while (i < js.size()) {
-        const QChar c = js[i];
-        if (c == u'\\' && i + 1 < js.size()) {
-            const QChar d = js[i + 1];
-            if (d == u'u' && i + 5 < js.size() && isHex(js[i + 2]) && isHex(js[i + 3]) && isHex(js[i + 4]) && isHex(js[i + 5])) {
-                out += QStringLiteral("\\x{") + js.mid(i + 2, 4) + u'}';
-                i += 6;
-                continue;
-            }
-            if (d == u'u' && i + 2 < js.size() && js[i + 2] == u'{') {
-                const qsizetype close = js.indexOf(u'}', i + 3);
-                if (close > i + 3) {
-                    out += QStringLiteral("\\x{") + js.mid(i + 3, close - i - 3) + u'}';
-                    i = close + 1;
-                    continue;
-                }
-            }
-            out += c;
-            out += d;
-            i += 2;
-            continue;
-        }
-        if (!inClass && c == u'[') {
-            if (js.mid(i, 3) == QLatin1StringView("[^]")) {
-                out += QStringLiteral("[\\s\\S]");
-                i += 3;
-                continue;
-            }
-            if (js.mid(i, 2) == QLatin1StringView("[]")) {
-                out += QStringLiteral("(?!)");
-                i += 2;
-                continue;
-            }
-            inClass = true;
-        } else if (inClass && c == u']') {
-            inClass = false;
-        }
-        out += c;
-        ++i;
-    }
-    return out;
-}
+bool isAsciiLetter(QChar c) { return (c >= u'a' && c <= u'z') || (c >= u'A' && c <= u'Z'); }
 
 class Parser {
 public:
@@ -104,7 +55,7 @@ public:
     {
         Ctx ctx;
         ctx.caseSensitive = m_options.matchCase;
-        return parseOr(ctx); // at top level nothing closes a term list: a stray ')' is just text
+        return parseOr(ctx); // at the top level nothing closes a term list: a stray ')' or ']' is just text
     }
 
     QString error;
@@ -123,21 +74,22 @@ private:
             error = e;
     }
 
-    bool isCloser(QChar c, const Ctx& ctx) const
+    static bool isCloser(QChar c, const Ctx& ctx)
     {
         return (c == u')' && ctx.depth > 0) || (c == u']' && ctx.inProperty) || (c == u':' && ctx.stopAtColon);
     }
     bool atCloser(const Ctx& ctx) const { return !atEnd() && isCloser(m_s[m_pos], ctx); }
 
+    // "OR" as a standalone word (it may touch a closing bracket or an opening parenthesis).
     bool atOrKeyword(const Ctx& ctx) const
     {
         if (!m_s.mid(m_pos).startsWith(QLatin1StringView("OR")))
             return false;
         const QChar n = peek(2);
-        return n.isNull() || n.isSpace() || isCloser(n, ctx);
+        return n.isNull() || n.isSpace() || n == u'(' || isCloser(n, ctx);
     }
 
-    NodePtr combine(NodeKind kind, QList<NodePtr> items)
+    static NodePtr combine(NodeKind kind, QList<NodePtr> items)
     {
         if (items.isEmpty())
             return nullptr;
@@ -156,11 +108,9 @@ private:
             if (NodePtr a = parseAnd(ctx))
                 alternatives.push_back(a);
             skipSpace();
-            if (!atEnd() && atOrKeyword(ctx)) {
-                m_pos += 2;
-                continue;
-            }
-            break;
+            if (!atOrKeyword(ctx))
+                break;
+            m_pos += 2;
         }
         return combine(NodeKind::Or, std::move(alternatives));
     }
@@ -175,7 +125,7 @@ private:
             if (atOrKeyword(ctx)) {
                 if (!terms.isEmpty())
                     break;
-                m_pos += 2; // leading or repeated OR: ignored
+                m_pos += 2; // a leading or repeated OR is ignored
                 continue;
             }
             const qsizetype before = m_pos;
@@ -217,11 +167,11 @@ private:
                 return r;
         }
         if (!ctx.inProperty) {
-            if (c == u'[')
+            if (c == u'[' && peek(1) != u'[')
                 return parseProperty(ctx);
+            const QStringView rest = m_s.mid(m_pos);
             for (const OpName& op : kOperators) {
-                const QStringView rest = m_s.mid(m_pos);
-                if (rest.startsWith(op.name) && rest.size() > op.name.size() && rest[op.name.size()] == u':') {
+                if (rest.size() > op.name.size() && rest.startsWith(op.name) && rest[op.name.size()] == u':') {
                     m_pos += op.name.size() + 1;
                     return parseOperator(op.op, ctx);
                 }
@@ -271,6 +221,7 @@ private:
         return makeLeaf(NodeKind::Phrase, text, ctx);
     }
 
+    // `/source/` where the closing slash ends the term; nullptr when there is none (the text is a plain word).
     NodePtr tryParseRegex(const Ctx& ctx)
     {
         qsizetype q = m_pos + 1;
@@ -304,7 +255,7 @@ private:
         n->kind = NodeKind::Regex;
         n->text = source;
         n->scope = ctx.scope;
-        n->caseSensitive = ctx.scope == Scope::Tag ? ctx.caseExplicit && ctx.caseSensitive : ctx.caseSensitive;
+        n->caseSensitive = resolvedCase(ctx);
         n->caseExplicit = ctx.caseExplicit;
         QRegularExpression::PatternOptions opts = QRegularExpression::MultilineOption;
         if (!n->caseSensitive)
@@ -326,16 +277,18 @@ private:
         keyCtx.stopAtColon = true;
         keyCtx.depth = 0;
         NodePtr key = parseOr(keyCtx);
+        if (!key)
+            key = makeLeaf(NodeKind::Empty, QString(), keyCtx); // "[:value]": any property
         skipSpace();
         NodePtr value;
         if (peek() == u':') {
             ++m_pos;
-            Ctx valueCtx = ctx;
+            Ctx valueCtx = keyCtx;
             valueCtx.scope = Scope::PropertyValue;
-            valueCtx.inProperty = true;
             valueCtx.stopAtColon = false;
-            valueCtx.depth = 0;
             value = parseOr(valueCtx);
+            if (!value)
+                value = makeLeaf(NodeKind::Empty, QString(), valueCtx); // "[key:]": any value
         }
         skipSpace();
         if (peek() == u']')
@@ -368,10 +321,19 @@ private:
             inner.caseSensitive = wrap->caseSensitive;
             inner.caseExplicit = true;
             break;
-        default:
+        case Op::Line:
+        case Op::Block:
+        case Op::Section:
+        case Op::Task:
+        case Op::TaskTodo:
+        case Op::TaskDone:
             wrap->kind = NodeKind::Region;
-            wrap->region = op == Op::Line ? Region::Line : op == Op::Block ? Region::Block : op == Op::Section ? Region::Section
-                : op == Op::Task ? Region::Task : op == Op::TaskTodo ? Region::TaskTodo : Region::TaskDone;
+            wrap->region = op == Op::Line ? Region::Line
+                : op == Op::Block         ? Region::Block
+                : op == Op::Section       ? Region::Section
+                : op == Op::Task          ? Region::Task
+                : op == Op::TaskTodo      ? Region::TaskTodo
+                                          : Region::TaskDone;
             inner.scope = Scope::Content;
             break;
         }
@@ -423,7 +385,10 @@ private:
         return makeLeaf(NodeKind::Text, word, ctx);
     }
 
-    NodePtr makeCompare(const QString& expr, const Ctx& ctx)
+    // Tags are case-insensitive in Obsidian; only an explicit match-case: makes them sensitive.
+    static bool resolvedCase(const Ctx& ctx) { return ctx.scope == Scope::Tag ? ctx.caseExplicit && ctx.caseSensitive : ctx.caseSensitive; }
+
+    static NodePtr makeCompare(const QString& expr, const Ctx& ctx)
     {
         auto n = std::make_shared<Node>();
         n->kind = NodeKind::Compare;
@@ -431,6 +396,7 @@ private:
         n->compareOp = char(expr[0].unicode());
         n->text = expr.mid(1).trimmed();
         n->caseSensitive = ctx.caseSensitive;
+        n->caseExplicit = ctx.caseExplicit;
         bool ok = false;
         const double v = n->text.toDouble(&ok);
         if (ok)
@@ -438,19 +404,18 @@ private:
         return n;
     }
 
-    NodePtr makeLeaf(NodeKind kind, const QString& text, const Ctx& ctx)
+    static NodePtr makeLeaf(NodeKind kind, const QString& text, const Ctx& ctx)
     {
         auto n = std::make_shared<Node>();
         n->kind = kind;
         n->text = text;
         n->scope = ctx.scope;
-        // Tags are case-insensitive in Obsidian; only an explicit match-case: makes them sensitive.
-        n->caseSensitive = ctx.scope == Scope::Tag ? ctx.caseExplicit && ctx.caseSensitive : ctx.caseSensitive;
+        n->caseSensitive = resolvedCase(ctx);
         n->caseExplicit = ctx.caseExplicit;
-        if (kind == NodeKind::Text || kind == NodeKind::Phrase) {
+        if (kind == NodeKind::Text || kind == NodeKind::Phrase || kind == NodeKind::IsTrue || kind == NodeKind::IsFalse) {
             n->matcher = QStringMatcher(text, n->caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
             if (ctx.scope == Scope::Tag) {
-                QString t = text.startsWith(u'#') ? text.mid(1) : text;
+                const QString t = text.startsWith(u'#') ? text.mid(1) : text;
                 n->tagName = n->caseSensitive ? t : t.toCaseFolded();
             }
         }
@@ -497,9 +462,12 @@ QLatin1StringView scopeName(Scope s)
         return QLatin1StringView("content");
     case Scope::Tag:
         return QLatin1StringView("tag");
-    default:
-        return QLatin1StringView("scope");
+    case Scope::Default:
+    case Scope::PropertyKey:
+    case Scope::PropertyValue:
+        break;
     }
+    return QLatin1StringView("scope");
 }
 
 QLatin1StringView regionName(Region r)
@@ -570,7 +538,7 @@ QString dump(const NodePtr& n)
     return QString();
 }
 
-// ---- explain ---------------------------------------------------------------------------------------
+// ---- explain ---------------------------------------------------------------------------------------------
 
 QString caseNote(const Node& n)
 {
@@ -581,14 +549,12 @@ QString caseNote(const Node& n)
     return QString();
 }
 
-QString regexLiteral(const Node& n) { return u'/' + n.text + u'/'; }
-
-// Lines of the explanation of `n` (unindented; nested items carry their own leading indentation).
 QStringList explainLines(const NodePtr& n);
 
 QStringList indented(const QStringList& lines)
 {
     QStringList out;
+    out.reserve(lines.size());
     for (const QString& l : lines)
         out << QStringLiteral("    ") + l;
     return out;
@@ -602,17 +568,6 @@ QStringList labelled(const QString& label, const QStringList& child)
     QStringList out{label.trimmed()};
     out << indented(child);
     return out;
-}
-
-QString propertyKeySummary(const NodePtr& key)
-{
-    if (!key)
-        return QStringLiteral("(any)");
-    if (key->kind == NodeKind::Text || key->kind == NodeKind::Phrase)
-        return quoted(key->text) + caseNote(*key);
-    if (key->kind == NodeKind::Regex)
-        return regexLiteral(*key);
-    return QString();
 }
 
 QStringList explainLines(const NodePtr& n)
@@ -634,7 +589,7 @@ QStringList explainLines(const NodePtr& n)
     case NodeKind::Phrase:
         return {QStringLiteral("Contains exact text: ") + quoted(n->text) + caseNote(*n)};
     case NodeKind::Regex:
-        return {QStringLiteral("Matches regex: ") + regexLiteral(*n) + caseNote(*n)};
+        return {QStringLiteral("Matches regex: /") + n->text + u'/' + caseNote(*n)};
     case NodeKind::Empty:
         return {QStringLiteral("Matches text: \"\"")};
     case NodeKind::Scope: {
@@ -645,25 +600,17 @@ QStringList explainLines(const NodePtr& n)
         return labelled(label, explainLines(n->children.value(0)));
     }
     case NodeKind::Region: {
-        static const char* labels[] = {"Match line: ", "Match block: ", "Match section: ", "Match task: ",
-                                       "Match task (todo): ", "Match task (done): "};
+        static const char* const labels[] = {"Match line: ", "Match block: ", "Match section: ", "Match task: ",
+                                             "Match task (todo): ", "Match task (done): "};
         return labelled(QString::fromLatin1(labels[int(n->region)]), explainLines(n->children.value(0)));
     }
     case NodeKind::Case:
-        return explainLines(n->children.value(0)); // leaves carry "(Case sensitive)" / "(Case insensitive)"
+        return explainLines(n->children.value(0)); // the leaves carry "(Case sensitive)" / "(Case insensitive)"
     case NodeKind::Property: {
-        const NodePtr& key = n->children.value(0);
-        const NodePtr& value = n->children.value(1);
-        const QString summary = propertyKeySummary(key);
-        QStringList out;
-        if (summary.isEmpty()) { // a key sub-query
-            out << QStringLiteral("Contains property:");
-            out << indented(explainLines(key));
-        } else {
-            out << QStringLiteral("Contains property: ") + summary;
-        }
-        if (value)
-            out << indented(explainLines(value));
+        // Obsidian's label has no trailing space: the key query and the value query are listed below it.
+        QStringList out{QStringLiteral("Contains property:")};
+        out << indented(explainLines(n->children.value(0)));
+        out << indented(explainLines(n->children.value(1)));
         return out;
     }
     case NodeKind::Compare:
@@ -679,6 +626,129 @@ QStringList explainLines(const NodePtr& n)
 }
 
 } // namespace
+
+QString jsRegexToPcre(QStringView js)
+{
+    QString out;
+    out.reserve(js.size() + 8);
+    bool inClass = false;
+    qsizetype i = 0;
+    while (i < js.size()) {
+        const QChar c = js[i];
+        if (c == u'\\') {
+            if (i + 1 >= js.size()) { // trailing backslash: a syntax error in both flavours
+                out += c;
+                ++i;
+                continue;
+            }
+            const QChar d = js[i + 1];
+            const char16_t du = d.unicode();
+            if (du == u'u') { // \uXXXX; without the u flag "\u{41}" is 'u' repeated 41 times, a lone "\u" is 'u'
+                const auto hex4 = [&](qsizetype at) -> int { // value of "\uXXXX" at `at`, or -1
+                    if (at + 5 >= js.size() || js[at] != u'\\' || js[at + 1] != u'u')
+                        return -1;
+                    for (qsizetype k = at + 2; k < at + 6; ++k)
+                        if (!isHex(js[k]))
+                            return -1;
+                    return js.mid(at + 2, 4).toInt(nullptr, 16);
+                };
+                const int unit = hex4(i);
+                if (unit >= 0) {
+                    const int low = QChar::isHighSurrogate(char32_t(unit)) ? hex4(i + 6) : -1;
+                    if (low >= 0 && QChar::isLowSurrogate(char32_t(low))) { // a UTF-16 pair: one code point for PCRE
+                        out += QStringLiteral("\\x{%1}").arg(uint(QChar::surrogateToUcs4(char16_t(unit), char16_t(low))), 0, 16);
+                        i += 12;
+                    } else {
+                        out += QStringLiteral("\\x{") + js.mid(i + 2, 4) + u'}';
+                        i += 6;
+                    }
+                } else {
+                    out += u'u';
+                    i += 2;
+                }
+                continue;
+            }
+            if (du == u'x') { // \xHH, otherwise 'x'
+                if (i + 3 < js.size() && isHex(js[i + 2]) && isHex(js[i + 3])) {
+                    out += js.mid(i, 4);
+                    i += 4;
+                } else {
+                    out += u'x';
+                    i += 2;
+                }
+                continue;
+            }
+            if (du == u'c') { // \cX control character; "\c" before a non-letter is a literal backslash + 'c'
+                if (i + 2 < js.size() && isAsciiLetter(js[i + 2])) {
+                    out += js.mid(i, 3);
+                    i += 3;
+                } else {
+                    out += QStringLiteral("\\\\c");
+                    i += 2;
+                }
+                continue;
+            }
+            if (isAsciiLetter(d)) {
+                // Escapes JS and PCRE share; \k<name> is a named backreference, \p{..}/\P{..} Unicode properties
+                // (only valid with the u flag in JS, kept for usefulness). Any other letter is a JS identity
+                // escape, while PCRE gives many of them a meaning (\A \Z \Q \E \K \R \X \h \e \a \g \N ...).
+                const bool shared = QStringView(u"dDwWsSfnrt").contains(d) || (!inClass && (du == u'b' || du == u'B'))
+                    || (inClass && du == u'b');
+                const bool namedRef = du == u'k' && i + 2 < js.size() && js[i + 2] == u'<';
+                const bool property = (du == u'p' || du == u'P') && i + 2 < js.size() && js[i + 2] == u'{';
+                if (du == u'v') {
+                    out += QStringLiteral("\\x{0B}"); // PCRE's \v is a class of vertical whitespace
+                } else if (shared || namedRef || property) {
+                    out += c;
+                    out += d;
+                } else {
+                    out += d;
+                }
+                i += 2;
+                continue;
+            }
+            out += c; // digits (backreferences, \0), punctuation and non-ASCII: same meaning in PCRE
+            out += d;
+            i += 2;
+            continue;
+        }
+        if (inClass) {
+            if (c == u']')
+                inClass = false;
+            else if (c == u'[') { // literal in JS classes; PCRE would read "[:" as a POSIX class
+                out += QStringLiteral("\\[");
+                ++i;
+                continue;
+            }
+            out += c;
+            ++i;
+            continue;
+        }
+        if (c == u'[') {
+            if (js.mid(i).startsWith(u"[^]")) {
+                out += QStringLiteral("[\\s\\S]"); // JS: any character
+                i += 3;
+                continue;
+            }
+            if (js.mid(i).startsWith(u"[]")) {
+                out += QStringLiteral("(?!)"); // JS: matches nothing
+                i += 2;
+                continue;
+            }
+            inClass = true;
+            out += c;
+            ++i;
+            if (i < js.size() && js[i] == u'^') { // keep "[^" together so a following ']' is not misread
+                out += js[i];
+                ++i;
+            }
+            continue;
+        }
+        out += c;
+        ++i;
+    }
+    return out;
+}
 
 SearchQuery parseSearchQuery(const QString& query, const SearchOptions& options, QString* error)
 {
