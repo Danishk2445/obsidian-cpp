@@ -1681,7 +1681,9 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
     copyA->setEnabled(!m_sel.allEmpty());
     pasteA->setEnabled(!isReadOnly());
     emit contextMenuRequestedAt(e->globalPos(), pos);
-    menu.exec(e->globalPos());
+    emit contextMenuAboutToShow(&menu, pos); // owners add their entries (spelling suggestions first)
+    if (!menu.isEmpty())
+        menu.exec(e->globalPos());
 }
 
 } // namespace oc

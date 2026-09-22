@@ -12,6 +12,8 @@
 
 #include <memory>
 
+class QMenu;
+
 namespace oc {
 
 class SourceDecorator;
@@ -144,6 +146,7 @@ signals:
     void scrolled(double top);
     void focusChangedIn(bool focused);
     void contextMenuRequestedAt(const QPoint& globalPos, qsizetype docPos);
+    void contextMenuAboutToShow(QMenu* menu, qsizetype docPos); // the menu can still be changed
     // A rendered link was clicked (live preview / reading). kind: 0 wikilink, 1 embed, 2 markdown link,
     // 3 url, 4 tag. newLeaf: Ctrl held.
     void linkActivated(const QString& target, int kind, bool newLeaf);
