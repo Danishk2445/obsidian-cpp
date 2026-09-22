@@ -1,0 +1,91 @@
+=== input
+> [!note] Title
+> body
+
+> [!TIP]- Folded *title*
+> - list in callout
+
+> [!warning|meta data]+
+> no title, metadata
+
+> [!info]
+> > [!question] Nested
+> > text
+
+>[!note] greentext-style callout
+
+> [!note]x is not a callout
+
+> text first
+> [!note] not a header either
+
+- > [!faq] In a list item
+  > answer
+=== tree
+Document [0,23)
+  Callout [0,2) type=note marker=2-9 title=10-15
+    Paragraph [0,1)
+    Paragraph [1,2)
+  Callout [3,5) type=tip fold=- marker=2-9 title=10-24
+    Paragraph [3,4)
+    BulletList [4,5) tight delim=-
+      ListItem [4,5) marker=2-3 content=4
+        Paragraph [4,5)
+  Callout [6,8) type=warning fold=+ meta="meta data" marker=2-23 title=23-23
+    Paragraph [6,7)
+    Paragraph [7,8)
+  Callout [9,12) type=info marker=2-9 title=9-9
+    Paragraph [9,10)
+    Callout [10,12) type=question marker=4-15 title=16-22
+      Paragraph [10,11)
+      Paragraph [11,12)
+  Callout [13,14) type=note marker=1-8 title=9-32
+    Paragraph [13,14)
+  BlockQuote [15,16)
+    Paragraph [15,16)
+  BlockQuote [17,19)
+    Paragraph [17,19)
+  BulletList [20,22) tight delim=-
+    ListItem [20,22) marker=0-1 content=2
+      Callout [20,22) type=faq marker=4-10 title=11-25
+        Paragraph [20,21)
+        Paragraph [21,22)
+--
+0 CalloutHeader c2 Q0-2#1 |> [!note] Title|
+1 Paragraph c2 Q0-2#1 |> body|
+2 Blank c0 ||
+3 CalloutHeader c2 Q0-2#4 |> [!TIP]- Folded *title*|
+4 Paragraph c4 Q0-2#4 LM2-4#7 |> - list in callout|
+5 Blank c0 ||
+6 CalloutHeader c2 Q0-2#9 |> [!warning|meta data]+|
+7 Paragraph c2 Q0-2#9 |> no title, metadata|
+8 Blank c0 ||
+9 CalloutHeader c2 Q0-2#12 |> [!info]|
+10 CalloutHeader c4 Q0-2#12 Q2-4#14 |> > [!question] Nested|
+11 Paragraph c4 Q0-2#12 Q2-4#14 |> > text|
+12 Blank c0 ||
+13 CalloutHeader c1 Q0-1#17 |>[!note] greentext-style callout|
+14 Blank c0 ||
+15 Paragraph c2 Q0-2#19 |> [!note]x is not a callout|
+16 Blank c0 ||
+17 Paragraph c2 Q0-2#21 |> text first|
+18 Paragraph c2 Q0-2#21 |> [!note] not a header either|
+19 Blank c0 ||
+20 CalloutHeader c4 LM0-2#24 Q2-4#25 |- > [!faq] In a list item|
+21 Paragraph c4 LI0-2#24 Q2-4#25 |  > answer|
+22 Blank c0 ||
+-- content
+#2 Paragraph "Title" [0:10+5@0]
+#3 Paragraph "body" [1:2+4@0]
+#5 Paragraph "Folded *title*" [3:10+14@0]
+#8 Paragraph "list in callout" [4:4+15@0]
+#10 Paragraph "" [6:23+0@0]
+#11 Paragraph "no title, metadata" [7:2+18@0]
+#13 Paragraph "" [9:9+0@0]
+#15 Paragraph "Nested" [10:16+6@0]
+#16 Paragraph "text" [11:4+4@0]
+#18 Paragraph "greentext-style callout" [13:9+23@0]
+#20 Paragraph "[!note]x is not a callout" [15:2+25@0]
+#22 Paragraph "text first\n[!note] not a header either" [17:2+10@0 18:2+27@11]
+#26 Paragraph "In a list item" [20:11+14@0]
+#27 Paragraph "answer" [21:4+6@0]

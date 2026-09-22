@@ -1,0 +1,15 @@
+=== input
+	- a tab-indented first item is indented code
+para
+	- lazy? no: paragraph continuation
+=== tree
+Document [0,4)
+  IndentedCode [0,1)
+  Paragraph [1,3)
+--
+0 IndentedCode c1 |	- a tab-indented first item is indented code|
+1 Paragraph c0 |para|
+2 Paragraph c0 |	- lazy? no: paragraph continuation|
+3 Blank c0 ||
+-- content
+#2 Paragraph "para\n- lazy? no: paragraph continuation" [1:0+4@0 2:1+34@5]

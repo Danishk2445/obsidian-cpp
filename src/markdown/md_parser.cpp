@@ -189,6 +189,7 @@ struct LoopEnv {
     bool allMatched = true;
     int depth = 0;  // containers open
     CState list;    // the deepest matched list when cont == List
+    bool calloutTitle = false; // cont == Paragraph is a callout's title line: no setext / table header
 };
 
 bool listsMatch(const CState& list, const scan::ListMarker& lm)
@@ -246,7 +247,7 @@ void openNewBlocks(Ctx& c, LoopEnv env, Sink& sink)
                     return;
                 }
             }
-            if (env.cont == ContType::Paragraph) {
+            if (env.cont == ContType::Paragraph && !env.calloutTitle) {
                 if (const int level = scan::setextLine(c.s, fnp)) {
                     sink.setext(level);
                     return;
@@ -299,7 +300,7 @@ void openNewBlocks(Ctx& c, LoopEnv env, Sink& sink)
             sink.indented(c.pos());
             return;
         }
-        if (!indented && env.cont == ContType::Paragraph && scan::tableDelimiterRow(c.s, fnp, nullptr)) {
+        if (!indented && env.cont == ContType::Paragraph && !env.calloutTitle && scan::tableDelimiterRow(c.s, fnp, nullptr)) {
             sink.table(fnp);
             return;
         }
@@ -893,8 +894,16 @@ void LineParser::startParagraph(QStringView s, int pos)
                 q.flags |= FlagFoldable;
             if (cs.fold == u'-')
                 q.flags |= FlagFolded;
+            // The title is a paragraph that stays open, so the next line can continue it (lazily
+            // too) as in CommonMark; that continuation becomes the callout's first body paragraph
+            // (splitCalloutTitle()). It never becomes a setext heading or a table header.
             const int id = addNode(NodeType::Paragraph, m_L);
-            closeNode(id, m_L + 1);
+            m_leaf = {};
+            m_leaf.st.kind = LKind::Paragraph;
+            m_leaf.st.a = LState::kCalloutTitle;
+            m_leaf.node = id;
+            m_leaf.from = m_L;
+            m_dirty = true;
             m_role = LineRole::CalloutHeader;
             return;
         }
@@ -918,6 +927,17 @@ void LineParser::startParagraph(QStringView s, int pos)
     m_leaf.from = m_L;
     m_dirty = true;
     m_role = LineRole::Paragraph;
+}
+
+void LineParser::splitCalloutTitle()
+{
+    if (m_leaf.st.kind != LKind::Paragraph || m_leaf.st.a != LState::kCalloutTitle)
+        return;
+    closeNode(m_leaf.node, m_L);
+    m_leaf.node = addNode(NodeType::Paragraph, m_L);
+    m_leaf.from = m_L;
+    m_leaf.st.a = 0;
+    m_dirty = true;
 }
 
 void LineParser::parseLine(int L)
@@ -997,6 +1017,7 @@ void LineParser::parseLine(int L)
         else
             env.cont = m_matched > 0 ? contTypeOf(m_stack[size_t(m_matched - 1)].st.kind) : ContType::Document;
         env.maybeLazy = lk == LKind::Paragraph;
+        env.calloutTitle = env.cont == ContType::Paragraph && m_leaf.st.a == LState::kCalloutTitle;
         env.allMatched = allMatched;
         env.depth = m_matched;
         if (env.cont == ContType::List)
@@ -1016,6 +1037,7 @@ void LineParser::parseLine(int L)
     if (!m_newBlock && lk == LKind::Paragraph && !m_leafMatched && !c.blank) {
         // Lazy continuation line. cmark keeps its leading whitespace (a partially consumed tab
         // included) in the paragraph content, which matters for refdefs and table header rows.
+        splitCalloutTitle();
         rec.flags |= LineRec::kLazy;
         rec.role = quint8(LineRole::Paragraph);
         rec.col = c.offset;
@@ -1025,6 +1047,7 @@ void LineParser::parseLine(int L)
     if (!m_newBlock && m_leafMatched) {
         switch (lk) {
         case LKind::Paragraph:
+            splitCalloutTitle();
             m_role = LineRole::Paragraph;
             break;
         case LKind::Table:
@@ -1123,6 +1146,7 @@ void analyzeMarkers(QStringView line, const PState& st, QVarLengthArray<MarkerRe
     else
         env.cont = matched > 0 ? contTypeOf(st.cs[size_t(matched - 1)].kind) : ContType::Document;
     env.maybeLazy = st.leaf.kind == LKind::Paragraph;
+    env.calloutTitle = env.cont == ContType::Paragraph && st.leaf.a == LState::kCalloutTitle;
     env.allMatched = allMatched;
     env.depth = matched;
     if (env.cont == ContType::List)

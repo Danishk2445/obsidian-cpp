@@ -1,0 +1,25 @@
+=== input
+    code
+
+    more
+
+
+para
+    continuation
+		tabbed code
+=== tree
+Document [0,9)
+  IndentedCode [0,3)
+  Paragraph [5,8)
+--
+0 IndentedCode c4 |    code|
+1 IndentedCode c0 ||
+2 IndentedCode c4 |    more|
+3 Blank c0 ||
+4 Blank c0 ||
+5 Paragraph c0 |para|
+6 Paragraph c0 |    continuation|
+7 Paragraph c0 |		tabbed code|
+8 Blank c0 ||
+-- content
+#2 Paragraph "para\ncontinuation\ntabbed code" [5:0+4@0 6:4+12@5 7:2+11@18]

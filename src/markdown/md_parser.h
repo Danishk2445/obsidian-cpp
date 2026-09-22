@@ -91,6 +91,7 @@ private:
     bool convertSetext(int level);
     bool convertTable(QStringView s, int delimPos);
     void startParagraph(QStringView s, int pos);
+    void splitCalloutTitle(); // a callout title paragraph continues: the new line starts the body
 
     Store& m_st;
     const Text& m_text;

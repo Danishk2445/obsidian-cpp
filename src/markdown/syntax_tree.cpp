@@ -231,7 +231,7 @@ QList<ContainerMarker> SyntaxTree::containerMarkers(int line) const
         return out;
     std::vector<int> chain;
     st.chainAt(line, int(ps.cs.size()), false, chain);
-    int next = st.firstNodeAtOrAfter(line);
+    int next = std::max(1, st.firstNodeAtOrAfter(line)); // never the Document (it starts at line 0)
     const int N = int(st.nodes.size());
     for (const MarkerRec& r : recs) {
         int node = -1;

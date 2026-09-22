@@ -1,0 +1,64 @@
+=== input
+- a
+- b
+
+- c
+
+1. x
+
+   y
+2. z
+
+* p
+  * q
+
+  * r
+=== tree
+Document [0,15)
+  BulletList [0,4) loose delim=-
+    ListItem [0,1) marker=0-1 content=2
+      Paragraph [0,1)
+    ListItem [1,2) marker=0-1 content=2
+      Paragraph [1,2)
+    ListItem [3,4) marker=0-1 content=2
+      Paragraph [3,4)
+  OrderedList [5,9) loose delim=. start=1
+    ListItem [5,8) marker=0-2 content=3
+      Paragraph [5,6)
+      Paragraph [7,8)
+    ListItem [8,9) marker=0-2 content=3
+      Paragraph [8,9)
+  BulletList [10,14) tight delim=*
+    ListItem [10,14) marker=0-1 content=2
+      Paragraph [10,11)
+      BulletList [11,14) loose delim=*
+        ListItem [11,12) marker=2-3 content=4
+          Paragraph [11,12)
+        ListItem [13,14) marker=2-3 content=4
+          Paragraph [13,14)
+--
+0 Paragraph c2 LM0-2#2 |- a|
+1 Paragraph c2 LM0-2#4 |- b|
+2 Blank c0 ||
+3 Paragraph c2 LM0-2#6 |- c|
+4 Blank c0 ||
+5 Paragraph c3 LM0-3#9 |1. x|
+6 Blank c0 LI0-0#9 ||
+7 Paragraph c3 LI0-3#9 |   y|
+8 Paragraph c3 LM0-3#12 |2. z|
+9 Blank c0 ||
+10 Paragraph c2 LM0-2#15 |* p|
+11 Paragraph c4 LI0-2#15 LM2-4#18 |  * q|
+12 Blank c0 LI0-0#15 ||
+13 Paragraph c4 LI0-2#15 LM2-4#20 |  * r|
+14 Blank c0 ||
+-- content
+#3 Paragraph "a" [0:2+1@0]
+#5 Paragraph "b" [1:2+1@0]
+#7 Paragraph "c" [3:2+1@0]
+#10 Paragraph "x" [5:3+1@0]
+#11 Paragraph "y" [7:3+1@0]
+#13 Paragraph "z" [8:3+1@0]
+#16 Paragraph "p" [10:2+1@0]
+#19 Paragraph "q" [11:4+1@0]
+#21 Paragraph "r" [13:4+1@0]

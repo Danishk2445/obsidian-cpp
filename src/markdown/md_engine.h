@@ -52,7 +52,8 @@ struct CState {
 // The open leaf block. 12 bytes, no padding.
 struct LState {
     LKind kind = LKind::None;
-    quint8 a = 0;     // Html: kind 1..7
+    quint8 a = 0;     // Html: kind 1..7. Paragraph: kCalloutTitle
+    static constexpr quint8 kCalloutTitle = 1; // the one-line title paragraph of a callout
     char16_t ch = 0;  // Fence: fence char
     qint32 b = 0;     // Fence: fence length
     qint32 c = 0;     // Fence: indentation of the opening fence (chars, cmark fence_offset)

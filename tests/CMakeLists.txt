@@ -37,3 +37,4 @@ oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Te
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(markdown_spec_diff_test SOURCES markdown/spec_diff_test.cpp DEPS oc_markdown)
 oc_add_test(markdown_incremental_test SOURCES markdown/incremental_test.cpp DEPS oc_markdown)
+oc_add_test(markdown_golden_test SOURCES markdown/golden_test.cpp DEPS oc_markdown)
