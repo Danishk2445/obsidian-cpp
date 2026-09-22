@@ -38,3 +38,39 @@ Interfaces other modules/agents build against. Change deliberately and update al
 - `md::parseInline(content, refdefs)` (inline_tree.h) — pure, thread-safe inline parser; `LinkRefDefinition` lives
   in inline_tree.h. Temporary stubs: `src/markdown/syntax_tree_stub.cpp` (block) and `inline_parser_stub.cpp`
   (inline) — each is deleted by the agent that lands the real implementation.
+
+## Services (stable; additive changes only — read the headers)
+- `src/core/vault_session.h` also exposes `metadata()` (MetadataCache), `vaultConfig()` (Obsidian `getConfig`/
+  `setConfig` with 1.13 defaults, `configChanged(key)`), `fileManager()`. `src/app/application.cpp`
+  (`createServices`, `populateWindow`) shows how a session and a window are assembled; tests copy that recipe
+  (see `tests/ui/editor_suggest_test.cpp`).
+- `src/core/documents/document_manager.h` — one shared `Document` per path (`acquire`/`release`, LRU of released
+  docs, saves on release, follows vault renames/deletes/offline). `src/core/documents/document.h` — `dispatch()`,
+  `changed(DocUpdate)` (with `origin` = dispatching view), byte-exact `save()`.
+- `src/core/files/file_manager.h` — Obsidian's FileManager: `renameFile` (with link updates + confirmation
+  callback), `trashFile` (trashOption), `newFileParent`, `createNewMarkdownFile`, `generateMarkdownLink`.
+- `src/core/metadata/metadata_cache.h` — `fileCache(path)` (CachedMetadata), `resolver()` (LinkResolver:
+  `resolve`, `linkText`), `resolvedLinks`/`unresolvedLinks`, `backlinksOf`, `tagCounts`, `aliases`, signals
+  `changed/deleted/resolved`, `waitUntilClean`. `link_updater.h` (rename rewrites), `subpath.h`
+  (`resolveSubpath`: heading/block/footnote line ranges), `link_suggest.h` (editor-suggest triggers, link/heading/
+  block/tag suggestions, Obsidian's link replacement, `vaultTags`).
+- `src/core/fuzzy/fuzzy.h` (`FuzzyQuery`, `SimpleSearch`), `src/core/search/*` (query parser/AST, `SearchEngine`,
+  snippets), `src/core/time/moment_format.h`, `src/core/util/word_count.h`, `src/core/recovery/*` (file recovery).
+- `src/core/commands/command_registry.h` — `Command`, `CommandRegistry` (editor provider, hotkeys.json),
+  `HotkeyDispatcher` (app-wide; skips widgets inside `ocCapturesKeys` overlays and the navigation keys of an editor
+  whose `ocSuggestActive` property is set).
+
+## Editor & UI building blocks (stable; additive changes only)
+- `EditorView` (src/editor/editor_view.h): decoration layers (`addDecorationLayer`), folding API (`foldLine`,
+  `setFolds`, `foldsChanged`), top widget (inline title), `setVisibleLineRange` (embed a section),
+  `caretRectAt`, `documentHeight`, signals `linkActivated(target, kind, newLeaf)` / `linkHovered(target, kind,
+  rect)` (kind 0 wikilink, 1 embed, 2 markdown link, 3 url, 4 tag). `editor/search/*` = find/replace logic.
+- `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
+  `overlay_layer.h` — in-window overlays + notices.
+- `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,
+  `line`, `match{content, matches}`, `rename`, `focus`), static `openLinkText(ws, target, kind, sourcePath,
+  newLeaf)` and `setTagHandler`. `editor_suggest.h` (the "[[", "#", "[^" popups), `page_preview.h`
+  (`PagePreview::of(window)`: `onLinkHover(source, linktext, sourcePath, globalRect, hoverParent)` for any view
+  that shows links; sources: "editor", "preview", "file-explorer", "search", "backlink", "outline", "graph", …).
+- Headless driving: `--script <file>` (src/app/scenario_runner.h: open/cursor/type/key/command/wait/screenshot/
+  expect-line).

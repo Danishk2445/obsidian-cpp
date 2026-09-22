@@ -116,16 +116,19 @@ public:
     QList<TFolder*> folders() const;
     int fileCount() const;
 
-    // DocumentStorage
+    // DocumentStorage. read() is GUI-thread only (metadata workers read files directly). write() returns Ok
+    // without touching the file when the bytes are identical. While offline, stat() reports the last
+    // known state.
     std::optional<QByteArray> read(const QString& path, DiskState* state, QString* error) override;
     WriteResult write(const QString& path, const QByteArray& bytes, const DiskState& expected, DiskState* newState,
                       QString* error) override;
     DiskState stat(const QString& path) override;
 
     // File operations. All emit the corresponding signal synchronously (external = false) and the
-    // watcher suppresses their echo. Parent folders are created as needed.
+    // watcher suppresses their echo. Parent folders are created as needed. Folder operations emit one
+    // signal per item: renamed() for the folder first, then each descendant; deleted() deepest first.
     TFile* createFile(const QString& path, const QByteArray& bytes, QString* error = nullptr);
-    TFolder* createFolder(const QString& path, QString* error = nullptr);
+    TFolder* createFolder(const QString& path, QString* error = nullptr); // an existing folder is returned as is
     bool rename(TAbstractFile* item, const QString& newPath, QString* error = nullptr); // rename and/or move
     bool trash(TAbstractFile* item, TrashMode mode, QString* error = nullptr);
     TFile* copy(TFile* file, const QString& newPath, QString* error = nullptr);
@@ -134,11 +137,11 @@ public:
     QString availablePath(const QString& folderPath, const QString& baseName, const QString& ext) const;
     static bool isIgnoredName(const QString& name); // dot files and temp patterns
 
-    // Re-stat everything now (e.g. on window focus); emits signals for differences.
+    // Re-stat everything (e.g. on window focus); asynchronous: the differences arrive as signals later.
     void rescan();
 
 signals:
-    void loaded();
+    void loaded(); // also emitted when the vault folder is unavailable (then the vault starts offline)
     void created(oc::TAbstractFile* item, bool external);
     void modified(oc::TFile* file, bool external);            // content changed on disk
     void deleted(oc::TAbstractFile* item, bool external);     // object is destroyed after handlers return
