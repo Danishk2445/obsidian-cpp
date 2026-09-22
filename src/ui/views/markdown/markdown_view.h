@@ -70,6 +70,7 @@ signals:
 
 private:
     void openLink(const QString& target, int kind, bool newLeaf);
+    void addSpellingActions(QMenu* menu, qsizetype pos);
     void navigateToSubpath(const QString& subpath);
     void renameFromTitle(const QString& newName);
     FoldStore* foldStore() const;
@@ -85,8 +86,13 @@ private:
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;
+    QMetaObject::Connection m_typingConn;
+    QMetaObject::Connection m_resolvedConn;
     bool m_restoringFolds = false;
     bool m_previewAttached = false;
+    bool m_spellcheck = false; // vault config "spellcheck" (applySettings)
+    bool m_typing = false;     // the last change was typing at m_typingPos (spellcheck skips that word)
+    qsizetype m_typingPos = -1;
 };
 
 // Registers the "markdown" view type for .md files.

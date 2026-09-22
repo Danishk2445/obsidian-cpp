@@ -27,6 +27,7 @@
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
+#include "ui/plugins/note_plugins_ui.h"
 #include "ui/shell/ribbon.h"
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
@@ -329,6 +330,7 @@ void Application::populateWindow(MainWindow* w)
     CommandRegistry* commands = session->commands();
     registerAppCommands(*commands, w);
     registerMarkdownCommands(*commands, workspace);
+    registerNotePluginCommands(*commands, w);
     {
         Command c;
         c.id = QStringLiteral("greentext-guard:wrap-selection-in-fence");
