@@ -1,6 +1,7 @@
 #include "ui/views/markdown/markdown_view.h"
 
 #include "ui/views/markdown/editor_suggest.h"
+#include "ui/views/markdown/page_preview.h"
 
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
@@ -136,6 +137,15 @@ void MarkdownView::loadFile(TFile* file)
         });
     }
     applySettings();
+    if (!m_previewAttached) {
+        // Page preview: Mod+hover (editing) / hover (reading) over links
+        Workspace* ws = workspace();
+        if (PagePreview* pp = PagePreview::of(ws ? ws->window() : nullptr)) {
+            m_previewAttached = true;
+            pp->attachEditor(m_editor, [this] { return m_file ? m_file->path() : QString(); },
+                             [this] { return mode() == EditorView::Mode::Reading ? QStringLiteral("preview") : QStringLiteral("editor"); });
+        }
+    }
     if (file) {
         DocumentManager* dm = session() ? session()->documents() : nullptr;
         QString err;
@@ -333,6 +343,17 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
             g_tagHandler(target, this);
         return;
     }
+    const QString t = kind == MdLink ? QUrl::fromPercentEncoding(target.toUtf8()) : target;
+    if (kind != Url && LinkResolver::splitSubpath(t).first.isEmpty()) {
+        navigateToSubpath(LinkResolver::splitSubpath(t).second);
+        return;
+    }
+    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), newLeaf);
+}
+
+void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)
+{
+    enum { WikiLink = 0, Embed = 1, MdLink = 2, Url = 3, Tag = 4 };
     QString t = target;
     if (kind == MdLink)
         t = QUrl::fromPercentEncoding(t.toUtf8());
@@ -341,16 +362,12 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         QDesktopServices::openUrl(QUrl(target));
         return;
     }
-    VaultSession* s = session();
-    Workspace* ws = workspace();
-    if (!s || !ws || !s->vault())
+    VaultSession* s = ws ? ws->session() : nullptr;
+    if (!s || !s->vault())
         return;
-    const auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
-    if (linkpath.isEmpty()) {
-        navigateToSubpath(subpath);
-        return;
-    }
-    const QString source = m_file ? m_file->path() : QString();
+    auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
+    if (linkpath.isEmpty())
+        linkpath = source; // "#Heading" of the source note
     MetadataCache* mc = s->metadata();
     QString dest = mc ? mc->resolver().resolve(linkpath, source, kind == MdLink) : QString();
     TFile* file = dest.isEmpty() ? nullptr : s->vault()->file(dest);
@@ -368,7 +385,7 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         if (!file)
             file = s->vault()->createFile(path, QByteArray(), &err);
         if (!file) {
-            if (NoticeManager* n = noticesFor(this))
+            if (NoticeManager* n = ws->window() ? ws->window()->notices() : nullptr)
                 n->show(tr("Failed to create \"%1\": %2").arg(path, err));
             return;
         }

@@ -37,3 +37,4 @@ oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6
 oc_add_test(editor_fold_test SOURCES editor/fold_test.cpp DEPS oc_editor Qt6::Test GUI)
 oc_add_test(ui_suggest_modal_test SOURCES ui/suggest_modal_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_editor_suggest_test SOURCES ui/editor_suggest_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_page_preview_test SOURCES ui/page_preview_test.cpp DEPS oc_ui Qt6::Test GUI)

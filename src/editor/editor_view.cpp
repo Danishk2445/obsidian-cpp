@@ -98,6 +98,8 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
     const bool hadFolds = !m_folds.isEmpty();
     m_folds.clear();
     m_hoverLine = -1;
+    m_clipFrom = 0;
+    m_clipTo = -1;
     m_layout.setHiddenLines({});
     if (hadFolds)
         emit foldsChanged();
@@ -532,9 +534,10 @@ void EditorView::focusOutEvent(QFocusEvent* e)
 
 bool EditorView::viewportEvent(QEvent* e)
 {
-    if (e->type() == QEvent::Leave)
+    if (e->type() == QEvent::Leave) {
         setHoverLine(-1);
-    else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
+        updateHoveredLink(QPoint(-1, -1));
+    } else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
         // the top widget's content changed (updateGeometry() posts this to its parent)
         const int w = int(m_layout.contentWidth());
         const qreal h = m_topWidget->isHidden() ? 0
@@ -1511,13 +1514,48 @@ void EditorView::mousePressEvent(QMouseEvent* e)
 
 void EditorView::mouseDoubleClickEvent(QMouseEvent* e) { mousePressEvent(e); }
 
+void EditorView::updateHoveredLink(const QPoint& vp)
+{
+    QString key;
+    int kind = 0;
+    QString target;
+    QRect box;
+    if (m_doc && vp.x() >= 0) {
+        const qsizetype pos = positionAt(vp);
+        if (const auto hit = m_lp->linkAt(pos); hit && hit->to > hit->from) {
+            // positionAt() snaps to the nearest character: only count it when the point is on the link's box
+            const QRectF a = caretRectAt(hit->from);
+            const QRectF b = caretRectAt(hit->to);
+            QRectF r;
+            if (qFuzzyCompare(a.top() + 1, b.top() + 1))
+                r = QRectF(QPointF(a.left(), a.top()), QPointF(b.left(), b.bottom()));
+            else // wrapped over several visual lines: from the start line's top to the end line's bottom
+                r = QRectF(QPointF(m_contentLeft, a.top()), QPointF(m_contentLeft + m_layout.contentWidth(), b.bottom()));
+            if (r.contains(QPointF(vp))) {
+                kind = int(hit->kind);
+                target = hit->target;
+                box = r.toAlignedRect();
+                key = QString::number(kind) + u':' + QString::number(hit->from) + u':' + target;
+            }
+        }
+    }
+    if (key == m_hoverLink)
+        return;
+    m_hoverLink = key;
+    emit linkHovered(target, kind, box);
+}
+
 void EditorView::mouseMoveEvent(QMouseEvent* e)
 {
     if (m_doc && e->buttons() == Qt::NoButton) {
         const QPointF docPt = viewportToDoc(e->position());
         setHoverLine(docPt.y() >= 0 && docPt.y() < m_layout.totalHeight() ? m_layout.lineAtY(docPt.y()) : -1);
         const bool overIndicator = foldLineAtIndicator(e->position().toPoint()) >= 0;
-        viewport()->setCursor(overIndicator ? Qt::ArrowCursor : (m_mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor));
+        updateHoveredLink(e->position().toPoint());
+        const bool overLink = !m_hoverLink.isEmpty() && m_mode == Mode::Reading;
+        viewport()->setCursor(overIndicator ? Qt::ArrowCursor
+                                            : overLink ? Qt::PointingHandCursor
+                                                       : (m_mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor));
     }
     if (!m_doc || m_drag == DragUnit::None || !(e->buttons() & Qt::LeftButton))
         return;

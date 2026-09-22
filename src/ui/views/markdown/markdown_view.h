@@ -61,6 +61,9 @@ public:
     // What a click on a #tag does (Obsidian opens the global search with "tag:#tag"). Folds are
     // remembered in the session's FoldStore (a child object of the VaultSession).
     static void setTagHandler(std::function<void(const QString& tag, MarkdownView* from)> handler);
+    // Obsidian's openLinkText: follow a link written in `sourcePath` (kind as EditorView::linkActivated;
+    // URLs go to the desktop, unresolved notes are created, "#sub" alone targets the source note).
+    static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, bool newLeaf);
 
 signals:
     void modeChanged(oc::EditorView::Mode mode);
@@ -83,6 +86,7 @@ private:
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;
     bool m_restoringFolds = false;
+    bool m_previewAttached = false;
 };
 
 // Registers the "markdown" view type for .md files.

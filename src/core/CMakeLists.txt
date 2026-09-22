@@ -21,6 +21,7 @@ oc_add_library(oc_core
     time/moment_format.cpp
     metadata/link_resolver.cpp
     metadata/link_suggest.cpp
+    metadata/subpath.cpp
     metadata/link_updater.cpp
     metadata/metadata_cache.cpp
     recovery/file_recovery.cpp

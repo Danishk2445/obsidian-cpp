@@ -14,6 +14,7 @@ oc_add_library(oc_ui
     views/markdown/markdown_commands.cpp
     views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
+    views/markdown/page_preview.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp
     workspace/placeholder_views.cpp
