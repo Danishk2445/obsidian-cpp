@@ -1,0 +1,157 @@
+#pragma once
+
+// FROZEN INTERFACE (M1) — Obsidian-style workspace: a root split of tab groups plus left/right
+// sidedocks (each a split of tab groups), made of leaves hosting views. Serialized in the same shape as
+// Obsidian's workspace.json (stored in the clone's per-vault config dir, never in the vault):
+//   {"main": {...}, "left": {...}, "right": {...}, "left-ribbon": {"hiddenItems": {...}},
+//    "active": "<leaf id>", "lastOpenFiles": [...]}
+// Nodes: {"id","type":"split","direction":"vertical"|"horizontal","width"?,"collapsed"?,"children":[...]},
+//        {"id","type":"tabs","currentTab"?,"children":[...]}, {"id","type":"leaf","state":{"type","state","icon","title"}}
+// ("vertical" = children side by side, as in Obsidian.)
+
+#include <QJsonObject>
+#include <QList>
+#include <QObject>
+#include <QPointer>
+#include <QStringList>
+
+#include <functional>
+
+class QWidget;
+
+namespace oc {
+
+class MainWindow;
+class TFile;
+class VaultSession;
+class View;
+class ViewRegistry;
+class Workspace;
+class WorkspaceTabs;
+
+class WorkspaceLeaf : public QObject {
+    Q_OBJECT
+public:
+    const QString& id() const { return m_id; }
+    Workspace* workspace() const { return m_workspace; }
+    WorkspaceTabs* tabs() const { return m_tabs; }
+    View* view() const { return m_view; }
+
+    // {"type": "...", "state": {...}, "icon": "...", "title": "..."}
+    QJsonObject viewState() const;
+    // Switch to the given view (reusing the current view when the type matches) and apply state.
+    // eState is applied after the state (scroll/cursor). Records navigation history if requested.
+    void setViewState(const QJsonObject& viewState, const QJsonObject& eState = {}, bool recordHistory = true);
+    void openFile(TFile* file, const QJsonObject& state = {}, const QJsonObject& eState = {});
+
+    QString displayText() const;
+    QString icon() const;
+
+    bool isPinned() const { return m_pinned; }
+    void setPinned(bool pinned);
+
+    bool canGoBack() const;
+    bool canGoForward() const;
+    void goBack();
+    void goForward();
+
+    bool isInSidedock() const;
+    void detach(); // close: removes the leaf (and destroys its view)
+
+signals:
+    void viewChanged();
+    void titleChanged();
+    void pinnedChanged();
+    void historyChanged();
+
+private:
+    friend class Workspace;
+    friend class WorkspaceTabs;
+    WorkspaceLeaf(Workspace* ws, QString id);
+    ~WorkspaceLeaf() override;
+
+    struct HistoryEntry {
+        QJsonObject viewState;
+        QJsonObject eState;
+    };
+
+    QString m_id;
+    Workspace* m_workspace;
+    WorkspaceTabs* m_tabs = nullptr;
+    View* m_view = nullptr;
+    bool m_pinned = false;
+    QList<HistoryEntry> m_back;
+    QList<HistoryEntry> m_forward;
+};
+
+class Workspace : public QObject {
+    Q_OBJECT
+public:
+    enum class NewLeaf { No, Tab, SplitRight, SplitDown, Window };
+    enum class Side { Left, Right };
+
+    Workspace(VaultSession* session, ViewRegistry* registry, MainWindow* window);
+    ~Workspace() override;
+
+    VaultSession* session() const { return m_session; }
+    ViewRegistry* viewRegistry() const { return m_registry; }
+    MainWindow* window() const { return m_window; }
+
+    // The widget tree (left sidedock | root split | right sidedock) placed in the main window.
+    QWidget* widget() const;
+
+    // Active leaf: the focused leaf anywhere; activeRootLeaf(): most recent leaf in the root split.
+    WorkspaceLeaf* activeLeaf() const;
+    WorkspaceLeaf* activeRootLeaf() const;
+    void setActiveLeaf(WorkspaceLeaf* leaf, bool focus = true);
+    template <typename T> T* activeViewOfType() const;
+
+    // Obsidian getLeaf(): No = reuse the active root leaf unless pinned (then a new tab).
+    WorkspaceLeaf* getLeaf(NewLeaf mode = NewLeaf::No);
+    WorkspaceLeaf* splitLeaf(WorkspaceLeaf* leaf, Qt::Orientation orientation, bool before = false);
+    // A leaf of `type` in a sidedock (created in its own tab when missing).
+    WorkspaceLeaf* ensureSideLeaf(const QString& type, Side side, bool reveal = false);
+    void revealLeaf(WorkspaceLeaf* leaf); // un-collapse its sidedock and select its tab
+
+    void openFile(TFile* file, NewLeaf mode = NewLeaf::No, const QJsonObject& eState = {});
+    QList<WorkspaceLeaf*> leavesOfType(const QString& type) const;
+    void iterateAllLeaves(const std::function<void(WorkspaceLeaf*)>& fn) const;
+    void iterateRootLeaves(const std::function<void(WorkspaceLeaf*)>& fn) const;
+
+    bool isSideCollapsed(Side side) const;
+    void setSideCollapsed(Side side, bool collapsed);
+    void toggleSide(Side side);
+
+    // Most-recent-first list of opened files (vault paths), capped at 50.
+    QStringList lastOpenFiles() const;
+
+    void undoCloseLeaf();
+
+    QJsonObject serialize() const;
+    bool restore(const QJsonObject& json); // false -> caller builds the default layout
+    void loadLayout();                     // restore from config (or default layout)
+    void requestSaveLayout();              // debounced write of workspace.json to the clone config
+
+signals:
+    void activeLeafChanged(oc::WorkspaceLeaf* leaf);
+    void fileOpened(oc::TFile* file);
+    void layoutChanged();
+
+private:
+    struct Impl;
+    Impl* d;
+    VaultSession* m_session;
+    ViewRegistry* m_registry;
+    MainWindow* m_window;
+    friend class WorkspaceLeaf;
+    friend class WorkspaceTabs;
+};
+
+template <typename T> T* Workspace::activeViewOfType() const
+{
+    if (WorkspaceLeaf* l = activeLeaf())
+        return qobject_cast<T*>(l->view());
+    return nullptr;
+}
+
+} // namespace oc

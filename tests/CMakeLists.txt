@@ -4,3 +4,5 @@ oc_add_test(spike_text_layout_test SOURCES spikes/text_layout_spike_test.cpp DEP
 if(OC_WITH_MATH)
   oc_add_test(spike_math_test SOURCES spikes/math_spike_test.cpp DEPS JKQTMathText6 GUI LABELS spike)
 endif()
+oc_add_test(text_text_test SOURCES text/text_test.cpp DEPS oc_text)
+oc_add_test(text_changeset_test SOURCES text/changeset_test.cpp DEPS oc_text)

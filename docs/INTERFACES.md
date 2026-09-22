@@ -12,3 +12,16 @@ Interfaces other modules/agents build against. Change deliberately and update al
 - `oc::Busy` (src/core/util/busy.h): in-flight work counter for headless idle detection.
 
 (M1 adds oc_text, SyntaxTree, Vault, Document, View/Workspace, Command/Hotkey, Editor facade.)
+
+## M1 (frozen headers — read them, they document the contracts)
+- `src/text/*` — `Text` (immutable chunked lines, per-line EOL, CM6 '\n'-joined offsets), `codec` (byte-exact
+  UTF-8 with surrogate escapes, `contentHash`), `ChangeSet`/`ChangeDesc` (CodeMirror 6 semantics),
+  `Selection`/`SelRange`, `Transaction` (userEvent strings), `History` (CM6 grouping/mapping), `diff`/`merge3`.
+- `src/markdown/syntax_tree.h` — `oc::md::SyntaxTree`: incremental block parser API (line roles, container
+  markers, preorder block nodes, per-type info, budgets/resume, dump/equivalent).
+- `src/core/vault/vault.h` — `Vault`, `TFile`/`TFolder`, `DiskState`, `DocumentStorage` (CAS writes), signals
+  `created/modified/deleted/renamed(…, bool external)`, `onlineChanged`, trash modes, ignore rules.
+- `src/ui/workspace/{view,view_registry,workspace}.h` — `View`/`FileView`, `ViewRegistry`, `Workspace`/
+  `WorkspaceLeaf` (Obsidian getLeaf/openFile/setViewState semantics, workspace.json shape).
+- `src/core/vault_session.h` — per-vault service bundle (`vault()`, `documents()`, `commands()`, `workspace()`,
+  `viewRegistry()`, `config()`), i.e. Obsidian's `app`.
