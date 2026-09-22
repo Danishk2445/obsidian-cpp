@@ -1,5 +1,8 @@
 #include "ui/views/markdown/markdown_view.h"
 
+#include "ui/views/markdown/editor_suggest.h"
+#include "ui/views/markdown/page_preview.h"
+
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
@@ -53,6 +56,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     , m_editor(new EditorView(this))
     , m_searchBar(new EditorSearchBar(m_editor, this))
     , m_title(new InlineTitle)
+    , m_suggest(new EditorSuggest(this, m_editor))
 {
     setObjectName(QStringLiteral("ocMarkdownView"));
     auto* v = new QVBoxLayout(this);
@@ -121,19 +125,27 @@ void MarkdownView::loadFile(TFile* file)
     saveFolds();
     m_foldSave.stop();
     m_editor->setDocument(nullptr);
+    m_suggest->documentChanged();
     m_doc.reset();
     m_file = file;
-    if (VaultSession* s = session(); s && s->vaultConfig()) {
+    if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
         static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle"};
-        connect(s->vaultConfig(), &VaultConfig::configChanged, this,
-                [this](const QString& key) {
-                    for (const char* k : keys)
-                        if (key == QLatin1String(k))
-                            applySettings();
-                },
-                Qt::UniqueConnection);
+        m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
+            for (const char* k : keys)
+                if (key == QLatin1String(k))
+                    applySettings();
+        });
     }
     applySettings();
+    if (!m_previewAttached) {
+        // Page preview: Mod+hover (editing) / hover (reading) over links
+        Workspace* ws = workspace();
+        if (PagePreview* pp = PagePreview::of(ws ? ws->window() : nullptr)) {
+            m_previewAttached = true;
+            pp->attachEditor(m_editor, [this] { return m_file ? m_file->path() : QString(); },
+                             [this] { return mode() == EditorView::Mode::Reading ? QStringLiteral("preview") : QStringLiteral("editor"); });
+        }
+    }
     if (file) {
         DocumentManager* dm = session() ? session()->documents() : nullptr;
         QString err;
@@ -145,6 +157,7 @@ void MarkdownView::loadFile(TFile* file)
                     guard->release(doc);
             });
             m_editor->setDocument(m_doc);
+            m_suggest->documentChanged();
             restoreFolds();
         } else if (NoticeManager* n = noticesFor(this)) {
             n->show(tr("Failed to open \"%1\": %2").arg(file->path(), err.isEmpty() ? tr("no document manager") : err));
@@ -330,6 +343,17 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
             g_tagHandler(target, this);
         return;
     }
+    const QString t = kind == MdLink ? QUrl::fromPercentEncoding(target.toUtf8()) : target;
+    if (kind != Url && LinkResolver::splitSubpath(t).first.isEmpty()) {
+        navigateToSubpath(LinkResolver::splitSubpath(t).second);
+        return;
+    }
+    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), newLeaf);
+}
+
+void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)
+{
+    enum { WikiLink = 0, Embed = 1, MdLink = 2, Url = 3, Tag = 4 };
     QString t = target;
     if (kind == MdLink)
         t = QUrl::fromPercentEncoding(t.toUtf8());
@@ -338,16 +362,12 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         QDesktopServices::openUrl(QUrl(target));
         return;
     }
-    VaultSession* s = session();
-    Workspace* ws = workspace();
-    if (!s || !ws || !s->vault())
+    VaultSession* s = ws ? ws->session() : nullptr;
+    if (!s || !s->vault())
         return;
-    const auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
-    if (linkpath.isEmpty()) {
-        navigateToSubpath(subpath);
-        return;
-    }
-    const QString source = m_file ? m_file->path() : QString();
+    auto [linkpath, subpath] = LinkResolver::splitSubpath(t);
+    if (linkpath.isEmpty())
+        linkpath = source; // "#Heading" of the source note
     MetadataCache* mc = s->metadata();
     QString dest = mc ? mc->resolver().resolve(linkpath, source, kind == MdLink) : QString();
     TFile* file = dest.isEmpty() ? nullptr : s->vault()->file(dest);
@@ -365,7 +385,7 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         if (!file)
             file = s->vault()->createFile(path, QByteArray(), &err);
         if (!file) {
-            if (NoticeManager* n = noticesFor(this))
+            if (NoticeManager* n = ws->window() ? ws->window()->notices() : nullptr)
                 n->show(tr("Failed to create \"%1\": %2").arg(path, err));
             return;
         }
