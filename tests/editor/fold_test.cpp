@@ -40,9 +40,8 @@ TEST(FoldService, Headings)
     noHeadings.headings = false;
     EXPECT_FALSE(p.at(0, noHeadings).has_value());
     Parsed setext("Title\n=====\nbody\n");
-    if (setext.tree.role(0) == md::LineRole::SetextText) { // (the interim block parser has no setext)
-        EXPECT_EQ(setext.at(0), (FoldRange{0, 3}));
-    }
+    ASSERT_EQ(setext.tree.role(0), md::LineRole::SetextText);
+    EXPECT_EQ(setext.at(0), (FoldRange{0, 3}));
 }
 
 TEST(FoldService, IndentAndFrontmatter)

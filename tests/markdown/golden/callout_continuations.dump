@@ -1,0 +1,48 @@
+=== input
+> [!note] Title
+lazy line after the header
+
+> [!note] Title
+> body
+lazy body line
+
+> [!note]
+>
+> after an empty line
+> ```
+> code in a callout
+> ```
+=== tree
+Document [0,14)
+  Callout [0,2) type=note marker=2-9 title=10-15
+    Paragraph [0,1)
+    Paragraph [1,2)
+  Callout [3,6) type=note marker=2-9 title=10-15
+    Paragraph [3,4)
+    Paragraph [4,6)
+  Callout [7,13) type=note marker=2-9 title=9-9
+    Paragraph [7,8)
+    Paragraph [9,10)
+    FencedCode [10,13) fence=```
+--
+0 CalloutHeader c2 Q0-2#1 |> [!note] Title|
+1 Paragraph c0 |lazy line after the header|
+2 Blank c0 ||
+3 CalloutHeader c2 Q0-2#4 |> [!note] Title|
+4 Paragraph c2 Q0-2#4 |> body|
+5 Paragraph c0 |lazy body line|
+6 Blank c0 ||
+7 CalloutHeader c2 Q0-2#7 |> [!note]|
+8 Blank c1 Q0-1#7 |>|
+9 Paragraph c2 Q0-2#7 |> after an empty line|
+10 FenceOpen c2 Q0-2#7 |> ```|
+11 FenceBody c2 Q0-2#7 |> code in a callout|
+12 FenceClose c2 Q0-2#7 |> ```|
+13 Blank c0 ||
+-- content
+#2 Paragraph "Title" [0:10+5@0]
+#3 Paragraph "lazy line after the header" [1:0+26@0]
+#5 Paragraph "Title" [3:10+5@0]
+#6 Paragraph "body\nlazy body line" [4:2+4@0 5:0+14@5]
+#8 Paragraph "" [7:9+0@0]
+#9 Paragraph "after an empty line" [9:2+19@0]

@@ -1,0 +1,50 @@
+=== input
+[a]: /url "title"
+[b]:
+  /url2
+  'title2'
+Para after refdefs [a].
+
+[c]: /x
+===
+
+[d]: /y
+Setext after a refdef
+---
+
+> [e]: /in-quote
+=== tree
+Document [0,15)
+  LinkRefDef [0,4)
+  Paragraph [4,5)
+  LinkRefDef [6,7)
+  Paragraph [7,8)
+  LinkRefDef [9,10)
+  SetextHeading [10,12) h2 text=0-21
+  BlockQuote [13,14)
+    LinkRefDef [13,14)
+--
+0 LinkRefDef c0 |[a]: /url "title"|
+1 LinkRefDef c0 |[b]:|
+2 LinkRefDef c0 |  /url2|
+3 LinkRefDef c0 |  'title2'|
+4 Paragraph c0 |Para after refdefs [a].|
+5 Blank c0 ||
+6 LinkRefDef c0 |[c]: /x|
+7 Paragraph c0 |===|
+8 Blank c0 ||
+9 LinkRefDef c0 |[d]: /y|
+10 SetextText c0 |Setext after a refdef|
+11 SetextUnderline c0 |---|
+12 Blank c0 ||
+13 LinkRefDef c2 Q0-2#7 |> [e]: /in-quote|
+14 Blank c0 ||
+refdef [a] -> </url> "title" @0
+refdef [b] -> </url2> "title2" @1
+refdef [c] -> </x> "" @6
+refdef [d] -> </y> "" @9
+refdef [e] -> </in-quote> "" @13
+-- content
+#2 Paragraph "Para after refdefs [a]." [4:0+23@0]
+#4 Paragraph "===" [7:0+3@0]
+#6 SetextHeading "Setext after a refdef" [10:0+21@0]

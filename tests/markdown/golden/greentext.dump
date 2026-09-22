@@ -1,0 +1,40 @@
+=== input
+>greentext
+>more
+> spaced
+>	tab
+not a quote
+
+>>nested
+>> > deeper
+>
+   > three spaces
+    > four spaces is code
+=== tree
+Document [0,12)
+  BlockQuote [0,5)
+    Paragraph [0,5)
+  BlockQuote [6,11)
+    BlockQuote [6,8)
+      Paragraph [6,7)
+      BlockQuote [7,8)
+        Paragraph [7,8)
+    Paragraph [9,11)
+--
+0 Paragraph c1 Q0-1#1 |>greentext|
+1 Paragraph c1 Q0-1#1 |>more|
+2 Paragraph c2 Q0-2#1 |> spaced|
+3 Paragraph c2 Q0-2#1 |>	tab|
+4 Paragraph c0 |not a quote|
+5 Blank c0 ||
+6 Paragraph c2 Q0-1#3 Q1-2#4 |>>nested|
+7 Paragraph c5 Q0-1#3 Q1-3#4 Q3-5#6 |>> > deeper|
+8 Blank c1 Q0-1#3 |>|
+9 Paragraph c5 Q3-5#3 |   > three spaces|
+10 Paragraph c0 |    > four spaces is code|
+11 Blank c0 ||
+-- content
+#2 Paragraph "greentext\nmore\nspaced\ntab\nnot a quote" [0:1+9@0 1:1+4@10 2:2+6@15 3:2+3@22 4:0+11@26]
+#5 Paragraph "nested" [6:2+6@0]
+#7 Paragraph "deeper" [7:5+6@0]
+#8 Paragraph "three spaces\n> four spaces is code" [9:5+12@0 10:4+21@13]
