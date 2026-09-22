@@ -7,6 +7,7 @@ oc_add_library(oc_core
     config/json_file.cpp
     config/vault_registry.cpp
     documents/document.cpp
+    documents/document_manager.cpp
     documents/local_storage.cpp
     metadata/link_resolver.cpp
     metadata/metadata_cache.cpp
