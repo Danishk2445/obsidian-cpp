@@ -74,6 +74,21 @@ void escapeHref(QString& out, QStringView s)
     }
 }
 
+QString decodeEntities(QStringView s)
+{
+    QString out;
+    for (qsizetype i = 0; i < s.size();) {
+        const qsizetype end = s[i] == u'&' ? rules::scanEntity(s, i) : -1;
+        if (end > 0) {
+            out += rules::decodeEntity(s.mid(i, end - i));
+            i = end;
+        } else {
+            out += s[i++];
+        }
+    }
+    return out;
+}
+
 // Range between the first and last Mark child (the construct's inner text).
 std::pair<int, int> innerRange(const InlineTree& t, int id)
 {
@@ -258,7 +273,8 @@ public:
             break;
         }
         case InlineType::Autolink: {
-            const QStringView url = raw.mid(1, raw.size() - 2);
+            // entity references are decoded (cmark), backslash escapes are not (spec)
+            const QString url = decodeEntities(raw.mid(1, raw.size() - 2));
             if (plain) {
                 escapeHtml(out, url);
                 break;

@@ -488,7 +488,7 @@ void compareWithCmark(const QStringList& inputs, DiffStats* stats, const QList<L
         const QString ours = test::renderParagraph(*tree, true);
         if (ours == ref[k])
             continue;
-        if (cmarkCoreQuirk(prefix + inputs[k], ref[k], ours)) {
+        if (cmarkCoreQuirk(prefix + inputs[k], ref[k], test::renderParagraph(*tree))) {
             ++stats->coreQuirks;
             continue;
         }
