@@ -20,12 +20,15 @@ public:
     IconButton* addBottomAction(const QString& id, const QString& icon, const QString& title);
     void setActionHidden(const QString& id, bool hidden);
     QList<QPair<QString, IconButton*>> actions() const { return m_actions; }
+    // The left sidedock is collapsed: the ribbon takes --ribbon-background-collapsed.
+    void setCollapsed(bool collapsed);
 
 signals:
     void actionTriggered(const QString& id);
 
 protected:
     void paintEvent(QPaintEvent*) override;
+    void changeEvent(QEvent*) override;
 
 private:
     IconButton* makeButton(const QString& id, const QString& icon, const QString& title);
@@ -34,6 +37,7 @@ private:
     QVBoxLayout* m_actionsLayout;
     QVBoxLayout* m_bottomLayout;
     QList<QPair<QString, IconButton*>> m_actions;
+    bool m_collapsed = false;
 };
 
 } // namespace oc

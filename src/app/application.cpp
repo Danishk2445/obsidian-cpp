@@ -12,17 +12,17 @@
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/main_window.h"
 #include "ui/shell/ribbon.h"
-#include "ui/shell/root_placeholder.h"
-#include "ui/shell/side_dock.h"
 #include "ui/shell/status_bar.h"
+#include "ui/workspace/placeholder_views.h"
+#include "ui/workspace/view_registry.h"
+#include "ui/workspace/workspace.h"
 
 #include <QApplication>
 #include <QCryptographicHash>
+#include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
-#include <QHBoxLayout>
-#include <QLabel>
 #include <QMessageBox>
 #include <QTimer>
 
@@ -46,6 +46,10 @@ Application::~Application() = default;
 
 int Application::start()
 {
+    // Headless screenshots: the offscreen platform's cursor starts at (10, 10), over the ribbon's
+    // sidebar toggle. Park it outside before any window is shown so nothing renders hovered.
+    if (!m_opts.screenshot.isEmpty() && QGuiApplication::platformName() == u"offscreen")
+        QCursor::setPos(-10000, -10000);
     m_registry->load();
     if (!m_opts.theme.isEmpty())
         m_themes->setMode(ThemeManager::modeFromObsidianName(m_opts.theme));
@@ -214,27 +218,7 @@ MainWindow* Application::openVault(const QString& rawPath)
 
 void Application::populateWindow(MainWindow* w)
 {
-    // M0 placeholders; the real views arrive in M1+ (file explorer, search, bookmarks, backlinks, ...).
-    auto placeholder = [&](const QString& text) {
-        auto* p = new QWidget;
-        auto* v = new QVBoxLayout(p);
-        auto* l = new QLabel(text, p);
-        l->setProperty("ocText", QStringLiteral("faint"));
-        l->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-        v->addWidget(l);
-        v->addStretch(1);
-        return p;
-    };
-    SideDock* left = w->leftDock();
-    left->addView(QStringLiteral("file-explorer"), QStringLiteral("folder-closed"), tr("Files"), placeholder(tr("Files")));
-    left->addView(QStringLiteral("search"), QStringLiteral("search"), tr("Search"), placeholder(tr("Search")));
-    left->addView(QStringLiteral("bookmarks"), QStringLiteral("bookmark"), tr("Bookmarks"), placeholder(tr("Bookmarks")));
-
-    SideDock* right = w->rightDock();
-    right->addView(QStringLiteral("backlink"), QStringLiteral("links-coming-in"), tr("Backlinks"), placeholder(tr("Backlinks")));
-    right->addView(QStringLiteral("outgoing-link"), QStringLiteral("links-going-out"), tr("Outgoing links"), placeholder(tr("Outgoing links")));
-    right->addView(QStringLiteral("tag"), QStringLiteral("tags"), tr("Tags"), placeholder(tr("Tags")));
-    right->addView(QStringLiteral("outline"), QStringLiteral("list"), tr("Outline"), placeholder(tr("Outline")));
+    VaultSession* session = w->session();
 
     Ribbon* r = w->ribbon();
     r->addAction(QStringLiteral("switcher:open"), QStringLiteral("file-search"), tr("Open quick switcher"));
@@ -247,10 +231,17 @@ void Application::populateWindow(MainWindow* w)
     r->addBottomAction(QStringLiteral("app:open-help"), QStringLiteral("circle-help"), tr("Help"));
     r->addBottomAction(QStringLiteral("app:open-settings"), QStringLiteral("settings"), tr("Settings"));
 
-    auto* root = new RootPlaceholder;
-    w->setCenter(root);
-    connect(w, &MainWindow::topRightReserveChanged, root, [root](int px, bool) { root->setRightReserve(px); });
-    root->setRightReserve(w->isRightCollapsed() ? w->topRightReserve() : 0);
+    // Views provided by the workspace module (empty is built in; sidebar placeholders until the real
+    // views land). Other modules register theirs here too.
+    auto* registry = new ViewRegistry;
+    registerCoreViews(*registry);
+    connect(w, &QObject::destroyed, this, [registry] { delete registry; });
+    session->setViewRegistry(registry);
+
+    auto* workspace = new Workspace(session, registry, w);
+    session->setWorkspace(workspace);
+    w->setWorkspace(workspace);
+    workspace->loadLayout(); // after the ribbon actions exist (left-ribbon.hiddenItems)
 
     w->statusBar()->addItem(QStringLiteral("backlinks"), tr("0 backlinks"));
     w->statusBar()->addItem(QStringLiteral("word-count"), tr("0 words 0 characters"));

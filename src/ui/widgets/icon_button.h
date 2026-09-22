@@ -15,6 +15,7 @@ public:
     QString iconName() const { return m_icon; }
 
     void setIconSize(int px);        // default 18 (--icon-m)
+    void setStrokeWidth(double w) { m_stroke = w; update(); } // default 1.75 (--icon-m-stroke-width)
     void setButtonSize(QSize size);  // default 26x26 (icon + 4px padding each side)
     void setHoverColor(const QColor& bg) { m_hoverBg = bg; update(); } // e.g. red for window close
     void setHoverIconColor(const QColor& c) { m_hoverFg = c; update(); }
@@ -32,6 +33,7 @@ protected:
 private:
     QString m_icon;
     int m_iconPx = 18;
+    double m_stroke = 1.75;
     QSize m_size{26, 26};
     QColor m_hoverBg;
     QColor m_hoverFg;
