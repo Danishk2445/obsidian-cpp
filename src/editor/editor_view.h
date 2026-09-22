@@ -91,6 +91,13 @@ public:
     QRectF caretRectInViewport() const;
     qsizetype positionAt(const QPoint& viewportPos);
 
+    // A widget shown above the first line that scrolls with the text (Obsidian's inline title and
+    // properties). It is reparented to the viewport; its heightForWidth() (or sizeHint height) plus
+    // `bottomMargin` is reserved above the text, at the text column's width.
+    void setTopWidget(QWidget* widget, int bottomMargin = 0);
+    QWidget* topWidget() const { return m_topWidget; }
+    void updateTopWidget(); // re-measure after its content changed
+
     DocLayout& layout() { return m_layout; }
     double contentLeft() const { return m_contentLeft; }
     double contentWidth() const { return m_layout.contentWidth(); }
@@ -187,6 +194,11 @@ private:
     bool m_readOnly = false;
     bool m_readable = true;
     qreal m_marginX = 32, m_marginTop = 32, m_marginBottom = 32;
+    qreal m_topBase = 32;       // top margin without the top widget
+    QPointer<QWidget> m_topWidget;
+    int m_topWidgetMargin = 0;
+    qreal m_topWidgetH = 0;     // reserved height (widget + margin)
+    void positionTopWidget();
     double m_contentLeft = 0;
     double m_scrollTop = 0; // doc y at the viewport top (can be negative: top margin)
     bool m_settingScroll = false;

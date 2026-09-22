@@ -6,6 +6,7 @@
 namespace oc {
 
 class ConfigStore;
+class FileManager;
 class MetadataCache;
 class Vault;
 class VaultConfig;
@@ -32,12 +33,14 @@ public:
     // Services (like Obsidian's `app.*`), wired by the Application when the window is created.
     Vault* vault() const { return m_vault; }
     MetadataCache* metadata() const { return m_metadata; }
+    FileManager* fileManager() const { return m_fileManager; }
     DocumentManager* documents() const { return m_documents; }
     CommandRegistry* commands() const { return m_commands; }
     Workspace* workspace() const { return m_workspace; }
     ViewRegistry* viewRegistry() const { return m_viewRegistry; }
     void setVault(Vault* v) { m_vault = v; }
     void setMetadata(MetadataCache* m) { m_metadata = m; }
+    void setFileManager(FileManager* f) { m_fileManager = f; }
     void setDocuments(DocumentManager* d) { m_documents = d; }
     void setCommands(CommandRegistry* c) { m_commands = c; }
     void setWorkspace(Workspace* w) { m_workspace = w; }
@@ -46,6 +49,7 @@ public:
 private:
     Vault* m_vault = nullptr;
     MetadataCache* m_metadata = nullptr;
+    FileManager* m_fileManager = nullptr;
     DocumentManager* m_documents = nullptr;
     CommandRegistry* m_commands = nullptr;
     Workspace* m_workspace = nullptr;

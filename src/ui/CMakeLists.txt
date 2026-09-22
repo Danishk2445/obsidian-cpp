@@ -3,12 +3,18 @@ oc_add_library(oc_ui
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
+    shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
     shell/ribbon.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
+    views/markdown/editor_search_bar.cpp
+    views/markdown/inline_title.cpp
+    views/markdown/markdown_commands.cpp
+    views/markdown/markdown_view.cpp
     widgets/icon_button.cpp
+    widgets/search_input.cpp
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp
@@ -21,5 +27,5 @@ oc_add_library(oc_ui
     workspace/workspace.h
     workspace/workspace_p.h
     workspace/workspace_widgets.cpp
-  PUBLIC_DEPS oc_core oc_render Qt6::Widgets
+  PUBLIC_DEPS oc_core oc_render oc_editor Qt6::Widgets
 )

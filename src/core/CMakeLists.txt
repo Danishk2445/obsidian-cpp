@@ -10,6 +10,7 @@ oc_add_library(oc_core
     documents/document.cpp
     files/file_manager.cpp
     documents/document_manager.cpp
+    documents/fold_store.cpp
     documents/local_storage.cpp
     fuzzy/fuzzy.cpp
     search/search_document.cpp

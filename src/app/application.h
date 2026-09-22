@@ -30,7 +30,9 @@ public:
 
 private:
     void applyAppearance(VaultSession* session);
+    void createServices(VaultSession* session);
     void populateWindow(MainWindow* w);
+    void wireStatusBar(MainWindow* w);
     void finishHeadless(QWidget* target);
     int startEditHarness();
 

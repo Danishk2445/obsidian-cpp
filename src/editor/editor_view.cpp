@@ -152,9 +152,49 @@ void EditorView::setReadableLineLength(bool on)
 void EditorView::setMargins(qreal horizontal, qreal top, qreal bottom)
 {
     m_marginX = horizontal;
-    m_marginTop = top;
+    m_topBase = top;
+    m_marginTop = m_topBase + m_topWidgetH;
     m_marginBottom = bottom;
     updateGeometryAndLayout();
+}
+
+void EditorView::setTopWidget(QWidget* widget, int bottomMargin)
+{
+    if (m_topWidget && m_topWidget != widget)
+        m_topWidget->hide();
+    m_topWidget = widget;
+    m_topWidgetMargin = bottomMargin;
+    if (widget) {
+        widget->setParent(viewport());
+        widget->show();
+    }
+    updateTopWidget();
+}
+
+void EditorView::updateTopWidget()
+{
+    const double docTop = scrollTop();
+    qreal h = 0;
+    if (m_topWidget && !m_topWidget->isHidden()) {
+        const int w = int(m_layout.contentWidth());
+        h = (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
+    }
+    m_topWidgetH = h;
+    m_marginTop = m_topBase + m_topWidgetH;
+    if (docTop > 0)
+        m_scrollTop = docTop + m_marginTop; // keep the text where it was
+    updateScrollbar();
+    positionTopWidget();
+    viewport()->update();
+}
+
+void EditorView::positionTopWidget()
+{
+    if (!m_topWidget)
+        return;
+    const int w = int(m_layout.contentWidth());
+    const int h = int(std::max<qreal>(0, m_topWidgetH - m_topWidgetMargin));
+    m_topWidget->setGeometry(int(m_contentLeft), int(std::round(m_topBase - m_scrollTop)), w, h);
 }
 
 void EditorView::setLineWrapping(bool) {}
@@ -222,8 +262,18 @@ void EditorView::updateGeometryAndLayout()
     m_contentLeft = std::max(m_marginX, std::floor((w - lineWidth) / 2));
     m_lp->setContentWidth(lineWidth);
     m_layout.setContentWidth(lineWidth);
+    if (m_topWidget) {
+        // its height depends on the width (wrapping title)
+        const int w = int(lineWidth);
+        const qreal h = (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
+        if (!qFuzzyCompare(h, m_topWidgetH)) {
+            m_topWidgetH = h;
+            m_marginTop = m_topBase + m_topWidgetH;
+        }
+    }
     ensureVisibleLayout();
     updateScrollbar();
+    positionTopWidget();
 }
 
 double EditorView::scrollTop() const { return m_scrollTop - m_marginTop; }
@@ -233,6 +283,7 @@ void EditorView::setScrollTop(double y)
     m_scrollTop = y + m_marginTop;
     updateScrollbar();
     ensureVisibleLayout();
+    positionTopWidget();
     viewport()->update();
     emit scrolled(scrollTop());
 }
@@ -251,6 +302,7 @@ void EditorView::updateScrollbar()
     if (!sb->isSliderDown())
         sb->setValue(int(std::lround(m_scrollTop)));
     m_settingScroll = false;
+    positionTopWidget();
 }
 
 void EditorView::ensureVisibleLayout()
@@ -284,6 +336,7 @@ void EditorView::scrollContentsBy(int, int)
         return;
     m_scrollTop = verticalScrollBar()->value();
     ensureVisibleLayout();
+    positionTopWidget();
     viewport()->update();
     emit scrolled(scrollTop());
 }
@@ -341,6 +394,7 @@ void EditorView::scrollToPos(qsizetype pos, bool center)
         m_scrollTop = std::max(0.0, newTop + m_marginTop);
         updateScrollbar();
         ensureVisibleLayout();
+        positionTopWidget();
         viewport()->update();
         emit scrolled(scrollTop());
     }
@@ -372,7 +426,8 @@ void EditorView::setEphemeralState(const QJsonObject& st)
     };
     if (st.contains(QStringLiteral("cursor"))) {
         const QJsonObject c = st.value(QStringLiteral("cursor")).toObject();
-        m_sel = Selection::single(toPos(c.value(QStringLiteral("from")).toObject()), toPos(c.value(QStringLiteral("to")).toObject()));
+        setSelection(Selection::single(toPos(c.value(QStringLiteral("from")).toObject()), toPos(c.value(QStringLiteral("to")).toObject())), false,
+                     false);
     }
     if (st.contains(QStringLiteral("scroll"))) {
         const double s = st.value(QStringLiteral("scroll")).toDouble();

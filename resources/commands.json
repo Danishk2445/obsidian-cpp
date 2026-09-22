@@ -1,0 +1,1461 @@
+[
+  {
+    "id": "app:delete-file",
+    "name": "Delete current file",
+    "icon": "trash-2",
+    "hotkeys": []
+  },
+  {
+    "id": "app:go-back",
+    "name": "Navigate back",
+    "icon": "arrow-left",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Alt"
+        ],
+        "key": "ArrowLeft"
+      }
+    ]
+  },
+  {
+    "id": "app:go-forward",
+    "name": "Navigate forward",
+    "icon": "arrow-right",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Alt"
+        ],
+        "key": "ArrowRight"
+      }
+    ]
+  },
+  {
+    "id": "app:open-another-vault",
+    "name": "Open vault...",
+    "icon": "vault",
+    "hotkeys": []
+  },
+  {
+    "id": "app:open-help",
+    "name": "Open help",
+    "icon": "question-mark-glyph",
+    "hotkeys": [
+      {
+        "modifiers": [],
+        "key": "F1"
+      }
+    ]
+  },
+  {
+    "id": "app:open-sandbox-vault",
+    "name": "Open sandbox vault",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:open-settings",
+    "name": "Open settings",
+    "icon": "settings",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": ","
+      }
+    ]
+  },
+  {
+    "id": "app:open-vault",
+    "name": "Manage vaults",
+    "icon": "vault",
+    "hotkeys": []
+  },
+  {
+    "id": "app:reload",
+    "name": "Reload app without saving",
+    "icon": "rotate-ccw",
+    "hotkeys": []
+  },
+  {
+    "id": "app:show-debug-info",
+    "name": "Show debug info",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:show-release-notes",
+    "name": "Show release notes",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:show-tab-switcher",
+    "name": "Show tab overview",
+    "icon": "square",
+    "hotkeys": []
+  },
+  {
+    "id": "app:switch-vault",
+    "name": "Change vault...",
+    "icon": "vault",
+    "hotkeys": []
+  },
+  {
+    "id": "app:toggle-default-new-pane-mode",
+    "name": "Toggle default mode for new tabs",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:toggle-left-sidebar",
+    "name": "Toggle left sidebar",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:toggle-ribbon",
+    "name": "Toggle ribbon",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "app:toggle-right-sidebar",
+    "name": "Toggle right sidebar",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "audio-recorder:start",
+    "name": "Start recording audio",
+    "icon": "play-circle",
+    "hotkeys": []
+  },
+  {
+    "id": "audio-recorder:stop",
+    "name": "Stop recording audio",
+    "icon": "stop-circle",
+    "hotkeys": []
+  },
+  {
+    "id": "backlink:open",
+    "name": "Show backlinks",
+    "icon": "link",
+    "hotkeys": []
+  },
+  {
+    "id": "backlink:open-backlinks",
+    "name": "Open backlinks for the current note",
+    "icon": "link",
+    "hotkeys": []
+  },
+  {
+    "id": "backlink:toggle-backlinks-in-document",
+    "name": "Toggle backlinks in document",
+    "icon": "link",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:add-item",
+    "name": null,
+    "icon": "shapes",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:add-view",
+    "name": null,
+    "icon": "shapes",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:change-view",
+    "name": null,
+    "icon": "shapes",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:copy-table",
+    "name": null,
+    "icon": "copy",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:insert",
+    "name": null,
+    "icon": "layout-list",
+    "hotkeys": []
+  },
+  {
+    "id": "bases:new-file",
+    "name": null,
+    "icon": "layout-list",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:bookmark-all-tabs",
+    "name": "Bookmark all tabs...",
+    "icon": "bookmark-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:bookmark-current-heading",
+    "name": "Bookmark heading under cursor...",
+    "icon": "bookmark-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:bookmark-current-search",
+    "name": "Bookmark current search...",
+    "icon": "search",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:bookmark-current-section",
+    "name": "Bookmark block under cursor...",
+    "icon": "bookmark-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:bookmark-current-view",
+    "name": "Bookmark...",
+    "icon": "bookmark-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:open",
+    "name": null,
+    "icon": "bookmark",
+    "hotkeys": []
+  },
+  {
+    "id": "bookmarks:unbookmark-current-view",
+    "name": "Remove bookmark for the current file",
+    "icon": "bookmark-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "canvas:convert-to-file",
+    "name": null,
+    "icon": "file-input",
+    "hotkeys": []
+  },
+  {
+    "id": "canvas:export-as-image",
+    "name": null,
+    "icon": "image",
+    "hotkeys": []
+  },
+  {
+    "id": "canvas:jump-to-group",
+    "name": null,
+    "icon": "move",
+    "hotkeys": []
+  },
+  {
+    "id": "canvas:new-file",
+    "name": null,
+    "icon": "layout-dashboard",
+    "hotkeys": []
+  },
+  {
+    "id": "command-palette:open",
+    "name": "Open command palette",
+    "icon": "terminal-square",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "P"
+      }
+    ]
+  },
+  {
+    "id": "daily-notes",
+    "name": null,
+    "icon": "calendar-days",
+    "hotkeys": []
+  },
+  {
+    "id": "daily-notes:goto-next",
+    "name": null,
+    "icon": "calendar-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "daily-notes:goto-prev",
+    "name": null,
+    "icon": "calendar-minus",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:add-cursor-above",
+    "name": "Add cursor above",
+    "icon": "mouse-pointer-click",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:add-cursor-below",
+    "name": "Add cursor below",
+    "icon": "mouse-pointer-click",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:attach-file",
+    "name": "Insert attachment",
+    "icon": "paperclip",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:clear-formatting",
+    "name": "Clear formatting",
+    "icon": "eraser",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:configure-toolbar",
+    "name": "Configure mobile toolbar",
+    "icon": "wrench",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:context-menu",
+    "name": "Show context menu under cursor",
+    "icon": "menu",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:copy",
+    "name": "Copy",
+    "icon": "copy",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:cut",
+    "name": "Cut",
+    "icon": "scissors",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:cycle-list-checklist",
+    "name": "Cycle bullet/checkbox",
+    "icon": "check-square",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:delete-paragraph",
+    "name": "Delete paragraph",
+    "icon": "scissors",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "D"
+      }
+    ]
+  },
+  {
+    "id": "editor:download-attachments",
+    "name": "Download attachments for current file",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "editor:focus",
+    "name": "Focus on last note",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "editor:fold-all",
+    "name": "Fold all headings and lists",
+    "icon": "minimize-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:fold-less",
+    "name": null,
+    "icon": "unfold-vertical",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:fold-more",
+    "name": "Fold more",
+    "icon": "fold-vertical",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:follow-link",
+    "name": "Follow link under cursor",
+    "icon": "link",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Alt"
+        ],
+        "key": "Enter"
+      }
+    ]
+  },
+  {
+    "id": "editor:go-end",
+    "name": "Go to last line",
+    "icon": "chevrons-down",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:go-start",
+    "name": "Go to first line",
+    "icon": "chevrons-up",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:indent-list",
+    "name": "Indent list item",
+    "icon": "indent",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-callout",
+    "name": "Insert callout",
+    "icon": "quote",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-codeblock",
+    "name": "Insert code block",
+    "icon": "code",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-embed",
+    "name": "Add embed",
+    "icon": "sticky-note",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-footnote",
+    "name": "Insert footnote",
+    "icon": "file-signature",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-horizontal-rule",
+    "name": "Insert horizontal rule",
+    "icon": "minus",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-link",
+    "name": "Insert Markdown link",
+    "icon": "link",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "K"
+      }
+    ]
+  },
+  {
+    "id": "editor:insert-mathblock",
+    "name": "Insert math block",
+    "icon": "sigma-square",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-table",
+    "name": "Insert table",
+    "icon": "table",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-tag",
+    "name": "Add tag",
+    "icon": "tag",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:insert-wikilink",
+    "name": "Add internal link",
+    "icon": "bracket-glyph",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:move-caret-down",
+    "name": "Move caret down",
+    "icon": "chevron-down",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:move-caret-left",
+    "name": "Move caret left",
+    "icon": "chevron-left",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:move-caret-right",
+    "name": "Move caret right",
+    "icon": "chevron-right",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:move-caret-up",
+    "name": "Move caret up",
+    "icon": "chevron-up",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:open-link-in-new-leaf",
+    "name": "Open link under cursor in new tab",
+    "icon": "link",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "Enter"
+      }
+    ]
+  },
+  {
+    "id": "editor:open-link-in-new-split",
+    "name": "Open link under cursor to the right",
+    "icon": "link",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Alt"
+        ],
+        "key": "Enter"
+      }
+    ]
+  },
+  {
+    "id": "editor:open-link-in-new-window",
+    "name": "Open link under cursor in new window",
+    "icon": "link",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Alt",
+          "Shift"
+        ],
+        "key": "Enter"
+      }
+    ]
+  },
+  {
+    "id": "editor:open-search",
+    "name": "Search current file",
+    "icon": "search",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "F"
+      }
+    ]
+  },
+  {
+    "id": "editor:open-search-replace",
+    "name": "Search & replace in current file",
+    "icon": "search",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Alt"
+        ],
+        "key": "F"
+      },
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "H"
+      }
+    ]
+  },
+  {
+    "id": "editor:paste",
+    "name": "Paste",
+    "icon": "clipboard-type",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:redo",
+    "name": "Redo",
+    "icon": "redo-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:rename-heading",
+    "name": "Rename this heading...",
+    "icon": "edit-3",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:save-file",
+    "name": "Save current file",
+    "icon": null,
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "S"
+      }
+    ]
+  },
+  {
+    "id": "editor:set-heading",
+    "name": "Toggle heading",
+    "icon": "heading-glyph",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:set-heading-0",
+    "name": "Remove heading",
+    "icon": "heading-glyph",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:swap-line-down",
+    "name": "Move line down",
+    "icon": "corner-right-down",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:swap-line-up",
+    "name": "Move line up",
+    "icon": "corner-right-up",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-blockquote",
+    "name": "Toggle blockquote",
+    "icon": "quote",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-bold",
+    "name": "Toggle bold",
+    "icon": "bold",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "B"
+      }
+    ]
+  },
+  {
+    "id": "editor:toggle-bullet-list",
+    "name": "Toggle bullet list",
+    "icon": "list",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-checklist-status",
+    "name": "Toggle checkbox status",
+    "icon": "check-square",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "l"
+      }
+    ]
+  },
+  {
+    "id": "editor:toggle-code",
+    "name": "Toggle code",
+    "icon": "code-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-comments",
+    "name": "Toggle comment",
+    "icon": "percent",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "/"
+      }
+    ]
+  },
+  {
+    "id": "editor:toggle-fold",
+    "name": "Toggle fold on the current line",
+    "icon": "diff",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-fold-properties",
+    "name": "Toggle fold properties in current file",
+    "icon": "diff",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-highlight",
+    "name": "Toggle highlight",
+    "icon": "highlighter",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-inline-math",
+    "name": "Toggle inline math",
+    "icon": "sigma",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-italics",
+    "name": "Toggle italic",
+    "icon": "italic",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "I"
+      }
+    ]
+  },
+  {
+    "id": "editor:toggle-keyboard",
+    "name": "Toggle keyboard",
+    "icon": "keyboard-toggle",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-line-numbers",
+    "name": "Toggle line numbers",
+    "icon": "list-ordered",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-numbered-list",
+    "name": "Toggle numbered list",
+    "icon": "list-ordered",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-readable-line-length",
+    "name": "Toggle readable line length",
+    "icon": "ruler",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-source",
+    "name": "Toggle Live Preview/Source mode",
+    "icon": "code-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-spellcheck",
+    "name": "Toggle spellcheck",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "editor:toggle-strikethrough",
+    "name": "Toggle strikethrough",
+    "icon": "strikethrough",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:undo",
+    "name": "Undo",
+    "icon": "undo-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:unfold-all",
+    "name": "Unfold all headings and lists",
+    "icon": "maximize-2",
+    "hotkeys": []
+  },
+  {
+    "id": "editor:unindent-list",
+    "name": "Unindent list item",
+    "icon": "outdent",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:duplicate-file",
+    "name": null,
+    "icon": "files",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:move-file",
+    "name": "Move current file to another folder",
+    "icon": "folder-tree",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:new-file",
+    "name": "Create new note",
+    "icon": "file-plus",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "N"
+      }
+    ]
+  },
+  {
+    "id": "file-explorer:new-file-in-current-tab",
+    "name": "Create new note in current tab",
+    "icon": "file-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:new-file-in-new-pane",
+    "name": "Create note to the right",
+    "icon": "file-plus",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Shift"
+        ],
+        "key": "N"
+      }
+    ]
+  },
+  {
+    "id": "file-explorer:new-folder",
+    "name": null,
+    "icon": "folder-plus",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:open",
+    "name": null,
+    "icon": "files",
+    "hotkeys": []
+  },
+  {
+    "id": "file-explorer:reveal-active-file",
+    "name": null,
+    "icon": "navigation",
+    "hotkeys": []
+  },
+  {
+    "id": "file-recovery:open",
+    "name": null,
+    "icon": "rotate-ccw",
+    "hotkeys": []
+  },
+  {
+    "id": "footnotes:open",
+    "name": null,
+    "icon": "file-signature",
+    "hotkeys": []
+  },
+  {
+    "id": "global-search:open",
+    "name": null,
+    "icon": "search",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Shift"
+        ],
+        "key": "F"
+      }
+    ]
+  },
+  {
+    "id": "graph:animate",
+    "name": null,
+    "icon": "wand",
+    "hotkeys": []
+  },
+  {
+    "id": "graph:open",
+    "name": null,
+    "icon": "git-fork",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "G"
+      }
+    ]
+  },
+  {
+    "id": "graph:open-local",
+    "name": null,
+    "icon": "git-fork",
+    "hotkeys": []
+  },
+  {
+    "id": "insert-current-date",
+    "name": "Insert current date",
+    "icon": "calendar-days",
+    "hotkeys": []
+  },
+  {
+    "id": "insert-current-time",
+    "name": "Insert current time",
+    "icon": "clock",
+    "hotkeys": []
+  },
+  {
+    "id": "insert-template",
+    "name": "Insert template",
+    "icon": "copy",
+    "hotkeys": []
+  },
+  {
+    "id": "markdown-importer:open",
+    "name": null,
+    "icon": "download",
+    "hotkeys": []
+  },
+  {
+    "id": "markdown:add-alias",
+    "name": "Add alias",
+    "icon": "forward",
+    "hotkeys": []
+  },
+  {
+    "id": "markdown:add-metadata-property",
+    "name": "Add file property",
+    "icon": "plus-circle",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": ";"
+      }
+    ]
+  },
+  {
+    "id": "markdown:clear-metadata-properties",
+    "name": "Clear file properties",
+    "icon": "package-x",
+    "hotkeys": []
+  },
+  {
+    "id": "markdown:toggle-preview",
+    "name": "Toggle reading view",
+    "icon": "book-open",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "E"
+      },
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": ";"
+      }
+    ]
+  },
+  {
+    "id": "mobile:quick-action",
+    "name": null,
+    "icon": "terminal-square",
+    "hotkeys": []
+  },
+  {
+    "id": "note-composer:extract-heading",
+    "name": null,
+    "icon": "scissors",
+    "hotkeys": []
+  },
+  {
+    "id": "note-composer:merge-file",
+    "name": null,
+    "icon": "git-merge",
+    "hotkeys": []
+  },
+  {
+    "id": "note-composer:split-file",
+    "name": null,
+    "icon": "scissors",
+    "hotkeys": []
+  },
+  {
+    "id": "open-with-default-app:open",
+    "name": null,
+    "icon": "arrow-up-right",
+    "hotkeys": []
+  },
+  {
+    "id": "open-with-default-app:show",
+    "name": null,
+    "icon": "files",
+    "hotkeys": []
+  },
+  {
+    "id": "outgoing-links:open",
+    "name": null,
+    "icon": "link",
+    "hotkeys": []
+  },
+  {
+    "id": "outgoing-links:open-for-current",
+    "name": null,
+    "icon": "link",
+    "hotkeys": []
+  },
+  {
+    "id": "outline:open",
+    "name": "Show outline",
+    "icon": "list",
+    "hotkeys": []
+  },
+  {
+    "id": "outline:open-for-current",
+    "name": "Open outline of the current file",
+    "icon": "list",
+    "hotkeys": []
+  },
+  {
+    "id": "properties:open",
+    "name": null,
+    "icon": "archive",
+    "hotkeys": []
+  },
+  {
+    "id": "properties:open-local",
+    "name": null,
+    "icon": "info",
+    "hotkeys": []
+  },
+  {
+    "id": "publish:open-in-live-site",
+    "name": null,
+    "icon": "globe",
+    "hotkeys": []
+  },
+  {
+    "id": "publish:publish-file",
+    "name": null,
+    "icon": "send",
+    "hotkeys": []
+  },
+  {
+    "id": "publish:view-changes",
+    "name": null,
+    "icon": "send",
+    "hotkeys": []
+  },
+  {
+    "id": "slides:start",
+    "name": "Start presentation",
+    "icon": "monitor",
+    "hotkeys": []
+  },
+  {
+    "id": "switcher:open",
+    "name": null,
+    "icon": "navigation",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "O"
+      }
+    ]
+  },
+  {
+    "id": "sync:open-sync-log",
+    "name": null,
+    "icon": "align-left",
+    "hotkeys": []
+  },
+  {
+    "id": "sync:open-sync-view",
+    "name": null,
+    "icon": "rotate-ccw",
+    "hotkeys": []
+  },
+  {
+    "id": "sync:setup",
+    "name": "Set up Sync",
+    "icon": "settings",
+    "hotkeys": []
+  },
+  {
+    "id": "sync:view-version-history",
+    "name": "Open version history for the current file",
+    "icon": "history",
+    "hotkeys": []
+  },
+  {
+    "id": "tag-pane:open",
+    "name": null,
+    "icon": "tag",
+    "hotkeys": []
+  },
+  {
+    "id": "theme:switch",
+    "name": "Change theme...",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "theme:toggle-light-dark",
+    "name": "Toggle light/dark mode",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:focus-address-bar",
+    "name": null,
+    "icon": "text-cursor-input",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:open",
+    "name": null,
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:open-history",
+    "name": null,
+    "icon": "clock",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:save-to-vault",
+    "name": null,
+    "icon": "file-down",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:search",
+    "name": null,
+    "icon": "search",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:toggle-reader-mode",
+    "name": null,
+    "icon": "glasses",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:zoom-in",
+    "name": "Zoom in",
+    "icon": "zoom-in",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:zoom-out",
+    "name": "Zoom out",
+    "icon": "zoom-in",
+    "hotkeys": []
+  },
+  {
+    "id": "webviewer:zoom-reset",
+    "name": "Reset zoom",
+    "icon": "rotate-cw",
+    "hotkeys": []
+  },
+  {
+    "id": "window:reset-zoom",
+    "name": "Reset zoom",
+    "icon": "file-plus",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "N"
+      }
+    ]
+  },
+  {
+    "id": "window:toggle-always-on-top",
+    "name": "Toggle window always on top",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "window:zoom-in",
+    "name": "Zoom in",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "window:zoom-out",
+    "name": "Zoom out",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:close",
+    "name": "Close current tab",
+    "icon": "x",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "W"
+      }
+    ]
+  },
+  {
+    "id": "workspace:close-others",
+    "name": "Close all other tabs",
+    "icon": "x",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:close-others-tab-group",
+    "name": "Close others in tab group",
+    "icon": "x",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:close-tab-group",
+    "name": "Close this tab group",
+    "icon": "x",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:close-window",
+    "name": "Close window",
+    "icon": "x",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod",
+          "Shift"
+        ],
+        "key": "W"
+      }
+    ]
+  },
+  {
+    "id": "workspace:copy-full-path",
+    "name": "Copy current file path from system root",
+    "icon": "hard-drive",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:copy-path",
+    "name": "Copy current file path from vault folder",
+    "icon": "copy",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:copy-url",
+    "name": "Copy Obsidian URL for current file",
+    "icon": "vault",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:edit-file-title",
+    "name": "Rename file",
+    "icon": "edit-3",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:export-pdf",
+    "name": "Export to PDF...",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:goto-last-tab",
+    "name": "Go to last tab",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:move-to-new-window",
+    "name": "Move current tab to new window",
+    "icon": "maximize",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Ctrl"
+        ],
+        "key": "Tab"
+      },
+      {
+        "modifiers": [
+          "Meta",
+          "Shift"
+        ],
+        "key": "]"
+      },
+      {
+        "modifiers": [
+          "Ctrl"
+        ],
+        "key": "PageDown"
+      }
+    ]
+  },
+  {
+    "id": "workspace:new-tab",
+    "name": "New tab",
+    "icon": null,
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Mod"
+        ],
+        "key": "T"
+      }
+    ]
+  },
+  {
+    "id": "workspace:new-window",
+    "name": "New window",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:next-tab",
+    "name": "Go to next tab",
+    "icon": "arrow-right",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Ctrl"
+        ],
+        "key": "Tab"
+      },
+      {
+        "modifiers": [
+          "Meta",
+          "Shift"
+        ],
+        "key": "]"
+      },
+      {
+        "modifiers": [
+          "Ctrl"
+        ],
+        "key": "PageDown"
+      }
+    ]
+  },
+  {
+    "id": "workspace:open-in-new-window",
+    "name": "Open current tab in new window",
+    "icon": "maximize",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:previous-tab",
+    "name": "Go to previous tab",
+    "icon": "arrow-left",
+    "hotkeys": [
+      {
+        "modifiers": [
+          "Ctrl",
+          "Shift"
+        ],
+        "key": "Tab"
+      },
+      {
+        "modifiers": [
+          "Meta",
+          "Shift"
+        ],
+        "key": "["
+      },
+      {
+        "modifiers": [
+          "Ctrl"
+        ],
+        "key": "PageUp"
+      }
+    ]
+  },
+  {
+    "id": "workspace:show-trash",
+    "name": "Show trash",
+    "icon": null,
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:split-horizontal",
+    "name": "Split down",
+    "icon": "separator-horizontal",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:split-vertical",
+    "name": "Split right",
+    "icon": "separator-vertical",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:toggle-pin",
+    "name": "Toggle pin",
+    "icon": "pin",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:toggle-stacked-tabs",
+    "name": "Toggle stacked tabs",
+    "icon": "layers",
+    "hotkeys": []
+  },
+  {
+    "id": "workspace:undo-close-pane",
+    "name": "Undo close tab",
+    "icon": "undo-2",
+    "hotkeys": []
+  },
+  {
+    "id": "workspaces:load",
+    "name": null,
+    "icon": "layout",
+    "hotkeys": []
+  },
+  {
+    "id": "workspaces:open-modal",
+    "name": null,
+    "icon": "layout",
+    "hotkeys": []
+  },
+  {
+    "id": "workspaces:save",
+    "name": null,
+    "icon": "save",
+    "hotkeys": []
+  },
+  {
+    "id": "workspaces:save-and-load",
+    "name": null,
+    "icon": "layout",
+    "hotkeys": []
+  }
+]
