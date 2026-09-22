@@ -28,8 +28,9 @@ public:
     // All candidates for a link path, best first (for disambiguation UIs and tests).
     QStringList candidates(const QString& linkpath, const QString& sourcePath) const;
 
-    // Link text to use when linking from `sourcePath` to `targetPath` (".md" omitted for notes).
-    QString linkText(const QString& targetPath, const QString& sourcePath, LinkFormat format) const;
+    // Link text to use when linking from `sourcePath` to `targetPath` (Obsidian's fileToLinktext).
+    // omitMdExtension: wikilinks drop ".md" from notes; markdown links keep it.
+    QString linkText(const QString& targetPath, const QString& sourcePath, LinkFormat format, bool omitMdExtension = true) const;
     // Is `name` (basename for notes, file name otherwise) unique in the vault?
     bool isUniqueName(const QString& targetPath) const;
 

@@ -10,6 +10,7 @@ oc_add_library(oc_core
     documents/document_manager.cpp
     documents/local_storage.cpp
     metadata/link_resolver.cpp
+    metadata/link_updater.cpp
     metadata/metadata_cache.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
