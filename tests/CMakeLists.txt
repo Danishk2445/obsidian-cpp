@@ -14,3 +14,6 @@ oc_add_test(editor_mdcmd_test SOURCES editor/markdown_commands_test.cpp DEPS oc_
 oc_add_test(editor_greentext_test SOURCES editor/greentext_guard_test.cpp DEPS oc_editor QT)
 oc_add_test(core_link_resolver_test SOURCES core/link_resolver_test.cpp DEPS oc_core)
 oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GUI)
+oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
+oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
+oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
