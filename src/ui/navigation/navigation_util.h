@@ -42,4 +42,9 @@ QString activeFilePath(VaultSession* session);
 // Shows an Obsidian notice in the window that hosts `layer` (no-op without a MainWindow).
 void showNotice(OverlayLayer* layer, const QString& message);
 
+// Keeps key events inside a modal prompt: keys its input doesn't handle (e.g. Ctrl+O in the command palette)
+// would otherwise propagate to the overlay layer, where the HotkeyDispatcher no longer sees the modal and runs
+// the global command (opening a second prompt). Obsidian's modal scope swallows them.
+void containKeyEvents(QWidget* modal);
+
 } // namespace oc

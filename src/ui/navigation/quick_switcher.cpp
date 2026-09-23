@@ -374,6 +374,7 @@ SuggestModal* openQuickSwitcher(VaultSession* session, OverlayLayer* layer, cons
 
     auto* modal = new SuggestModal(layer);
     modal->setObjectName(QStringLiteral("ocQuickSwitcher"));
+    containKeyEvents(modal);
     modal->setPlaceholder(tr("Find or create a note..."));
     modal->setInstructions({{QStringLiteral("↑↓"), tr("to navigate")},
                             {QStringLiteral("↵"), tr("to open")},

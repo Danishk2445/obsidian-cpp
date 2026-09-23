@@ -8,6 +8,7 @@
 #include "ui/shell/main_window.h"
 #include "ui/workspace/view.h"
 
+#include <QEvent>
 #include <QJsonArray>
 
 namespace oc {
@@ -72,6 +73,32 @@ void showNotice(OverlayLayer* layer, const QString& message)
         return;
     if (auto* w = qobject_cast<MainWindow*>(layer->window()); w && w->notices())
         w->notices()->show(message);
+}
+
+namespace {
+// Accepts the key events that reach the modal itself (i.e. that its children didn't take), so they stop there.
+class KeyContainer : public QObject {
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override
+    {
+        if (obj == parent()
+            && (ev->type() == QEvent::KeyPress || ev->type() == QEvent::KeyRelease || ev->type() == QEvent::ShortcutOverride)) {
+            ev->accept();
+            return true;
+        }
+        return false;
+    }
+};
+} // namespace
+
+void containKeyEvents(QWidget* modal)
+{
+    if (!modal)
+        return;
+    modal->installEventFilter(new KeyContainer(modal));
 }
 
 } // namespace oc

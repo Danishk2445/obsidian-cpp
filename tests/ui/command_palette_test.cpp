@@ -217,6 +217,45 @@ TEST(CommandPalette, CommandAndHotkey)
     auto* m = env.layer()->findChild<SuggestModal*>("ocCommandPalette");
     ASSERT_NE(m, nullptr);
     EXPECT_TRUE(m->isOpen());
-    // the palette lists itself as a recent command next time
     m->close();
+}
+
+// Through the application's HotkeyDispatcher, from the editor: Mod+P, Mod+O and Mod+Shift+F open the navigation
+// UIs; while a prompt is open, hotkeys stay with it.
+TEST(Navigation, HotkeysFromTheEditor)
+{
+    NavigationEnv env;
+    HotkeyDispatcher dispatcher(env.commands, env.window);
+    dispatcher.setWindow(env.window);
+    env.openNote("Welcome.md");
+    MarkdownView* mv = env.activeMarkdown();
+    ASSERT_NE(mv, nullptr);
+    QWidget* editor = mv->editor();
+
+    QTest::keyClick(editor, Qt::Key_P, Qt::ControlModifier);
+    auto* palette = env.layer()->findChild<SuggestModal*>("ocCommandPalette");
+    ASSERT_NE(palette, nullptr);
+    EXPECT_TRUE(palette->isOpen());
+    QTest::keyClick(palette->input(), Qt::Key_O, Qt::ControlModifier); // captured by the prompt
+    EXPECT_EQ(env.layer()->findChild<SuggestModal*>("ocQuickSwitcher"), nullptr);
+    QTest::keyClick(palette->input(), Qt::Key_Escape);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    QTest::keyClick(editor, Qt::Key_O, Qt::ControlModifier);
+    auto* switcher = env.layer()->findChild<SuggestModal*>("ocQuickSwitcher");
+    ASSERT_NE(switcher, nullptr);
+    EXPECT_TRUE(switcher->isOpen());
+    QTest::keyClick(switcher->input(), Qt::Key_Escape);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    QTest::keyClick(editor, Qt::Key_F, Qt::ControlModifier | Qt::ShiftModifier);
+    auto* search = qobject_cast<SearchView*>(env.workspace->leavesOfType("search").value(0)->view());
+    ASSERT_NE(search, nullptr);
+    EXPECT_EQ(env.window->focusWidget(), search->input());
+    // Mod+P from the search input (a text field) still opens the palette
+    QTest::keyClick(search->input(), Qt::Key_P, Qt::ControlModifier);
+    palette = env.layer()->findChild<SuggestModal*>("ocCommandPalette");
+    ASSERT_NE(palette, nullptr);
+    EXPECT_TRUE(palette->isOpen());
+    palette->close();
 }

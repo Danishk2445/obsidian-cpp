@@ -6,6 +6,7 @@
 #include "core/config/json_file.h"
 #include "core/fuzzy/fuzzy.h"
 #include "core/vault_session.h"
+#include "ui/navigation/navigation_util.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
 
@@ -149,6 +150,7 @@ SuggestModal* openCommandPalette(VaultSession* session, OverlayLayer* layer)
 
     auto* modal = new SuggestModal(layer);
     modal->setObjectName(QStringLiteral("ocCommandPalette"));
+    containKeyEvents(modal);
     modal->setPlaceholder(tr("Select a command..."));
     modal->setEmptyText(tr("No commands found."));
     modal->setInstructions({{QStringLiteral("↑↓"), tr("to navigate")}, {QStringLiteral("↵"), tr("to use")}, {QStringLiteral("esc"), tr("to dismiss")}});
