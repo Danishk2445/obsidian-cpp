@@ -1,0 +1,44 @@
+=== input
+# H1
+## H2 ##
+###### H6 #
+####### seven
+#no space
+#
+# trailing #s ###   
+   ### indented
+## a#
+## \#
+=== tree
+Document [0,11)
+  AtxHeading [0,1) h1 text=2-4 marker=0-2
+  AtxHeading [1,2) h2 text=3-5 marker=0-3 close=5
+  AtxHeading [2,3) h6 text=7-9 marker=0-7 close=9
+  Paragraph [3,5)
+  AtxHeading [5,6) h1 text=1-1 marker=0-1
+  AtxHeading [6,7) h1 text=2-13 marker=0-2 close=13
+  AtxHeading [7,8) h3 text=7-15 marker=3-7
+  AtxHeading [8,9) h2 text=3-5 marker=0-3
+  AtxHeading [9,10) h2 text=3-5 marker=0-3
+--
+0 AtxHeading c0 |# H1|
+1 AtxHeading c0 |## H2 ##|
+2 AtxHeading c0 |###### H6 #|
+3 Paragraph c0 |####### seven|
+4 Paragraph c0 |#no space|
+5 AtxHeading c0 |#|
+6 AtxHeading c0 |# trailing #s ###   |
+7 AtxHeading c0 |   ### indented|
+8 AtxHeading c0 |## a#|
+9 AtxHeading c0 |## \#|
+10 Blank c0 ||
+-- content
+#1 AtxHeading "H1" [0:2+2@0]
+#2 AtxHeading "H2" [1:3+2@0]
+#3 AtxHeading "H6" [2:7+2@0]
+#4 Paragraph "####### seven\n#no space" [3:0+13@0 4:0+9@14]
+#5 AtxHeading "" [5:1+0@0]
+#6 AtxHeading "trailing #s" [6:2+11@0]
+#7 AtxHeading "indented" [7:7+8@0]
+#8 AtxHeading "a#" [8:3+2@0]
+#9 AtxHeading "\\#" [9:3+2@0]

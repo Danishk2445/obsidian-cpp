@@ -1,0 +1,62 @@
+=== input
+- item
+  ```js title=x
+  code
+  ```
+- item 2
+  ~~~
+  unclosed in item
+- item 3
+
+> ```
+> quoted code
+> ```
+
+````Python extra
+```
+not closed by a shorter fence
+`````
+ ```
+   indented fence
+  ```
+=== tree
+Document [0,21)
+  BulletList [0,8) tight delim=-
+    ListItem [0,4) marker=0-1 content=2
+      Paragraph [0,1)
+      FencedCode [1,4) fence=``` info="js title=x"@5-15 lang=js
+    ListItem [4,7) marker=0-1 content=2
+      Paragraph [4,5)
+      FencedCode [5,7) fence=~~~ unclosed
+    ListItem [7,8) marker=0-1 content=2
+      Paragraph [7,8)
+  BlockQuote [9,12)
+    FencedCode [9,12) fence=```
+  FencedCode [13,17) fence=```` info="Python extra"@4-16 lang=python
+  FencedCode [17,20) fence=``` indent=1
+--
+0 Paragraph c2 LM0-2#2 |- item|
+1 FenceOpen c2 LI0-2#2 |  ```js title=x|
+2 FenceBody c2 LI0-2#2 |  code|
+3 FenceClose c2 LI0-2#2 |  ```|
+4 Paragraph c2 LM0-2#5 |- item 2|
+5 FenceOpen c2 LI0-2#5 |  ~~~|
+6 FenceBody c2 LI0-2#5 |  unclosed in item|
+7 Paragraph c2 LM0-2#8 |- item 3|
+8 Blank c0 ||
+9 FenceOpen c2 Q0-2#10 |> ```|
+10 FenceBody c2 Q0-2#10 |> quoted code|
+11 FenceClose c2 Q0-2#10 |> ```|
+12 Blank c0 ||
+13 FenceOpen c0 |````Python extra|
+14 FenceBody c0 |```|
+15 FenceBody c0 |not closed by a shorter fence|
+16 FenceClose c0 |`````|
+17 FenceOpen c0 | ```|
+18 FenceBody c1 |   indented fence|
+19 FenceClose c0 |  ```|
+20 Blank c0 ||
+-- content
+#3 Paragraph "item" [0:2+4@0]
+#6 Paragraph "item 2" [4:2+6@0]
+#9 Paragraph "item 3" [7:2+6@0]

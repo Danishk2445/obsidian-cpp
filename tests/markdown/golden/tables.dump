@@ -1,0 +1,63 @@
+=== input
+para line
+| a | b \| c |
+|:--|--:|
+| `x \| y` | [[link\|alias]] |
+row without pipes
+
+a | b
+- | :-:
+1 | 2
+> quote ends the table
+
+| one |
+| --- | --- |
+
+|x|
+|-|
+|
+=== tree
+Document [0,18)
+  Paragraph [0,1)
+  Table [1,5) cols=2 align=L,R
+  Paragraph [6,7)
+  BulletList [7,9) tight delim=-
+    ListItem [7,9) marker=0-1 content=2
+      Paragraph [7,9)
+  BlockQuote [9,10)
+    Paragraph [9,10)
+  Paragraph [11,13)
+  Table [14,16) cols=1 align=-
+  Paragraph [16,17)
+--
+0 Paragraph c0 |para line|
+1 TableHeader c0 || a | b \| c ||
+2 TableDelimiter c0 ||:--|--:||
+3 TableRow c0 || `x \| y` | [[link\|alias]] ||
+4 TableRow c0 |row without pipes|
+5 Blank c0 ||
+6 Paragraph c0 |a | b|
+7 Paragraph c2 LM0-2#5 |- | :-:|
+8 Paragraph c0 |1 | 2|
+9 Paragraph c2 Q0-2#7 |> quote ends the table|
+10 Blank c0 ||
+11 Paragraph c0 || one ||
+12 Paragraph c0 || --- | --- ||
+13 Blank c0 ||
+14 TableHeader c0 ||x||
+15 TableDelimiter c0 ||-||
+16 Paragraph c0 |||
+17 Blank c0 ||
+-- content
+#1 Paragraph "para line" [0:0+9@0]
+#3 Paragraph "a | b" [6:0+5@0]
+#6 Paragraph "| :-:\n1 | 2" [7:2+5@0 8:0+5@6]
+#8 Paragraph "quote ends the table" [9:2+20@0]
+#9 Paragraph "| one |\n| --- | --- |" [11:0+7@0 12:0+13@8]
+#11 Paragraph "|" [16:0+1@0]
+cells 1: 2-3 "a" | 6-12 "b \\| c"
+cells 2: 1-4 ":--" | 5-8 "--:"
+cells 3: 2-10 "`x \\| y`" | 13-28 "[[link\\|alias]]"
+cells 4: 0-17 "row without pipes"
+cells 14: 1-2 "x"
+cells 15: 1-2 "-"

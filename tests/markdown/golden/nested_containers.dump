@@ -1,0 +1,45 @@
+=== input
+> - a
+>   > b
+>   c
+
+1. > quote in item
+   > more
+
+   para in item
+2. [^f]: footnote in item
+       continued
+=== tree
+Document [0,11)
+  BlockQuote [0,3)
+    BulletList [0,3) tight delim=-
+      ListItem [0,3) marker=2-3 content=4
+        Paragraph [0,1)
+        BlockQuote [1,3)
+          Paragraph [1,3)
+  OrderedList [4,10) loose delim=. start=1
+    ListItem [4,8) marker=0-2 content=3
+      BlockQuote [4,6)
+        Paragraph [4,6)
+      Paragraph [7,8)
+    ListItem [8,10) marker=0-2 content=3
+      FootnoteDef [8,10) label=f
+        Paragraph [8,10)
+--
+0 Paragraph c4 Q0-2#1 LM2-4#3 |> - a|
+1 Paragraph c6 Q0-2#1 LI2-4#3 Q4-6#5 |>   > b|
+2 Paragraph c4 Q0-2#1 LI2-4#3 |>   c|
+3 Blank c0 ||
+4 Paragraph c5 LM0-3#8 Q3-5#9 |1. > quote in item|
+5 Paragraph c5 LI0-3#8 Q3-5#9 |   > more|
+6 Blank c0 LI0-0#8 ||
+7 Paragraph c3 LI0-3#8 |   para in item|
+8 Paragraph c9 LM0-3#12 FL3-9#13 |2. [^f]: footnote in item|
+9 Paragraph c7 LI0-3#12 FI3-7#13 |       continued|
+10 Blank c0 ||
+-- content
+#4 Paragraph "a" [0:4+1@0]
+#6 Paragraph "b\nc" [1:6+1@0 2:4+1@2]
+#10 Paragraph "quote in item\nmore" [4:5+13@0 5:5+4@14]
+#11 Paragraph "para in item" [7:3+12@0]
+#14 Paragraph "footnote in item\ncontinued" [8:9+16@0 9:7+9@17]

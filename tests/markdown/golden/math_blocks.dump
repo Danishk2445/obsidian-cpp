@@ -1,0 +1,42 @@
+=== input
+$$
+x^2
+$$
+$$ \sum one line $$
+$$x$$ more text
+para
+$$
+interrupts the paragraph
+text before $$ closes
+$$a
+b$$
+   $$ indented 3
+$$
+    $$ indented 4 is code
+=== tree
+Document [0,15)
+  MathBlock [0,3)
+  MathBlock [3,4)
+  Paragraph [4,6)
+  MathBlock [6,9)
+  MathBlock [9,11)
+  MathBlock [11,13)
+  IndentedCode [13,14)
+--
+0 MathOpen c0 |$$|
+1 MathBody c0 |x^2|
+2 MathClose c0 |$$|
+3 MathOneLine c0 |$$ \sum one line $$|
+4 Paragraph c0 |$$x$$ more text|
+5 Paragraph c0 |para|
+6 MathOpen c0 |$$|
+7 MathBody c0 |interrupts the paragraph|
+8 MathClose c0 |text before $$ closes|
+9 MathOpen c0 |$$a|
+10 MathClose c0 |b$$|
+11 MathOpen c0 |   $$ indented 3|
+12 MathClose c0 |$$|
+13 IndentedCode c4 |    $$ indented 4 is code|
+14 Blank c0 ||
+-- content
+#3 Paragraph "$$x$$ more text\npara" [4:0+15@0 5:0+4@16]
