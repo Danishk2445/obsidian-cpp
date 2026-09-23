@@ -147,7 +147,6 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
     rh->setSpacing(4);
     m_input = new GlobalSearchInput(row);
     m_input->setPlaceholderText(tr("Search..."));
-    m_input->setToolTip(QString());
     rh->addWidget(m_input, 1);
     auto* settings = new ActiveIconButton(QStringLiteral("sliders-horizontal"), tr("Search settings"), row);
     m_settingsButton = settings;
