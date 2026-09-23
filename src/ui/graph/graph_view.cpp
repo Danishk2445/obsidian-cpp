@@ -13,6 +13,7 @@
 #include "ui/graph/graph_widget.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
+#include "ui/views/markdown/page_preview.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -82,6 +83,30 @@ public:
         connect(widget, &GraphWidget::contextMenuRequested, this, [this](const QString& id, const QPoint& pos) {
             QTimer::singleShot(0, this, [this, id, pos] { contextMenu(id, pos); });
         });
+        connect(widget->canvas(), &GraphCanvas::hoverChanged, this, &GraphViewController::hover);
+    }
+
+    // Obsidian's onNodeHover: notes, attachments and the focused file get a page preview (hover
+    // source "graph", Mod by default); tags and unresolved nodes don't.
+    void hover(const QString& id)
+    {
+        Workspace* ws = m_view->workspace();
+        MainWindow* window = ws ? ws->window() : nullptr;
+        if (!window)
+            return;
+        PagePreview* preview = PagePreview::of(window);
+        preview->onLinkUnhover(m_view);
+        const graph::NodeKind kind = id.isEmpty() ? graph::NodeKind::Tag : kindOf(id);
+        if (kind != graph::NodeKind::File && kind != graph::NodeKind::Attachment)
+            return;
+        GraphCanvas* c = m_widget->canvas();
+        const int i = c->indexOf(id);
+        if (i < 0)
+            return;
+        const QPointF center = c->worldToWidget(c->nodePosition(i));
+        const double r = c->nodeRadius(i) * c->scale() / c->devicePixelRatioF();
+        const QRect anchor = QRectF(center - QPointF(r, r), QSizeF(2 * r, 2 * r)).toAlignedRect();
+        preview->onLinkHover(QStringLiteral("graph"), id, QString(), QRect(c->mapToGlobal(anchor.topLeft()), anchor.size()), m_view);
     }
 
     VaultSession* session() const { return m_view->session(); }
