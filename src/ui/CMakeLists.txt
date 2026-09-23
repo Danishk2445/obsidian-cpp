@@ -8,15 +8,25 @@ oc_add_library(oc_ui
     navigation/search_view.cpp
     navigation/search_view_widgets.cpp
     navigation/vault_search_source.cpp
+    overlay/modal.cpp
+    overlay/modal.h
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
+    plugins/note_plugins_ui.cpp
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
     shell/ribbon.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
+    views/file_explorer/file_actions.cpp
+    views/file_explorer/file_actions.h
+    views/file_explorer/file_explorer_view.cpp
+    views/file_explorer/file_explorer_view.h
+    views/file_explorer/file_tree.cpp
+    views/file_explorer/file_tree.h
+    views/markdown/attachments.cpp
     views/markdown/editor_search_bar.cpp
     views/markdown/inline_title.cpp
     views/markdown/markdown_commands.cpp
@@ -38,4 +48,5 @@ oc_add_library(oc_ui
     workspace/workspace_p.h
     workspace/workspace_widgets.cpp
   PUBLIC_DEPS oc_core oc_render oc_editor Qt6::Widgets
+  PRIVATE_DEPS KF6::KIOGui
 )

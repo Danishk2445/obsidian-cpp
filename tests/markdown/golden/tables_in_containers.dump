@@ -1,0 +1,33 @@
+=== input
+- | h1 | h2 |
+  | --- | --- |
+  | c1 | c2 |
+> | q |
+> |---|
+> | r |
+lazy text is not a row
+=== tree
+Document [0,8)
+  BulletList [0,3) tight delim=-
+    ListItem [0,3) marker=0-1 content=2
+      Table [0,3) cols=2 align=-,-
+  BlockQuote [3,6)
+    Table [3,6) cols=1 align=-
+  Paragraph [6,7)
+--
+0 TableHeader c2 LM0-2#2 |- | h1 | h2 ||
+1 TableDelimiter c2 LI0-2#2 |  | --- | --- ||
+2 TableRow c2 LI0-2#2 |  | c1 | c2 ||
+3 TableHeader c2 Q0-2#4 |> | q ||
+4 TableDelimiter c2 Q0-2#4 |> |---||
+5 TableRow c2 Q0-2#4 |> | r ||
+6 Paragraph c0 |lazy text is not a row|
+7 Blank c0 ||
+-- content
+#6 Paragraph "lazy text is not a row" [6:0+22@0]
+cells 0: 4-6 "h1" | 9-11 "h2"
+cells 1: 4-7 "---" | 10-13 "---"
+cells 2: 4-6 "c1" | 9-11 "c2"
+cells 3: 4-5 "q"
+cells 4: 3-6 "---"
+cells 5: 4-5 "r"

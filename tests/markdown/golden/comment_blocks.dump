@@ -1,0 +1,39 @@
+=== input
+%%
+hidden
+%%
+%% inline comment %%
+para
+%% opens
+still hidden
+closes %% here
+> %%
+> quoted comment
+> %%
+%%
+unclosed
+=== tree
+Document [0,14)
+  CommentBlock [0,3)
+  Paragraph [3,5)
+  CommentBlock [5,8)
+  BlockQuote [8,11)
+    CommentBlock [8,11)
+  CommentBlock [11,14) unclosed
+--
+0 CommentOpen c0 |%%|
+1 CommentBody c0 |hidden|
+2 CommentClose c0 |%%|
+3 Paragraph c0 |%% inline comment %%|
+4 Paragraph c0 |para|
+5 CommentOpen c0 |%% opens|
+6 CommentBody c0 |still hidden|
+7 CommentClose c0 |closes %% here|
+8 CommentOpen c2 Q0-2#4 |> %%|
+9 CommentBody c2 Q0-2#4 |> quoted comment|
+10 CommentClose c2 Q0-2#4 |> %%|
+11 CommentOpen c0 |%%|
+12 CommentBody c0 |unclosed|
+13 CommentBody c0 ||
+-- content
+#2 Paragraph "%% inline comment %%\npara" [3:0+20@0 4:0+4@21]

@@ -1,0 +1,19 @@
+=== input
+text
+$$
+runs to the end
+
+# not a heading
+=== tree
+Document [0,6)
+  Paragraph [0,1)
+  MathBlock [1,6) unclosed
+--
+0 Paragraph c0 |text|
+1 MathOpen c0 |$$|
+2 MathBody c0 |runs to the end|
+3 MathBody c0 ||
+4 MathBody c0 |# not a heading|
+5 MathBody c0 ||
+-- content
+#1 Paragraph "text" [0:0+4@0]

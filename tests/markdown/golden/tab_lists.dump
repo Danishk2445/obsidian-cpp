@@ -1,0 +1,89 @@
+=== input
+- level 1
+	- level 2
+		- level 3
+			- level 4
+				- level 5
+	- back to 2
+  continuation of 2
+- [ ] task
+	- [x] done
+		- [>] forwarded
+		1. ordered
+		2) other delimiter
+- [] not a task
+- [ ]
+-
+  late content
+=== tree
+Document [0,17)
+  BulletList [0,16) tight delim=-
+    ListItem [0,7) marker=0-1 content=2
+      Paragraph [0,1)
+      BulletList [1,7) tight delim=-
+        ListItem [1,5) marker=1-2 content=3
+          Paragraph [1,2)
+          BulletList [2,5) tight delim=-
+            ListItem [2,5) marker=2-3 content=4
+              Paragraph [2,3)
+              BulletList [3,5) tight delim=-
+                ListItem [3,5) marker=3-4 content=5
+                  Paragraph [3,4)
+                  BulletList [4,5) tight delim=-
+                    ListItem [4,5) marker=4-5 content=6
+                      Paragraph [4,5)
+        ListItem [5,7) marker=1-2 content=3
+          Paragraph [5,7)
+    ListItem [7,12) marker=0-1 content=2 task=[ ]@2
+      Paragraph [7,8)
+      BulletList [8,12) tight delim=-
+        ListItem [8,12) marker=1-2 content=3 task=[x]@3
+          Paragraph [8,9)
+          BulletList [9,10) tight delim=-
+            ListItem [9,10) marker=2-3 content=4 task=[>]@4
+              Paragraph [9,10)
+          OrderedList [10,11) tight delim=. start=1
+            ListItem [10,11) marker=2-4 content=5
+              Paragraph [10,11)
+          OrderedList [11,12) tight delim=) start=2
+            ListItem [11,12) marker=2-4 content=5
+              Paragraph [11,12)
+    ListItem [12,13) marker=0-1 content=2
+      Paragraph [12,13)
+    ListItem [13,14) marker=0-1 content=2 task=[ ]@2
+      Paragraph [13,14)
+    ListItem [14,16) marker=0-1 content=1 empty
+      Paragraph [15,16)
+--
+0 Paragraph c2 LM0-2#2 |- level 1|
+1 Paragraph c3 LI0-1#2 LM1-3#5 |	- level 2|
+2 Paragraph c4 LI0-1#2 LI1-2#5 LM2-4#8 |		- level 3|
+3 Paragraph c5 LI0-1#2 LI1-2#5 LI2-3#8 LM3-5#11 |			- level 4|
+4 Paragraph c6 LI0-1#2 LI1-2#5 LI2-3#8 LI3-4#11 LM4-6#14 |				- level 5|
+5 Paragraph c3 LI0-1#2 LM1-3#16 |	- back to 2|
+6 Paragraph c2 LI0-2#2 |  continuation of 2|
+7 Paragraph c2 LM0-2#18 |- [ ] task|
+8 Paragraph c3 LI0-1#18 LM1-3#21 |	- [x] done|
+9 Paragraph c4 LI0-1#18 LI1-2#21 LM2-4#24 |		- [>] forwarded|
+10 Paragraph c5 LI0-1#18 LI1-2#21 LM2-5#27 |		1. ordered|
+11 Paragraph c5 LI0-1#18 LI1-2#21 LM2-5#30 |		2) other delimiter|
+12 Paragraph c2 LM0-2#32 |- [] not a task|
+13 Paragraph c2 LM0-2#34 |- [ ]|
+14 Blank c1 LM0-1#36 |-|
+15 Paragraph c2 LI0-2#36 |  late content|
+16 Blank c0 ||
+-- content
+#3 Paragraph "level 1" [0:2+7@0]
+#6 Paragraph "level 2" [1:3+7@0]
+#9 Paragraph "level 3" [2:4+7@0]
+#12 Paragraph "level 4" [3:5+7@0]
+#15 Paragraph "level 5" [4:6+7@0]
+#17 Paragraph "back to 2\ncontinuation of 2" [5:3+9@0 6:2+17@10]
+#19 Paragraph "[ ] task" [7:2+8@0]
+#22 Paragraph "[x] done" [8:3+8@0]
+#25 Paragraph "[>] forwarded" [9:4+13@0]
+#28 Paragraph "ordered" [10:5+7@0]
+#31 Paragraph "other delimiter" [11:5+15@0]
+#33 Paragraph "[] not a task" [12:2+13@0]
+#35 Paragraph "[ ]" [13:2+3@0]
+#37 Paragraph "late content" [15:2+12@0]

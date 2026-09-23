@@ -1,0 +1,15 @@
+=== input
+---
+---
+after
+=== tree
+Document [0,4)
+  Frontmatter [0,2)
+  Paragraph [2,3)
+--
+0 FrontmatterOpen c0 |---|
+1 FrontmatterClose c0 |---|
+2 Paragraph c0 |after|
+3 Blank c0 ||
+-- content
+#2 Paragraph "after" [2:0+5@0]
