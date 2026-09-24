@@ -90,6 +90,7 @@ QRect rectInLayer(QWidget* w, OverlayLayer* layer)
 FolderSuggest::FolderSuggest(QLineEdit* input, VaultSession* session, OverlayLayer* layer, bool includeRoot)
     : QObject(input)
     , m_input(input)
+    , m_inputObject(input)
     , m_session(session)
     , m_layer(layer)
     , m_includeRoot(includeRoot)
@@ -185,7 +186,7 @@ void FolderSuggest::choose(int index)
 
 bool FolderSuggest::eventFilter(QObject* obj, QEvent* ev)
 {
-    if (obj == m_input) {
+    if (obj == m_inputObject) {
         switch (ev->type()) {
         case QEvent::FocusIn:
             open();

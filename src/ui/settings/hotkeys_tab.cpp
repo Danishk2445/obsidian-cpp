@@ -300,6 +300,7 @@ QWidget* HotkeysTab::createContent()
         else
             startHotkeyFilter();
     });
+    m_searchObject = m_search.data();
     m_search->installEventFilter(this);
 
     QWidget* filters = g->addSearchControl();
@@ -644,7 +645,7 @@ void HotkeysTab::grabKeys(bool on)
 
 bool HotkeysTab::eventFilter(QObject* obj, QEvent* ev)
 {
-    if (obj == m_search && ev->type() == QEvent::Resize && m_keyboardButton) {
+    if (obj == m_searchObject && ev->type() == QEvent::Resize && m_search && m_keyboardButton) {
         m_keyboardButton->move(m_search->width() - m_keyboardButton->width() - 4, (m_search->height() - m_keyboardButton->height()) / 2);
         return false;
     }

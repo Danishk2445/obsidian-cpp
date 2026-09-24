@@ -4,6 +4,7 @@
 #include "ui/overlay/modal.h"
 #include "ui/shell/main_window.h"
 #include "ui/workspace/workspace.h"
+#include "ui/settings/settings_pages.h"
 #include "ui/settings/settings_tab.h"
 
 #include <QPointer>
@@ -234,6 +235,7 @@ private:
     QPointer<VaultRegistry> m_registry;
     QPointer<SettingsModal> m_modal;
     QString m_lastTab;
+    css_snippets::Overrides m_overrides; // last applied to the ThemeManager
 };
 
 // Registers app:open-settings ("Open settings", Mod+,) for `window`.

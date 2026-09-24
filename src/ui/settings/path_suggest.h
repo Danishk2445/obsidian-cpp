@@ -48,6 +48,7 @@ private:
     void reposition();
 
     QPointer<QLineEdit> m_input;
+    QObject* m_inputObject; // identity for eventFilter() (never dereferenced)
     QPointer<VaultSession> m_session;
     QPointer<OverlayLayer> m_layer;
     QPointer<SuggestPopup> m_popup;

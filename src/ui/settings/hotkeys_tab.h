@@ -117,6 +117,7 @@ private:
     QPointer<QWidget> m_content;
     QPointer<SettingGroup> m_group;
     QPointer<SearchInput> m_search;
+    QObject* m_searchObject = nullptr; // identity for eventFilter() (never dereferenced)
     QPointer<IconButton> m_keyboardButton;
     QHash<StatusFilter, QPointer<QWidget>> m_pills;
     QHash<QString, QPointer<SettingItem>> m_rows;

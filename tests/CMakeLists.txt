@@ -59,3 +59,4 @@ oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_pal
 oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_metadata_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
+oc_add_test(ui_settings_test SOURCES ui/settings_test.cpp DEPS oc_ui Qt6::Test GUI)

@@ -312,8 +312,10 @@ SettingsModal::SettingsModal(MainWindow* window, SettingsController* controller)
             m_active->hidden();
         if (VaultSession* s = session(); s && s->config())
             s->config()->flush(); // Obsidian's requestSaveConfig.run()
-        if (m_controller)
+        if (m_controller) {
+            m_controller->m_modal = nullptr; // deleted later; the next open() builds a new one
             emit m_controller->modalClosed();
+        }
     });
 }
 
@@ -984,28 +986,35 @@ void SettingsController::applyAppearance()
     VaultSession* s = m_window ? m_window->session() : nullptr;
     if (!tm || !s || !s->config())
         return;
+    // Every ThemeManager setter restyles the whole application: only call the ones that change.
     const QJsonObject a = s->config()->object(QStringLiteral("appearance"));
-    tm->blockSignals(true);
-    tm->setMode(ThemeManager::modeFromObsidianName(a.value(QStringLiteral("theme")).toString(QStringLiteral("system"))));
-    const QString accent = a.value(QStringLiteral("accentColor")).toString();
-    tm->setAccent(accent.isEmpty() ? QColor() : QColor(accent));
+    const auto mode = ThemeManager::modeFromObsidianName(a.value(QStringLiteral("theme")).toString(QStringLiteral("system")));
+    if (tm->mode() != mode)
+        tm->setMode(mode);
+    const QString accentName = a.value(QStringLiteral("accentColor")).toString();
+    const QColor accent = accentName.isEmpty() ? QColor() : QColor(accentName);
+    if (tm->accent() != accent)
+        tm->setAccent(accent);
     FontSettings fonts = tm->fonts();
     // Keep what the application resolved (e.g. --deterministic fonts) for lists that are unset.
-    const QString ui = resolveFontList(a.value(QStringLiteral("interfaceFontFamily")).toString());
-    const QString text = resolveFontList(a.value(QStringLiteral("textFontFamily")).toString());
-    const QString mono = resolveFontList(a.value(QStringLiteral("monospaceFontFamily")).toString());
-    if (!ui.isEmpty() || !a.value(QStringLiteral("interfaceFontFamily")).toString().isEmpty())
-        fonts.interfaceFamily = ui;
-    if (!text.isEmpty() || !a.value(QStringLiteral("textFontFamily")).toString().isEmpty())
-        fonts.textFamily = text;
-    if (!mono.isEmpty() || !a.value(QStringLiteral("monospaceFontFamily")).toString().isEmpty())
-        fonts.monospaceFamily = mono;
+    auto family = [&a](const char* key, QString& into) {
+        const QString list = a.value(QLatin1String(key)).toString();
+        if (!list.isEmpty() || into != resolveFontList(list))
+            into = resolveFontList(list);
+    };
+    family("interfaceFontFamily", fonts.interfaceFamily);
+    family("textFontFamily", fonts.textFamily);
+    family("monospaceFontFamily", fonts.monospaceFamily);
     fonts.baseFontSize = a.value(QStringLiteral("baseFontSize")).toDouble(16);
-    tm->setFonts(fonts);
+    const FontSettings& cur = tm->fonts();
+    if (fonts.interfaceFamily != cur.interfaceFamily || fonts.textFamily != cur.textFamily || fonts.monospaceFamily != cur.monospaceFamily
+        || fonts.baseFontSize != cur.baseFontSize)
+        tm->setFonts(fonts);
     const css_snippets::Overrides ov = css_snippets::collect(s->config());
-    tm->setOverrides(ov.body, ov.light, ov.dark);
-    tm->blockSignals(false);
-    tm->apply();
+    if (ov.body != m_overrides.body || ov.light != m_overrides.light || ov.dark != m_overrides.dark) {
+        m_overrides = ov;
+        tm->setOverrides(ov.body, ov.light, ov.dark);
+    }
 }
 
 void SettingsController::applyWindowOptions()

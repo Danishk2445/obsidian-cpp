@@ -625,6 +625,7 @@ void SettingGroup::addItem(SettingItem* item)
     item->setProperty("ocCentered", m_list);
     item->setPadding(m_list ? 16 : 20, m_list ? 8 : 20);
     item->installEventFilter(this);
+    m_itemObjects.insert(item);
     int index = m_cardLayout->count();
     if (m_empty)
         index = m_cardLayout->indexOf(m_empty);
@@ -638,6 +639,7 @@ void SettingGroup::clearItems()
     for (SettingItem* item : std::as_const(m_items)) {
         m_cardLayout->removeWidget(item);
         item->removeEventFilter(this);
+        m_itemObjects.remove(item);
         item->hide();
         item->deleteLater();
     }
@@ -698,7 +700,7 @@ void SettingGroup::refresh()
 
 bool SettingGroup::eventFilter(QObject* obj, QEvent* ev)
 {
-    if ((ev->type() == QEvent::ShowToParent || ev->type() == QEvent::HideToParent) && m_items.contains(static_cast<SettingItem*>(obj)))
+    if ((ev->type() == QEvent::ShowToParent || ev->type() == QEvent::HideToParent) && m_itemObjects.contains(obj))
         update();
     return QWidget::eventFilter(obj, ev);
 }

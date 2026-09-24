@@ -5,6 +5,7 @@
 #include <QList>
 #include <QPair>
 #include <QPointer>
+#include <QSet>
 #include <QWidget>
 
 #include <functional>
@@ -189,6 +190,7 @@ private:
     QWidget* m_card;
     QVBoxLayout* m_cardLayout;
     QList<SettingItem*> m_items;
+    QSet<QObject*> m_itemObjects; // identities for eventFilter()
     SettingItem* m_empty = nullptr;
     bool m_list = false;
     bool m_alwaysVisible = false;
