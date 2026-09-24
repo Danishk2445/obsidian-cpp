@@ -41,17 +41,6 @@ private:
     ActiveIconButton* m_matchCase;
 };
 
-// Obsidian's .checkbox-container toggle (desktop size outside modals: 34x19, 15px thumb, 2px inset).
-class ToggleSwitch : public QAbstractButton {
-    Q_OBJECT
-public:
-    explicit ToggleSwitch(QWidget* parent = nullptr);
-    QSize sizeHint() const override;
-
-protected:
-    void paintEvent(QPaintEvent* e) override;
-};
-
 // .search-info-container: the "Explain search terms" text, nested items indented with a left border.
 class ExplainPanel : public QWidget {
     Q_OBJECT

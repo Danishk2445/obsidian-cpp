@@ -1,5 +1,12 @@
 oc_add_library(oc_ui
   SOURCES
+    graph/graph_canvas.cpp
+    graph/graph_controls.cpp
+    graph/graph_raster.cpp
+    graph/graph_render_cache.cpp
+    graph/graph_vault.cpp
+    graph/graph_view.cpp
+    graph/graph_widget.cpp
     navigation/command_palette.cpp
     navigation/navigation.cpp
     navigation/navigation_util.cpp
@@ -35,6 +42,8 @@ oc_add_library(oc_ui
     views/markdown/page_preview.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp
+    widgets/toggle_switch.cpp
+    widgets/value_slider.cpp
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp
@@ -47,6 +56,6 @@ oc_add_library(oc_ui
     workspace/workspace.h
     workspace/workspace_p.h
     workspace/workspace_widgets.cpp
-  PUBLIC_DEPS oc_core oc_render oc_editor Qt6::Widgets
+  PUBLIC_DEPS oc_core oc_render oc_editor oc_graph Qt6::Widgets
   PRIVATE_DEPS KF6::KIOGui
 )
