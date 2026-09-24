@@ -52,6 +52,8 @@ public:
     QWidget* contentArea() const { return m_content; }
 
     int addButton(const QString& text, ButtonStyle style = ButtonStyle::Normal, bool closes = true);
+    // A button painted like the modal's (Obsidian's <button>), for content that has its own buttons.
+    static QPushButton* createButton(const QString& text, ButtonStyle style, QWidget* parent);
     QPushButton* button(int index) const;
     int buttonCount() const { return int(m_buttons.size()); }
     void setDefaultButton(int index); // Enter target and initial focus
@@ -63,6 +65,11 @@ public:
     bool isChecked() const;
 
     void setDialogWidth(int px); // default --dialog-width (560), at most 80% of the window
+    // Obsidian's .modal.mod-sidebar-layout (settings, file recovery): no padding, the frame is
+    // --modal-width x --modal-height (90vw x 85vh, at most 1100 x 1000), the title and button row are
+    // hidden and the content area fills the frame; the close button stays in the top-right corner.
+    void setSidebarLayout(bool on);
+    bool isSidebarLayout() const { return m_sidebarLayout; }
 
     void open();
     void close(int result = -1);
@@ -106,6 +113,7 @@ private:
     int m_width = 560;
     int m_result = -1;
     bool m_open = false;
+    bool m_sidebarLayout = false;
 };
 
 // One button of a ConfirmModal.

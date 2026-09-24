@@ -206,3 +206,23 @@ TEST(MomentFormat, RoundTripsThroughStrictParse)
         }
     }
 }
+
+TEST(MomentFormat, RelativeTimeFrom)
+{
+    const QDateTime now(QDate(2024, 6, 15), QTime(12, 0));
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-10), now), "a few seconds ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-44), now), "a few seconds ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-45), now), "a minute ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-89), now), "a minute ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-90), now), "2 minutes ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-44 * 60), now), "44 minutes ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-45 * 60), now), "an hour ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-3 * 3600), now), "3 hours ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(-22 * 3600), now), "a day ago");
+    EXPECT_EQ(oc::momentFrom(now.addDays(-5), now), "5 days ago");
+    EXPECT_EQ(oc::momentFrom(now.addDays(-26), now), "a month ago");
+    EXPECT_EQ(oc::momentFrom(now.addDays(-100), now), "3 months ago");
+    EXPECT_EQ(oc::momentFrom(now.addDays(-320), now), "a year ago");
+    EXPECT_EQ(oc::momentFrom(now.addDays(-800), now), "2 years ago");
+    EXPECT_EQ(oc::momentFrom(now.addSecs(3 * 3600), now), "in 3 hours");
+}

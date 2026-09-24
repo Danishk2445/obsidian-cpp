@@ -1561,4 +1561,44 @@ std::optional<QDateTime> parseMomentStrict(const QString& text, const QString& f
     return parseStrictImpl(text, format, now, *localeData(locale));
 }
 
+QString momentFrom(const QDateTime& then, const QDateTime& now)
+{
+    const qint64 diffMs = now.msecsTo(then); // > 0: in the future
+    const double ms = std::abs(double(diffMs));
+    // Duration.as(): days from milliseconds, months = days * 4800 / 146097, years = months / 12.
+    const double days = ms / 864e5;
+    const double months = days * 4800 / 146097;
+    const auto r = [](double v) { return qint64(std::floor(v + 0.5)); }; // Math.round
+    const qint64 seconds = r(ms / 1000), minutes = r(ms / 6e4), hours = r(ms / 36e5), d = r(days), M = r(months),
+                 y = r(months / 12);
+    QString out;
+    if (seconds <= 44)
+        out = QStringLiteral("a few seconds");
+    else if (seconds < 45)
+        out = QStringLiteral("%1 seconds").arg(seconds);
+    else if (minutes <= 1)
+        out = QStringLiteral("a minute");
+    else if (minutes < 45)
+        out = QStringLiteral("%1 minutes").arg(minutes);
+    else if (hours <= 1)
+        out = QStringLiteral("an hour");
+    else if (hours < 22)
+        out = QStringLiteral("%1 hours").arg(hours);
+    else if (d <= 1)
+        out = QStringLiteral("a day");
+    else if (d < 26)
+        out = QStringLiteral("%1 days").arg(d);
+    else if (M <= 1)
+        out = QStringLiteral("a month");
+    else if (M < 11)
+        out = QStringLiteral("%1 months").arg(M);
+    else if (y <= 1)
+        out = QStringLiteral("a year");
+    else
+        out = QStringLiteral("%1 years").arg(y);
+    return diffMs > 0 ? QString(QStringLiteral("in ") + out) : QString(out + QStringLiteral(" ago"));
+}
+
+QString momentFromNow(const QDateTime& then) { return momentFrom(then, QDateTime::currentDateTime()); }
+
 } // namespace oc

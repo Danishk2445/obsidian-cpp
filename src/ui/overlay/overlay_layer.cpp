@@ -26,6 +26,15 @@ OverlayLayer::OverlayLayer(QWidget* window)
     hide();
 }
 
+OverlayLayer::~OverlayLayer()
+{
+    // Modals and popups hold QPointer<OverlayLayer>; deleting them from ~QWidget would let them see a
+    // half-destroyed layer.
+    // (Deleting one may delete others, e.g. a modal its popups: re-query each time.)
+    while (QWidget* w = findChild<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+        delete w;
+}
+
 void OverlayLayer::setBlocking(QWidget* child, bool blocking)
 {
     m_blocking.removeIf([&](const QPointer<QWidget>& w) { return !w || w == child; });
