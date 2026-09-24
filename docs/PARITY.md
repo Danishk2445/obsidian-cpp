@@ -33,7 +33,8 @@ From cmark-gfm 0.29.0.gfm.13 (the differential oracle), where we follow CommonMa
   (`*£*bravo.`); an escaped character inside `<foo\+@bar.example.com>` stays an escape (example 606).
 - cmark's core bugs: after a link, a later `[` re-enables earlier link openers (cmark nests links in
   `[a [b](c) [x]](d)`); its 0.29 `openers_bottom` is per character only (`**, a _*_*`); `![^x](y)` is read as `!` +
-  link. md4c and markdown-it (both 0.31) agree with us on all of these.
+  link; entities are decoded before backslash escapes in link destinations (`\&quot;`). md4c (0.31) agrees with us
+  on all of these; the random differential uses it as the tie-breaker.
 - cmark-gfm's email autolinker keeps its dot count across a second `@` (`a@b.co@b` links `b.co@b`, but GFM needs a
   `.` in the domain).
 - Mirrored on purpose: cmark-gfm checks autolink domains byte-wise, so a non-ASCII character ends the underscore
@@ -48,6 +49,8 @@ Obsidian editor vs reading view (one tree serves both; the choice made):
   sides require whitespace).
 - Wikilinks follow the reading view/metadata cache: `[[` + at least one character + first `]]` on the line, no `[[`
   inside; alias after the first `|` (unless it starts the trimmed text).
+- A bare URL inside `^[inline footnote]` ends before the next `]` so the footnote still closes (the reading view
+  tokenizes the footnote text on its own); GFM's "no bare URLs inside link brackets" applies to `[`/`![` only.
 Open parity questions:
 - `$` and `#tag` inside markdown link text: the editor disables both there, the reading view does not; we allow them.
 - Table cells: the editor ends math at an unescaped `|`; cells arrive here already split by the block parser.

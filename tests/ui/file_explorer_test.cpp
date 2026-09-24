@@ -459,8 +459,10 @@ TEST_F(FileExplorerTest, DeleteAsksAndUsesTheTrashOption)
     Modal* m = openModal();
     ASSERT_NE(m, nullptr);
     EXPECT_EQ(m->title(), "Delete file");
+    // Welcome.md links [[Math]]
     EXPECT_EQ(m->paragraphs(), (QStringList{"Are you sure you want to delete “Math.md”?",
-                                             "It will be moved to your Obsidian trash, which is located in the “.trash” hidden folder in your vault."}));
+                                             "It will be moved to your Obsidian trash, which is located in the “.trash” hidden folder in your vault.",
+                                             "There is currently 1 link pointing to this file."}));
     ASSERT_EQ(m->buttonCount(), 2);
     EXPECT_EQ(m->button(0)->text(), "Cancel");
     EXPECT_EQ(m->button(1)->text(), "Delete");
