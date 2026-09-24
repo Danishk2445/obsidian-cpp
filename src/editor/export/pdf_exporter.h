@@ -14,7 +14,7 @@ struct PdfExportSettings {
     bool includeName = true;
     QString pageSize = QStringLiteral("Letter"); // Letter, Legal, Tabloid, A3, A4, A5
     bool landscape = false;
-    QString margin = QStringLiteral("0");        // "0" none, "1" default, "2" small, or "custom" (unsupported -> default)
+    QString margin = QStringLiteral("0");        // Electron marginsType: "0" Default, "1" None, "2" Minimal
     int downscalePercent = 100;
 };
 

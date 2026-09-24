@@ -31,13 +31,13 @@ QPageSize::PageSizeId pageSizeId(const QString& s)
     return QPageSize::Letter;
 }
 
+// Obsidian passes the value as Electron's printToPDF marginsType: "0" default (Chromium's ~1 cm),
+// "1" none and "2" minimal — for both of those Obsidian sets explicit zero margins.
 qreal marginMm(const QString& m)
 {
-    if (m == u"0")
+    if (m == u"1" || m == u"2")
         return 0;
-    if (m == u"2")
-        return 5; // small
-    return 10;    // default (~1 cm)
+    return 10;
 }
 } // namespace
 
