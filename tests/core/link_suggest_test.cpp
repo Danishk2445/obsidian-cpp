@@ -301,8 +301,7 @@ TEST_F(LinkSuggestVaultTest, UnresolvedAndAliases)
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Linktext);
     EXPECT_EQ(s[0].path, "Missing note");
-    if (o->aliases().isEmpty())
-        GTEST_SKIP() << "the interim block parser reads no frontmatter";
+    ASSERT_EQ(o->aliases(), QStringList{"Nick"});
     s = provider->suggestions("nick", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Alias);
@@ -319,8 +318,8 @@ TEST_F(LinkSuggestVaultTest, UnresolvedAndAliases)
 TEST_F(LinkSuggestVaultTest, Headings)
 {
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!o || o->headings.size() < 3)
-        GTEST_SKIP() << "no headings from the interim parser";
+    ASSERT_TRUE(o);
+    ASSERT_EQ(o->headings.size(), 3);
     QList<LinkSuggestion> s = provider->suggestions("Other#", "Welcome.md");
     EXPECT_EQ(provider->mode(), LinkSuggestProvider::Mode::Heading);
     ASSERT_EQ(s.size(), 3);
@@ -353,16 +352,15 @@ TEST_F(LinkSuggestVaultTest, Headings)
 TEST_F(LinkSuggestVaultTest, Blocks)
 {
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!o || o->sections.isEmpty())
-        GTEST_SKIP() << "no sections from the interim parser";
+    ASSERT_TRUE(o);
+    ASSERT_FALSE(o->sections.isEmpty());
+    ASSERT_TRUE(o->blocks.contains("blk"));
     QList<LinkSuggestion> s = provider->suggestions("Other#^words", "Welcome.md");
     EXPECT_EQ(provider->mode(), LinkSuggestProvider::Mode::Block);
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Block);
     EXPECT_EQ(s[0].display, "para with words");
-    if (!o->blocks.isEmpty()) {
-        EXPECT_EQ(s[0].blockId, "blk");
-    }
+    EXPECT_EQ(s[0].blockId, "blk");
     // "Note^" is the same as "Note#^"
     s = provider->suggestions("Other^item", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
