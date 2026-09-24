@@ -116,46 +116,6 @@ void GlobalSearchInput::adjust()
 }
 
 // ---------------------------------------------------------------------------------------------
-// ToggleSwitch
-// ---------------------------------------------------------------------------------------------
-
-ToggleSwitch::ToggleSwitch(QWidget* parent)
-    : QAbstractButton(parent)
-{
-    setCheckable(true);
-    setCursor(Qt::ArrowCursor);
-    setFocusPolicy(Qt::NoFocus);
-    setFixedSize(sizeHint());
-    if (auto* tm = ThemeManager::instance())
-        connect(tm, &ThemeManager::themeChanged, this, qOverload<>(&QWidget::update));
-}
-
-QSize ToggleSwitch::sizeHint() const
-{
-    // --toggle-s-width 34px; height = --toggle-s-thumb-height 15px + 2 * --toggle-s-border-width 2px
-    return {34, 19};
-}
-
-void ToggleSwitch::paintEvent(QPaintEvent*)
-{
-    const ThemePtr t = currentTheme();
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    const QRectF track = QRectF(rect());
-    QPainterPath path;
-    path.addRoundedRect(track, track.height() / 2, track.height() / 2);
-    p.fillPath(path, isChecked() ? tok(t, "--interactive-accent") : tok(t, "--background-modifier-border-hover"));
-    const qreal thumb = 15, inset = 2;
-    const qreal x = isChecked() ? track.width() - thumb - inset : inset;
-    const QRectF knob(x, inset, thumb, thumb);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0, 0, 0, 38)); // box-shadow: 0 1px 2px rgba(0, 0, 0, .15)
-    p.drawEllipse(knob.translated(0, 1));
-    p.setBrush(tok(t, "--toggle-thumb-color", Qt::white));
-    p.drawEllipse(knob);
-}
-
-// ---------------------------------------------------------------------------------------------
 // ExplainPanel
 // ---------------------------------------------------------------------------------------------
 

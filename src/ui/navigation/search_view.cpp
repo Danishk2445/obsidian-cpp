@@ -14,6 +14,7 @@
 #include "ui/shell/main_window.h"
 #include "ui/views/markdown/page_preview.h"
 #include "ui/overlay/overlay_layer.h"
+#include "ui/widgets/toggle_switch.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -60,6 +61,7 @@ QWidget* toggleRow(QWidget* parent, const QString& label, ToggleSwitch** out)
     name->setObjectName(QStringLiteral("ocSearchParamName"));
     h->addWidget(name, 1);
     auto* toggle = new ToggleSwitch(row);
+    toggle->setFocusPolicy(Qt::NoFocus);
     toggle->setAccessibleName(label);
     h->addWidget(toggle, 0, Qt::AlignVCenter);
     *out = toggle;

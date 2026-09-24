@@ -295,12 +295,13 @@ TEST_F(LinkSuggestVaultTest, UnresolvedAndAliases)
 {
     const md::CachedMetadata* w = meta->fileCache("Welcome.md");
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!w || w->links.isEmpty() || !o || o->aliases().isEmpty())
-        GTEST_SKIP() << "the interim parser extracts no links/frontmatter";
+    ASSERT_TRUE(w && o);
+    ASSERT_EQ(w->links.size(), 2);
     QList<LinkSuggestion> s = provider->suggestions("missing", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Linktext);
     EXPECT_EQ(s[0].path, "Missing note");
+    ASSERT_EQ(o->aliases(), QStringList{"Nick"});
     s = provider->suggestions("nick", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Alias);
@@ -317,8 +318,8 @@ TEST_F(LinkSuggestVaultTest, UnresolvedAndAliases)
 TEST_F(LinkSuggestVaultTest, Headings)
 {
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!o || o->headings.size() < 3)
-        GTEST_SKIP() << "no headings from the interim parser";
+    ASSERT_TRUE(o);
+    ASSERT_EQ(o->headings.size(), 3);
     QList<LinkSuggestion> s = provider->suggestions("Other#", "Welcome.md");
     EXPECT_EQ(provider->mode(), LinkSuggestProvider::Mode::Heading);
     ASSERT_EQ(s.size(), 3);
@@ -351,16 +352,15 @@ TEST_F(LinkSuggestVaultTest, Headings)
 TEST_F(LinkSuggestVaultTest, Blocks)
 {
     const md::CachedMetadata* o = meta->fileCache("Other.md");
-    if (!o || o->sections.isEmpty())
-        GTEST_SKIP() << "no sections from the interim parser";
+    ASSERT_TRUE(o);
+    ASSERT_FALSE(o->sections.isEmpty());
+    ASSERT_TRUE(o->blocks.contains("blk"));
     QList<LinkSuggestion> s = provider->suggestions("Other#^words", "Welcome.md");
     EXPECT_EQ(provider->mode(), LinkSuggestProvider::Mode::Block);
     ASSERT_FALSE(s.isEmpty());
     EXPECT_EQ(s[0].type, T::Block);
     EXPECT_EQ(s[0].display, "para with words");
-    if (!o->blocks.isEmpty()) {
-        EXPECT_EQ(s[0].blockId, "blk");
-    }
+    EXPECT_EQ(s[0].blockId, "blk");
     // "Note^" is the same as "Note#^"
     s = provider->suggestions("Other^item", "Welcome.md");
     ASSERT_FALSE(s.isEmpty());
@@ -370,8 +370,8 @@ TEST_F(LinkSuggestVaultTest, Blocks)
 TEST_F(LinkSuggestVaultTest, Tags)
 {
     const md::CachedMetadata* w = meta->fileCache("Welcome.md");
-    if (!w || w->tags.isEmpty())
-        GTEST_SKIP() << "no tags from the interim parser";
+    ASSERT_TRUE(w);
+    ASSERT_EQ(w->tags.size(), 2);
     const QHash<QString, int> tags = vaultTags(*meta);
     // "#tag" (x2, incl. the parent of #tag/sub) and "#Tag" merge; the more frequent spelling wins
     EXPECT_EQ(tags.value("#tag"), 3);

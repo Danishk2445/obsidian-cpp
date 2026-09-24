@@ -1,9 +1,8 @@
 // Link updating on rename/move (Obsidian's "Automatically update internal links").
 #include "core/metadata/link_updater.h"
+#include "markdown/syntax_tree.h"
 #include "text/codec.h"
 
-#include <QRegularExpression>
-#include <QUrl>
 #include <gtest/gtest.h>
 
 using namespace oc;
@@ -11,43 +10,12 @@ using namespace oc;
 namespace {
 using Files = QList<QPair<QString, QString>>; // path -> content ("" for attachments)
 
-// A minimal link extractor standing in for the markdown parser: wikilinks/embeds and markdown links.
+// Links as the metadata cache sees them: block + inline parser, then extractMetadata().
 md::CachedMetadata extract(const Text& t)
 {
-    md::CachedMetadata meta;
-    static const QRegularExpression wl(QStringLiteral(R"(!?\[\[([^\]]+)\]\])"));
-    static const QRegularExpression ml(QStringLiteral(R"(!?\[([^\]]*)\]\(\s*(<[^>]*>|[^ )]+)[^)]*\))"));
-    const QString s = t.toString();
-    for (auto it = wl.globalMatch(s); it.hasNext();) {
-        const auto m = it.next();
-        md::LinkCache l;
-        l.original = m.captured(0);
-        QString target = m.captured(1);
-        if (const qsizetype bar = target.indexOf(QLatin1Char('|')); bar >= 0)
-            target = target.left(bar);
-        if (target.endsWith(QLatin1Char('\\')))
-            target.chop(1);
-        l.link = target.trimmed();
-        l.position.start.offset = m.capturedStart(0);
-        l.position.end.offset = m.capturedEnd(0);
-        (l.original.startsWith(QLatin1Char('!')) ? meta.embeds : meta.links).append(l);
-    }
-    for (auto it = ml.globalMatch(s); it.hasNext();) {
-        const auto m = it.next();
-        if (m.captured(0).startsWith(QLatin1String("[[")) || m.captured(0).startsWith(QLatin1String("![[")))
-            continue;
-        md::LinkCache l;
-        l.original = m.captured(0);
-        QString dest = m.captured(2);
-        if (dest.startsWith(QLatin1Char('<')))
-            dest = dest.mid(1, dest.size() - 2);
-        l.link = QUrl::fromPercentEncoding(dest.toUtf8());
-        l.markdown = true;
-        l.position.start.offset = m.capturedStart(0);
-        l.position.end.offset = m.capturedEnd(0);
-        meta.links.append(l);
-    }
-    return meta;
+    md::SyntaxTree tree;
+    tree.parse(t);
+    return md::extractMetadata(tree, t);
 }
 
 struct Vault {
