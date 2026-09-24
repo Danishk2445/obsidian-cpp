@@ -37,6 +37,7 @@ struct SettingControl {
     bool includeRoot = false;                     // folder: offer "/" too
     std::function<bool(const QString& path)> filter;          // file: which files to offer (default: all)
     std::function<QString(const QJsonValue& value)> validate; // an error message blocks the write
+    std::function<void(const QJsonValue& value)> afterChange; // live effects once the value is stored
 };
 
 // A declarative setting definition, mirroring Obsidian 1.13's setting definitions:
