@@ -124,7 +124,70 @@ DisplayBlock DisplayBlock::build(QStringView text, const LineDecoration& deco, c
             }
         }
     }
+    b.reserveBoxPadding(lm);
     return b;
+}
+
+void DisplayBlock::reserveBoxPadding(const LineMetrics& lm)
+{
+    // CSS padding takes room in the line: the left padding goes after the character before the box,
+    // the right padding after the box's last character (absolute letter spacing). A box at the start
+    // of the display gets a zero-length spacer in front.
+    bool needsLead = false;
+    for (const Box& box : m_boxes)
+        needsLead |= box.style.padX > 0 && box.dispFrom == 0;
+    if (needsLead) {
+        for (Segment& s : m_segments) {
+            ++s.dispFrom;
+            ++s.dispTo;
+        }
+        m_segments.prepend(Segment{Segment::Kind::Substitute, 0, 0, 0, 1});
+        for (QTextLayout::FormatRange& fr : m_formats)
+            ++fr.start;
+        for (WidgetSlot& w : m_widgets)
+            ++w.dispPos;
+        for (Box& box : m_boxes) {
+            ++box.dispFrom;
+            ++box.dispTo;
+        }
+        m_display.prepend(QChar(0x00A0));
+        const qreal natural = QFontMetricsF(lm.font).horizontalAdvance(QChar(0x00A0));
+        QTextLayout::FormatRange fr;
+        fr.start = 0;
+        fr.length = 1;
+        fr.format.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+        fr.format.setFontLetterSpacing(-natural);
+        fr.format.setForeground(Qt::transparent);
+        m_formats.push_back(fr);
+    }
+    QHash<int, qreal> extra;
+    for (Box& box : m_boxes) {
+        if (box.style.padX <= 0 || box.dispTo <= box.dispFrom)
+            continue;
+        extra[box.dispFrom - 1] += box.style.padX;
+        extra[box.dispTo - 1] += box.style.padX;
+        box.reserved = true;
+    }
+    for (auto it = extra.cbegin(); it != extra.cend(); ++it) {
+        // Add to a placeholder's own spacing (widgets, the lead spacer) instead of replacing it.
+        bool merged = false;
+        for (QTextLayout::FormatRange& fr : m_formats) {
+            if (fr.start == it.key() && fr.length == 1 && fr.format.hasProperty(QTextFormat::FontLetterSpacing)
+                && fr.format.fontLetterSpacingType() == QFont::AbsoluteSpacing) {
+                fr.format.setFontLetterSpacing(fr.format.fontLetterSpacing() + it.value());
+                merged = true;
+                break;
+            }
+        }
+        if (merged)
+            continue;
+        QTextLayout::FormatRange fr;
+        fr.start = it.key();
+        fr.length = 1;
+        fr.format.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+        fr.format.setFontLetterSpacing(it.value());
+        m_formats.push_back(fr);
+    }
 }
 
 int DisplayBlock::docToDisp(int docCol, int assoc) const

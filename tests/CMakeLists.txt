@@ -1,4 +1,5 @@
 oc_add_test(render_css_test SOURCES render/css_value_test.cpp DEPS oc_render GUI)
+oc_add_test(render_display_block_test SOURCES render/display_block_test.cpp DEPS oc_render GUI)
 oc_add_test(core_registry_test SOURCES core/vault_registry_test.cpp DEPS oc_core)
 oc_add_test(core_vault_test SOURCES core/vault_model_test.cpp DEPS oc_core Qt6::Test GUI LABELS threads)
 oc_add_test(core_vault_watch_test SOURCES core/vault_watch_test.cpp DEPS oc_core Qt6::Test GUI LABELS threads)
