@@ -129,7 +129,9 @@ bool supportsDirect(const QImage& image)
 int bandCount(int height)
 {
     const int threads = graph::parallelWorkers();
-    return std::clamp(height / 32, 1, std::min(threads, 32));
+    // About two bands per worker: parallelFor hands them out dynamically, which evens out bands
+    // crossed by many links and workers the OS preempts.
+    return threads <= 1 ? 1 : std::clamp(height / 24, 1, std::min(2 * threads, 64));
 }
 
 void drawHairlines(QImage& image, const std::vector<LineBatch>& batches)
