@@ -179,7 +179,7 @@ public:
         const graph::NodeKind kind = kindOf(id);
         if (kind == graph::NodeKind::Tag) {
             if (hooks().openSearch)
-                hooks().openSearch(QStringLiteral("tag:") + id);
+                hooks().openSearch(ws, QStringLiteral("tag:") + id);
             return;
         }
         if (!s || !ws || !s->vault())
@@ -214,7 +214,7 @@ public:
         Workspace* ws = m_view->workspace();
         if (kindOf(id) == graph::NodeKind::Tag) {
             if (hooks().openSearch)
-                hooks().openSearch(QStringLiteral("tag:") + id);
+                hooks().openSearch(ws, QStringLiteral("tag:") + id);
             return;
         }
         TFile* file = s && s->vault() ? s->vault()->file(id) : nullptr;
@@ -242,7 +242,7 @@ public:
             menu.addAction(IconProvider::instance().icon(QStringLiteral("trash-2"), 16), QObject::tr("Delete file"), [s, path] {
                 if (s->vault())
                     if (TFile* f = s->vault()->file(path))
-                        hooks().deleteFile(f);
+                        hooks().deleteFile(s, f);
             });
         }
         menu.exec(globalPos);

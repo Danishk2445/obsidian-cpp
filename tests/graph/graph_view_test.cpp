@@ -259,7 +259,7 @@ TEST_F(GraphViewTest, GraphViewOpensPersistsAndRebuilds)
     // Clicking a tag asks for the global search.
     QString searched;
     GraphViewHooks hooks;
-    hooks.openSearch = [&](const QString& q) { searched = q; };
+    hooks.openSearch = [&](Workspace*, const QString& q) { searched = q; };
     setGraphViewHooks(hooks);
     if (linksExtracted()) {
         emit w->openRequested("#topic", false);

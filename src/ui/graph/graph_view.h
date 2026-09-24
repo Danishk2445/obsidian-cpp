@@ -24,15 +24,16 @@ class GraphWidget;
 class ViewRegistry;
 class Workspace;
 
-// Hooks the app wires to other plugins (all optional).
+// Hooks the app wires to other plugins (all optional, process-wide: they receive the view's
+// session/workspace, so one set serves every window).
 struct GraphViewHooks {
     // Tag nodes: Obsidian opens the global search with "tag:#tag" (click and right click).
-    std::function<void(const QString& query)> openSearch;
+    std::function<void(Workspace* workspace, const QString& query)> openSearch;
     // Extra items for a file node's context menu (Obsidian's "file-menu" event, source
     // "graph-context-menu"), e.g. bookmarks, reveal in navigation, rename.
     std::function<void(QMenu* menu, TFile* file, WorkspaceLeaf* leaf)> fileMenu;
     // "Delete file" in the context menu (Obsidian's fileManager.promptForDeletion); hidden when unset.
-    std::function<void(TFile* file)> deleteFile;
+    std::function<void(VaultSession* session, TFile* file)> deleteFile;
 };
 void setGraphViewHooks(GraphViewHooks hooks);
 
