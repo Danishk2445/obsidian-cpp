@@ -27,6 +27,8 @@ oc_add_library(oc_ui
     views/markdown/page_preview.cpp
     widgets/icon_button.cpp
     widgets/search_input.cpp
+    widgets/tree_list.cpp
+    widgets/tree_list.h
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp

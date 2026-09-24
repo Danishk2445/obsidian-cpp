@@ -1,5 +1,6 @@
 oc_add_library(oc_core
   SOURCES
+    bookmarks/bookmarks.cpp
     commands/command_registry.cpp
     commands/hotkey.cpp
     config/clone_paths.cpp
@@ -25,6 +26,10 @@ oc_add_library(oc_core
     plugins/note_plugins.cpp
     metadata/link_updater.cpp
     metadata/metadata_cache.cpp
+    metadata/mentions.cpp
+    metadata/outline.cpp
+    metadata/property_index.cpp
+    metadata/tag_tree.cpp
     recovery/file_recovery.cpp
     recovery/snapshot_store.cpp
     util/word_count.cpp
