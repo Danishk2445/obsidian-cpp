@@ -48,4 +48,10 @@ std::optional<QDateTime> parseMomentStrict(const QString& text, const QString& f
 // brackets/escapes by their definitions, e.g. "LL" -> "MMMM D, YYYY".
 QString expandMomentFormat(const QString& format, const QLocale& locale = QLocale(QLocale::English));
 
+// moment(then).from(now) with the default relative-time thresholds and the "en" strings: "a few seconds
+// ago", "a minute ago", "5 minutes ago", "an hour ago", "3 days ago", "a month ago", "2 years ago", or
+// "in ..." when `then` is after `now`. fromNow() = from(currentDateTime()).
+QString momentFrom(const QDateTime& then, const QDateTime& now);
+QString momentFromNow(const QDateTime& then);
+
 } // namespace oc

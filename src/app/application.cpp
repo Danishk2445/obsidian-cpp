@@ -24,6 +24,10 @@
 #include "editor/plugins/greentext_guard.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
+#include "ui/graph/graph_view.h"
+#include "ui/navigation/navigation.h"
+#include "ui/navigation/search_view.h"
+#include "ui/plugins/file_recovery_ui.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
@@ -322,11 +326,19 @@ void Application::populateWindow(MainWindow* w)
     registerCoreViews(*registry);
     registerMarkdownView(*registry);
     registerFileExplorerView(*registry); // replaces the placeholder
+    registerNavigationViews(*registry);  // replaces the "search" placeholder
+    registerGraphViews(*registry);       // "graph" + "localgraph"
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
     auto* workspace = new Workspace(session, registry, w);
     session->setWorkspace(workspace);
+    // File recovery also snapshots notes when they are opened (Obsidian's "file-open").
+    if (FileRecovery* fr = fileRecoveryOf(session))
+        connect(workspace, &Workspace::fileOpened, fr, [fr](TFile* f) {
+            if (f)
+                fr->fileChanged(f->path());
+        });
     w->setWorkspace(workspace);
 
     // Commands and hotkeys.
@@ -335,6 +347,16 @@ void Application::populateWindow(MainWindow* w)
     registerMarkdownCommands(*commands, workspace);
     registerFileExplorerCommands(*commands, session);
     registerNotePluginCommands(*commands, w);
+    registerNavigationCommands(*commands, session, w->overlay());
+    registerGraphCommands(*commands, workspace);
+    registerFileRecoveryCommands(*commands, w);
+    MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
+    {
+        GraphViewHooks gh;
+        gh.openSearch = [](Workspace* ws, const QString& query) { openGlobalSearch(ws->session(), query); };
+        gh.deleteFile = [](VaultSession* s, TFile* f) { promptForDeletion(s, f); };
+        setGraphViewHooks(std::move(gh));
+    }
     {
         Command c;
         c.id = QStringLiteral("greentext-guard:wrap-selection-in-fence");

@@ -393,6 +393,11 @@ int Modal::addButton(const QString& text, ButtonStyle style, bool closes)
 
 QPushButton* Modal::button(int index) const { return m_buttons.value(index); }
 
+QPushButton* Modal::createButton(const QString& text, ButtonStyle style, QWidget* parent)
+{
+    return new ModalPushButton(text, style, parent);
+}
+
 void Modal::setDefaultButton(int index) { m_default = index; }
 
 int Modal::defaultButton() const
@@ -429,6 +434,21 @@ bool Modal::isChecked() const { return m_checkbox && m_checkbox->isChecked(); }
 void Modal::setDialogWidth(int px)
 {
     m_width = px;
+    relayout();
+}
+
+void Modal::setSidebarLayout(bool on)
+{
+    m_sidebarLayout = on;
+    auto* v = static_cast<QVBoxLayout*>(m_frame->layout());
+    const int pad = on ? 1 : int(tokPx("--size-4-4", 16));
+    v->setContentsMargins(pad, pad, pad, pad);
+    if (!on)
+        m_content->clearMask();
+    // The spacer after the title (index 1) collapses with it.
+    if (QSpacerItem* s = v->itemAt(1) ? v->itemAt(1)->spacerItem() : nullptr)
+        s->changeSize(0, on ? 0 : 12, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    v->setStretchFactor(m_content, on ? 1 : 0);
     relayout();
 }
 
@@ -481,6 +501,23 @@ void Modal::relayout()
     if (!m_layer)
         return;
     const QRect area = rect();
+    if (m_sidebarLayout) {
+        m_title->hide();
+        m_buttonRow->hide();
+        const int w = std::min(int(area.width() * 0.9), int(tokPx("--modal-max-width", 1100)));
+        const int h = std::min(int(area.height() * 0.85), int(tokPx("--modal-max-height", 1000)));
+        m_frame->setGeometry((area.width() - w) / 2, (area.height() - h) / 2, w, h);
+        m_frame->layout()->setContentsMargins(1, 1, 1, 1); // inside the 1 px border
+        m_frame->layout()->activate();
+        // .modal { overflow: hidden }: clip the content to the rounded frame.
+        const double radius = std::max(0.0, tokPx("--modal-radius", 12) - 1);
+        QPainterPath clip;
+        clip.addRoundedRect(QRectF(m_content->rect()), radius, radius);
+        m_content->setMask(QRegion(clip.toFillPolygon().toPolygon()));
+        m_close->move(w - 12 - m_close->width(), 6);
+        m_close->raise();
+        return;
+    }
     const int w = std::max(200, std::min(m_width, int(area.width() * 0.8)));
     m_buttonRow->setVisible(!m_buttons.isEmpty() || m_checkbox);
     m_frame->layout()->activate();
@@ -499,13 +536,19 @@ QList<QWidget*> Modal::focusChain() const
             out << w;
     }
     // Content first, then the buttons in order.
-    std::stable_sort(out.begin(), out.end(), [this](QWidget* a, QWidget* b) {
-        const bool ab = m_buttons.contains(static_cast<QPushButton*>(a));
-        const bool bb = m_buttons.contains(static_cast<QPushButton*>(b));
+    const auto buttonIndex = [this](const QWidget* w) {
+        for (qsizetype i = 0; i < m_buttons.size(); ++i)
+            if (static_cast<const QWidget*>(m_buttons[i]) == w)
+                return i;
+        return qsizetype(-1);
+    };
+    std::stable_sort(out.begin(), out.end(), [&](QWidget* a, QWidget* b) {
+        const qsizetype ia = buttonIndex(a), ib = buttonIndex(b);
+        const bool ab = ia >= 0, bb = ib >= 0;
         if (ab != bb)
             return !ab;
         if (ab)
-            return m_buttons.indexOf(static_cast<QPushButton*>(a)) < m_buttons.indexOf(static_cast<QPushButton*>(b));
+            return ia < ib;
         return false;
     });
     return out;
@@ -521,7 +564,7 @@ void Modal::focusInitial()
     }
     const QList<QWidget*> chain = focusChain();
     for (QWidget* w : chain) {
-        if (!m_buttons.contains(static_cast<QPushButton*>(w))) {
+        if (!qobject_cast<QPushButton*>(w) || !m_buttons.contains(static_cast<QPushButton*>(w))) {
             w->setFocus(Qt::OtherFocusReason);
             return;
         }

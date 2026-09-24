@@ -618,6 +618,12 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
                     const qreal pad = b.style.padX;
                     const qreal hh = lm.ascent + lm.descent;
                     QRectF r(std::min(x1, x2) - pad, unitTop + vl.baseline - lm.ascent, std::abs(x2 - x1) + 2 * pad, hh);
+                    if (b.reserved) {
+                        // The padding is part of the layout: the left one sits before x1 (only where the
+                        // box starts), the right one is already inside x2 (the last glyph's spacing).
+                        const qreal left = std::min(x1, x2) - (s == b.dispFrom ? pad : 0);
+                        r = QRectF(left, r.top(), std::max(x1, x2) - left, hh);
+                    }
                     const qreal rad = std::min(b.style.radius, r.height() / 2);
                     QPainterPath path;
                     path.addRoundedRect(r, rad, rad);

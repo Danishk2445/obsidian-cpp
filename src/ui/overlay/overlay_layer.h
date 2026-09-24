@@ -13,6 +13,7 @@ class OverlayLayer : public QWidget {
     Q_OBJECT
 public:
     explicit OverlayLayer(QWidget* window);
+    ~OverlayLayer() override; // deletes the overlays first, while they can still reach the layer
 
     // Blocking children dim the window and capture input (modals).
     void setBlocking(QWidget* child, bool blocking);

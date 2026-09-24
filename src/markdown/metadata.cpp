@@ -120,7 +120,7 @@ void collectInline(const SyntaxTree& tree, const Text& text, const LeafContent& 
             LinkCache lc;
             lc.link = wl.target + wl.subpath;
             lc.original = it->content().mid(n.from, n.to - n.from);
-            lc.displayText = wl.alias.isEmpty() ? lc.link : wl.alias;
+            lc.displayText = wl.displayText(); // alias, else "Note > Heading" like Obsidian
             lc.position = rangeOf(text, a, b);
             lc.embed = n.type == InlineType::Embed;
             (lc.embed ? md.embeds : md.links).push_back(lc);
@@ -135,7 +135,15 @@ void collectInline(const SyntaxTree& tree, const Text& text, const LeafContent& 
             LinkCache lc;
             lc.link = QUrl::fromPercentEncoding(li.destination.toUtf8());
             lc.original = it->content().mid(n.from, n.to - n.from);
-            lc.displayText = lc.link;
+            // the link text: between the LinkOpen and LinkClose marks
+            int textFrom = n.from, textTo = n.to;
+            for (int c = n.firstChild; c >= 0; c = it->node(c).next) {
+                if (it->node(c).mark == MarkKind::LinkOpen)
+                    textFrom = it->node(c).to;
+                else if (it->node(c).mark == MarkKind::LinkClose)
+                    textTo = it->node(c).from;
+            }
+            lc.displayText = it->content().mid(textFrom, textTo - textFrom);
             lc.position = rangeOf(text, a, b);
             lc.embed = n.type == InlineType::Image;
             lc.markdown = true;

@@ -64,12 +64,6 @@ protected:
         vault.reset();
         session.reset();
     }
-    bool parserExtractsLinks() const
-    {
-        const md::CachedMetadata* m = meta->fileCache("Welcome.md");
-        return m && !m->links.isEmpty();
-    }
-
     QTemporaryDir tmp;
     QString root;
     std::unique_ptr<VaultSession> session;
@@ -81,7 +75,12 @@ protected:
 
 TEST_F(FileManagerTest, IndexesTheVaultThroughTheBindings)
 {
-    EXPECT_TRUE(meta->fileCache("Welcome.md") != nullptr);
+    const md::CachedMetadata* welcome = meta->fileCache("Welcome.md");
+    ASSERT_TRUE(welcome != nullptr);
+    ASSERT_EQ(welcome->links.size(), 3); // [[Other#Head|alias]], [[Other]], [md](Other.md)
+    EXPECT_EQ(welcome->links[0].link, "Other#Head");
+    EXPECT_EQ(welcome->links[0].displayText, "alias");
+    EXPECT_TRUE(welcome->links[2].markdown);
     EXPECT_TRUE(meta->fileCache("Folder/Note.md") != nullptr);
     EXPECT_TRUE(meta->resolver().contains("img.png"));
 }
@@ -94,8 +93,6 @@ TEST_F(FileManagerTest, RenameUpdatesLinksWhenEnabled)
     ASSERT_TRUE(fm->renameFile(vault->file("Other.md"), "Renamed.md", &err)) << err.toStdString();
     EXPECT_TRUE(QFile::exists(root + "/Renamed.md"));
     EXPECT_FALSE(QFile::exists(root + "/Other.md"));
-    if (!parserExtractsLinks())
-        GTEST_SKIP() << "interim inline parser: no links extracted yet";
     EXPECT_EQ(readFile(root + "/Welcome.md"), QByteArray("See [[Renamed#Head|alias]] and [[Renamed]].\n[md](Renamed.md)\n"));
     EXPECT_EQ(readFile(root + "/Folder/Note.md"), QByteArray("[[Renamed]]\n"));
     ASSERT_EQ(updated.count(), 1);
@@ -111,14 +108,20 @@ TEST_F(FileManagerTest, RenameAsksWhenNotAlwaysUpdating)
         return FileManager::LinkUpdateChoice::DoNotUpdate;
     });
     ASSERT_TRUE(fm->renameFile(vault->file("Other.md"), "Renamed.md"));
-    if (!parserExtractsLinks())
-        GTEST_SKIP() << "interim inline parser: no links extracted yet";
     EXPECT_EQ(asked, 1);
     EXPECT_EQ(readFile(root + "/Welcome.md"), QByteArray("See [[Other#Head|alias]] and [[Other]].\n[md](Other.md)\n"));
-    // "Always update" flips the setting
-    fm->setConfirmLinkUpdate([](int, int) { return FileManager::LinkUpdateChoice::AlwaysUpdate; });
+    // renaming it back needs no edits (the links resolve again): no question
     ASSERT_TRUE(fm->renameFile(vault->file("Renamed.md"), "Other.md"));
+    EXPECT_EQ(asked, 1);
+    // "Always update" flips the setting and updates this time
+    fm->setConfirmLinkUpdate([&](int, int) {
+        ++asked;
+        return FileManager::LinkUpdateChoice::AlwaysUpdate;
+    });
+    ASSERT_TRUE(fm->renameFile(vault->file("Other.md"), "Third.md"));
+    EXPECT_EQ(asked, 2);
     EXPECT_TRUE(session->vaultConfig()->alwaysUpdateLinks());
+    EXPECT_EQ(readFile(root + "/Folder/Note.md"), QByteArray("[[Third]]\n"));
 }
 
 TEST_F(FileManagerTest, OpenDocumentsGetUndoableLinkEdits)
@@ -127,10 +130,6 @@ TEST_F(FileManagerTest, OpenDocumentsGetUndoableLinkEdits)
     Document* doc = docs->acquire("Welcome.md");
     ASSERT_NE(doc, nullptr);
     ASSERT_TRUE(fm->renameFile(vault->file("Other.md"), "Renamed.md"));
-    if (!parserExtractsLinks()) {
-        docs->release(doc);
-        GTEST_SKIP() << "interim inline parser: no links extracted yet";
-    }
     EXPECT_EQ(doc->text().toString(), "See [[Renamed#Head|alias]] and [[Renamed]].\n[md](Renamed.md)\n");
     EXPECT_FALSE(doc->isDirty()); // saved right away
     EXPECT_TRUE(doc->history().canUndo());
