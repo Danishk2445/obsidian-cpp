@@ -1,6 +1,9 @@
 #pragma once
 
+#include "core/config/vault_registry.h"
 #include "ui/overlay/modal.h"
+#include "ui/shell/main_window.h"
+#include "ui/workspace/workspace.h"
 #include "ui/settings/settings_tab.h"
 
 #include <QPointer>
@@ -218,7 +221,6 @@ public:
 signals:
     void manageVaultsRequested();  // General → "Manage vaults": show the vault picker
     void openHelpRequested();      // General → Help
-    void fileRecoveryRequested();  // File recovery → Snapshots "View"
     void corePluginToggled(const QString& id, bool enabled);
     void communityPluginToggled(const QString& id, bool enabled);
     void frameStyleChanged(const QString& frame); // "hidden" | "custom" | "native"; takes effect after a restart

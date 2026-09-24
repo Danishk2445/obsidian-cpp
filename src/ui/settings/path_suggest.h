@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/views/markdown/editor_suggest.h"
+
 #include <QObject>
 #include <QPointer>
 #include <QWidget>

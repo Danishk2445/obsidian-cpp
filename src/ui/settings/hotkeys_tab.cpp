@@ -7,6 +7,8 @@
 #include "render/theme/theme.h"
 #include "ui/settings/setting_item.h"
 #include "ui/settings/settings_modal.h"
+#include "ui/shell/main_window.h"
+#include "ui/workspace/workspace.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/widgets/search_input.h"
 
@@ -25,7 +27,6 @@ namespace oc {
 
 namespace {
 double tokPx(const char* name, double fallback) { return currentTheme()->px(QString::fromLatin1(name), -1, fallback); }
-QColor tok(const char* name, const QColor& fallback = {}) { return currentTheme()->color(QString::fromLatin1(name), fallback); }
 
 // .setting-group-filter: a small pill (12 px text, 4 × 8 px padding, --pill-radius, 1 px border);
 // .is-active is accent-filled; .mod-error (Conflicts) is tinted red, with a count badge.
@@ -650,7 +651,7 @@ bool HotkeysTab::eventFilter(QObject* obj, QEvent* ev)
     if (!m_grabbing || (ev->type() != QEvent::KeyPress && ev->type() != QEvent::ShortcutOverride))
         return false;
     auto* w = qobject_cast<QWidget*>(obj);
-    if (!w || !modal() || w->window() != modal()->window())
+    if (!w || !modal() || w->window() != static_cast<QWidget*>(modal()->window()))
         return false;
     auto* ke = static_cast<QKeyEvent*>(ev);
     if (ev->type() == QEvent::ShortcutOverride) {

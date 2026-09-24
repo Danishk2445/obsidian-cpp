@@ -22,6 +22,18 @@ oc_add_library(oc_ui
     picker/vault_picker.cpp
     plugins/file_recovery_ui.cpp
     plugins/note_plugins_ui.cpp
+    settings/hotkeys_tab.cpp
+    settings/hotkeys_tab.h
+    settings/path_suggest.cpp
+    settings/path_suggest.h
+    settings/setting_item.cpp
+    settings/setting_item.h
+    settings/settings_modal.cpp
+    settings/settings_modal.h
+    settings/settings_pages.cpp
+    settings/settings_pages.h
+    settings/settings_tab.cpp
+    settings/settings_tab.h
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
@@ -41,6 +53,12 @@ oc_add_library(oc_ui
     views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
     views/markdown/page_preview.cpp
+    widgets/button.cpp
+    widgets/button.h
+    widgets/color_swatch.cpp
+    widgets/color_swatch.h
+    widgets/dropdown.cpp
+    widgets/dropdown.h
     widgets/icon_button.cpp
     widgets/search_input.cpp
     widgets/toggle_switch.cpp

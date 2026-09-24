@@ -13,10 +13,12 @@
 #include "core/vault_session.h"
 #include "editor/plugins/greentext_guard.h"
 #include "editor/spell/spell_checker.h"
+#include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/modal.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
+#include "ui/plugins/file_recovery_ui.h"
 #include "ui/settings/hotkeys_tab.h"
 #include "ui/settings/path_suggest.h"
 #include "ui/settings/setting_item.h"
@@ -24,6 +26,7 @@
 #include "ui/shell/main_window.h"
 #include "ui/shell/ribbon.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/widgets/color_swatch.h"
 #include "ui/widgets/dropdown.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/widgets/search_input.h"
@@ -37,6 +40,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -1031,7 +1035,7 @@ public:
             picker->setValue(cur.startsWith(u"file:") ? cur.mid(5) : QString());
             QObject::connect(picker, &FilePicker::valueChanged, picker, [self](const QString& path) {
                 if (self)
-                    self->setControlValue(u"openBehavior"_s, u"file:"_s + path);
+                    self->setControlValue(u"openBehavior"_s, QString(u"file:"_s + path));
             });
             row.addControl(picker);
         });
@@ -1099,7 +1103,7 @@ public:
                 const QString sub = self->controlValue(u"attachmentFolderPath"_s).toString().mid(2);
                 row.addText(sub == attachmentsDefault ? QString() : sub, attachmentsDefault, [self, attachmentsDefault](const QString& v) {
                     if (self)
-                        self->setControlValue(u"attachmentFolderPath"_s, u"./"_s + (v.isEmpty() ? attachmentsDefault : v));
+                        self->setControlValue(u"attachmentFolderPath"_s, QString(u"./"_s + (v.isEmpty() ? attachmentsDefault : v)));
                 });
             });
         attSub.visible = [self] { return self && self->attachmentMode() == u"subfolder"; };
@@ -1579,7 +1583,7 @@ QList<SettingDef> fileRecoveryDefs(PluginSettingsTab& tab)
     QPointer<PluginSettingsTab> self = &tab;
     auto applyOptions = [self](const QJsonValue&) {
         VaultSession* s = self ? self->session() : nullptr;
-        FileRecovery* fr = s ? s->findChild<FileRecovery*>() : nullptr;
+        FileRecovery* fr = s ? fileRecoveryOf(s) : nullptr;
         if (!fr || !self)
             return;
         FileRecovery::Options o = fr->options();
@@ -1599,15 +1603,8 @@ QList<SettingDef> fileRecoveryDefs(PluginSettingsTab& tab)
     QPointer<SettingsModal> modal = tab.modal();
     t << SettingDef::custom(tr("Snapshots"), tr("View and restore saved snapshots."), [modal](SettingItem& row) {
         row.addButton(tr("View"), Button::Style::Normal, [modal] {
-            if (!modal)
-                return;
-            QPointer<SettingsController> c = modal->controller();
-            if (c && c->receivers(SIGNAL(fileRecoveryRequested())) > 0) {
-                modal->close();
-                emit c->fileRecoveryRequested();
-            } else {
-                modal->notice(tr("The file recovery view isn't available yet."));
-            }
+            if (modal && modal->window())
+                openFileRecoveryModal(modal->window()); // on top of the settings, like Obsidian
         });
     });
     t << SettingDef::custom(tr("Clear history"), tr("Delete all snapshots."), [self, modal](SettingItem& row) {
@@ -1621,7 +1618,7 @@ QList<SettingDef> fileRecoveryDefs(PluginSettingsTab& tab)
                                   if (button != 0 || !self)
                                       return;
                                   VaultSession* s = self->session();
-                                  if (FileRecovery* fr = s ? s->findChild<FileRecovery*>() : nullptr)
+                                  if (FileRecovery* fr = s ? fileRecoveryOf(s) : nullptr)
                                       fr->clearAll();
                                   if (modal)
                                       modal->notice(tr("Local history cleared."));
