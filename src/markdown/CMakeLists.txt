@@ -1,6 +1,7 @@
 oc_add_library(oc_markdown
   SOURCES
-    inline_parser_stub.cpp
+    inline_parser.cpp
+    inline_rules.cpp
     md_parser.cpp
     md_refdef.cpp
     md_scan.cpp

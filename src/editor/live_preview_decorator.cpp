@@ -562,10 +562,18 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
                         addMark(ca, cb, StyleId::Formatting);
                 } else if (ch.mark == MarkKind::LinkClose) {
                     textB = ca;
-                    if (!act)
+                    if (!act) {
                         addHide(ca, cb);
-                    else
+                    } else {
                         addMark(ca, cb, StyleId::Formatting);
+                        // the destination is a LinkUrl mark nested in LinkClose
+                        forChildren(c, [&](int u) {
+                            if (it->node(u).mark == MarkKind::LinkUrl) {
+                                const auto [ua, ub] = docRange(it->node(u));
+                                addMark(ua, ub, StyleId::Url);
+                            }
+                        });
+                    }
                 } else if (ch.mark == MarkKind::LinkUrl && act) {
                     addMark(ca, cb, StyleId::Url);
                 }
