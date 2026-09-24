@@ -99,5 +99,8 @@ Obsidian editor vs reading view (one tree serves both; the choice made):
 Open parity questions:
 - `$` and `#tag` inside markdown link text: the editor disables both there, the reading view does not; we allow them.
 - Table cells: the editor ends math at an unescaped `|`; cells arrive here already split by the block parser.
+  Cell content keeps `\|` as written and `parseInline()` does not know it is parsing a cell: outside code/math
+  `\|` is an Escape (the backslash hides like any escape), inside `[[…]]` it is the alias separator, but inside a
+  code span or math it stays `\|` where GFM shows `|`.
 - Bare URLs: Obsidian's editor uses a liberal URL regex (many schemes such as `obsidian://`, `file:///`, `ssh://`,
   `www1.`, `example.com/path`, different trailing-punctuation rules); we implement GFM's extended autolinks only.
