@@ -49,3 +49,5 @@ oc_add_test(ui_file_explorer_test SOURCES ui/file_explorer_test.cpp ui/file_expl
 oc_add_test(perf_file_explorer_test SOURCES perf/file_explorer_perf_test.cpp DEPS oc_ui Qt6::Test GUI LABELS perf)
 oc_add_test(ui_attachments_test SOURCES ui/attachments_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_note_plugins_test SOURCES ui/note_plugins_ui_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(core_sidebar_logic_test SOURCES core/sidebar_logic_test.cpp DEPS oc_core)
+oc_add_test(ui_sidebar_views_test SOURCES ui/sidebar_views_test.cpp DEPS oc_ui Qt6::Test GUI LABELS threads)
