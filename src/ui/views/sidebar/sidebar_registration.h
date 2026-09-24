@@ -1,0 +1,33 @@
+#pragma once
+
+// The sidebar views of Obsidian's core plugins "backlink", "outgoing-link", "tag-pane", "outline",
+// "bookmarks" and "properties", and their commands.
+//
+// Wiring (Application::populateWindow):
+//   registerCoreViews(*registry);
+//   registerSidebarViews(*registry);          // after registerCoreViews: replaces its placeholders
+//   ...
+//   registerSidebarCommands(*commands, w);    // needs the window's workspace at run time only
+//   globalSearchHooks().openSearch = ...;     // optional: the search view's "open with query"
+//   globalSearchHooks().currentQuery = ...;   // optional: its current query (Mod+click toggling)
+// Default layout (Obsidian's): left sidedock file-explorer, search, bookmarks; right sidedock backlink,
+// outgoing-link, tag, outline, all-properties.
+
+namespace oc {
+
+class CommandRegistry;
+class MainWindow;
+class ViewRegistry;
+
+// View types "backlink", "outgoing-link", "tag", "outline", "bookmarks", "all-properties".
+void registerSidebarViews(ViewRegistry& registry);
+
+// backlink:open, backlink:open-backlinks, backlink:toggle-backlinks-in-document (not available: no
+// backlinks-in-document yet), outgoing-links:open, outgoing-links:open-for-current, tag-pane:open,
+// outline:open, outline:open-for-current, bookmarks:open, bookmarks:bookmark-current-view,
+// bookmarks:bookmark-current-search, bookmarks:unbookmark-current-view,
+// bookmarks:bookmark-current-section, bookmarks:bookmark-current-heading, bookmarks:bookmark-all-tabs,
+// properties:open — with Obsidian 1.13's names and icons (none has a default hotkey).
+void registerSidebarCommands(CommandRegistry& commands, MainWindow* window);
+
+} // namespace oc

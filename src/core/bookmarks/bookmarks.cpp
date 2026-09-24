@@ -25,11 +25,11 @@ std::unique_ptr<Bookmark> make(const QString& type)
     return b;
 }
 
+// Obsidian's getShortName for a path: a note's basename, any other file's name.
 QString baseName(const QString& path)
 {
     const QString name = path.mid(path.lastIndexOf(u'/') + 1);
-    const qsizetype dot = name.lastIndexOf(u'.');
-    return dot > 0 ? name.left(dot) : name;
+    return name.endsWith(QLatin1String(".md"), Qt::CaseInsensitive) && name.size() > 3 ? name.chopped(3) : name;
 }
 } // namespace
 
