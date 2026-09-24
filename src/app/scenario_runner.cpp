@@ -15,6 +15,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QMouseEvent>
 
 namespace oc {
 
@@ -166,7 +167,8 @@ bool ScenarioRunner::run(const QString& line)
         } else {
             const QStringList p = arg.split(u' ');
             const int l = std::clamp(p.value(0).toInt(), 0, t.lineCount() - 1);
-            mv->editor()->setCursorPosition(t.lineStart(l) + std::min<qsizetype>(p.value(1).toInt(), t.lineLength(l)));
+            const qsizetype col = p.value(1) == u"end" ? t.lineLength(l) : std::min<qsizetype>(p.value(1).toInt(), t.lineLength(l));
+            mv->editor()->setCursorPosition(t.lineStart(l) + col);
         }
         mv->editor()->setFocus();
         return true;
@@ -180,6 +182,21 @@ bool ScenarioRunner::run(const QString& line)
             else
                 sendKey(c.unicode() < 0x7f ? int(c.toUpper().unicode()) : int(Qt::Key_unknown), Qt::NoModifier, QString(c)); // Qt key codes = uppercase ASCII
         }
+        return true;
+    }
+    if (cmd == u"click") {
+        QWidget* target = nullptr;
+        for (QWidget* w : m_window->findChildren<QWidget*>(arg))
+            if (w->isVisible())
+                target = w;
+        if (!target)
+            return false;
+        const QPointF local = QRectF(target->rect()).center();
+        const QPointF global = target->mapToGlobal(local);
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(target, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(target, &release);
         return true;
     }
     if (cmd == u"key") {

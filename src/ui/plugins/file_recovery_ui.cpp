@@ -766,17 +766,20 @@ FileRecoveryPanel::FileRecoveryPanel(MainWindow* window, FileRecovery* recovery,
 
     // Content: empty text, or title bar + text / diff.
     auto* container = new QWidget(this);
-    auto* cv = new QVBoxLayout(container);
+    auto* pages = new QStackedLayout(container);
+    auto* emptyPage = new QWidget(container);
+    auto* cv = new QVBoxLayout(emptyPage);
     cv->setContentsMargins(0, 0, 0, 0);
     cv->setSpacing(0);
+    pages->addWidget(emptyPage);
     const QFont uiFont = currentTheme()->interfaceFont(tokPx("--font-ui-medium", 15));
-    m_empty = new QLabel(tr("Please select a file on the left to view snapshots."), container);
+    m_empty = new QLabel(tr("Please select a file on the left to view snapshots."), emptyPage);
     m_empty->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     m_empty->setWordWrap(true);
     m_empty->setFont(uiFont);
     m_empty->setContentsMargins(24, 24, 24, 24);
     cv->addWidget(m_empty);
-    m_noHistory = new QLabel(tr("No snapshots found."), container);
+    m_noHistory = new QLabel(tr("No snapshots found."), emptyPage);
     m_noHistory->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     m_noHistory->setFont(uiFont);
     m_noHistory->setContentsMargins(24, 24, 24, 24);
@@ -800,6 +803,7 @@ FileRecoveryPanel::FileRecoveryPanel(MainWindow* window, FileRecovery* recovery,
     tb->addWidget(toggleLabel);
     tb->addSpacing(int(tokPx("--size-4-2", 8)) - tb->spacing());
     m_diffToggle = new ToggleSwitch(m_title);
+    m_diffToggle->setObjectName(u"ocShowChanges"_s);
     m_diffToggle->setFocusPolicy(Qt::NoFocus);
     tb->addWidget(m_diffToggle, 0, Qt::AlignVCenter);
     tb->addSpacing(int(tokPx("--size-4-3", 12)) - tb->spacing());
@@ -827,8 +831,7 @@ FileRecoveryPanel::FileRecoveryPanel(MainWindow* window, FileRecovery* recovery,
     m_diffView = new RecoveryDiffView(stackHost);
     stack->addWidget(m_diffView);
     content->addWidget(stackHost, 1);
-    m_content->hide();
-    cv->addWidget(m_content, 1);
+    pages->addWidget(m_content);
     h->addWidget(container, 1);
 
     m_list->onSelect = [this](int i) { selectVersion(i); };
@@ -956,9 +959,7 @@ void FileRecoveryPanel::selectVersion(int index)
     m_list->setActive(index);
     m_bytes = store->bytes(m_versions[index].id).value_or(QByteArray());
     m_text = snapshotText(m_bytes);
-    m_empty->hide();
-    m_noHistory->hide();
-    m_content->show();
+    static_cast<QStackedLayout*>(m_content->parentWidget()->layout())->setCurrentWidget(m_content);
     openHistory();
 }
 

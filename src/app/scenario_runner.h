@@ -15,10 +15,11 @@ class MainWindow;
 // waits until the app is idle (oc::Busy) and quiet for 100 ms, so debounced work has run.
 //
 //   open <vault path> [live|source|reading]   open a note in the active tab
-//   cursor <line> <col> | cursor end           place the cursor in the active editor
+//   cursor <line> <col|end> | cursor end       place the cursor in the active editor
 //   type <text>                                type characters (\n = Enter, \t = Tab, \\ = \)
 //   key <chord>                                press a key: "Enter", "Mod+E", "Shift+ArrowDown", ...
 //   command <id>                               run a command ("editor:toggle-bold")
+//   click <objectName>                         left-click the center of a visible widget with that name
 //   wait <ms>                                  extra wait
 //   screenshot <png>                           save the window (relative paths: to the script's folder)
 //   expect-line <n> <text>                     fail unless line n (-1 = last) of the active note is <text>

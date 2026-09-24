@@ -333,6 +333,12 @@ void Application::populateWindow(MainWindow* w)
 
     auto* workspace = new Workspace(session, registry, w);
     session->setWorkspace(workspace);
+    // File recovery also snapshots notes when they are opened (Obsidian's "file-open").
+    if (FileRecovery* fr = fileRecoveryOf(session))
+        connect(workspace, &Workspace::fileOpened, fr, [fr](TFile* f) {
+            if (f)
+                fr->fileChanged(f->path());
+        });
     w->setWorkspace(workspace);
 
     // Commands and hotkeys.
