@@ -1,0 +1,54 @@
+=== input
+Heading
+===
+
+Para
+---
+
+---
+
+- - -
+text
+***
+two
+lines
+  ---  
+- item
+---
+=== tree
+Document [0,17)
+  SetextHeading [0,2) h1 text=0-7
+  SetextHeading [3,5) h2 text=0-4
+  ThematicBreak [6,7)
+  ThematicBreak [8,9)
+  Paragraph [9,10)
+  ThematicBreak [10,11)
+  SetextHeading [11,14) h2 text=0-3
+  BulletList [14,15) tight delim=-
+    ListItem [14,15) marker=0-1 content=2
+      Paragraph [14,15)
+  ThematicBreak [15,16)
+--
+0 SetextText c0 |Heading|
+1 SetextUnderline c0 |===|
+2 Blank c0 ||
+3 SetextText c0 |Para|
+4 SetextUnderline c0 |---|
+5 Blank c0 ||
+6 ThematicBreak c0 |---|
+7 Blank c0 ||
+8 ThematicBreak c0 |- - -|
+9 Paragraph c0 |text|
+10 ThematicBreak c0 |***|
+11 SetextText c0 |two|
+12 SetextText c0 |lines|
+13 SetextUnderline c0 |  ---  |
+14 Paragraph c2 LM0-2#9 |- item|
+15 ThematicBreak c0 |---|
+16 Blank c0 ||
+-- content
+#1 SetextHeading "Heading" [0:0+7@0]
+#2 SetextHeading "Para" [3:0+4@0]
+#5 Paragraph "text" [9:0+4@0]
+#7 SetextHeading "two\nlines" [11:0+3@0 12:0+5@4]
+#10 Paragraph "item" [14:2+4@0]

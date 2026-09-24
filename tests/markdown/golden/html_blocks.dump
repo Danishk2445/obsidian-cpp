@@ -1,0 +1,46 @@
+=== input
+<div>
+*x*
+</div>
+
+<!-- comment
+-->
+after
+<script>
+
+</script>
+<span class="k7">
+kind 7 runs to a blank line
+
+<span>inline, not a block</span>
+<span>
+(kind 7 cannot interrupt a paragraph)
+=== tree
+Document [0,17)
+  HtmlBlock [0,3) kind=6
+  HtmlBlock [4,6) kind=2
+  Paragraph [6,7)
+  HtmlBlock [7,10) kind=1
+  HtmlBlock [10,12) kind=7
+  Paragraph [13,16)
+--
+0 Html c0 |<div>|
+1 Html c0 |*x*|
+2 Html c0 |</div>|
+3 Blank c0 ||
+4 Html c0 |<!-- comment|
+5 Html c0 |-->|
+6 Paragraph c0 |after|
+7 Html c0 |<script>|
+8 Html c0 ||
+9 Html c0 |</script>|
+10 Html c0 |<span class="k7">|
+11 Html c0 |kind 7 runs to a blank line|
+12 Blank c0 ||
+13 Paragraph c0 |<span>inline, not a block</span>|
+14 Paragraph c0 |<span>|
+15 Paragraph c0 |(kind 7 cannot interrupt a paragraph)|
+16 Blank c0 ||
+-- content
+#3 Paragraph "after" [6:0+5@0]
+#6 Paragraph "<span>inline, not a block</span>\n<span>\n(kind 7 cannot interrupt a paragraph)" [13:0+32@0 14:0+6@33 15:0+37@40]

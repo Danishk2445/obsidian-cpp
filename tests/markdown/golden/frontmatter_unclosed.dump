@@ -1,0 +1,19 @@
+=== input
+---
+k: v
+
+text
+=== tree
+Document [0,5)
+  ThematicBreak [0,1)
+  Paragraph [1,2)
+  Paragraph [3,4)
+--
+0 ThematicBreak c0 |---|
+1 Paragraph c0 |k: v|
+2 Blank c0 ||
+3 Paragraph c0 |text|
+4 Blank c0 ||
+-- content
+#2 Paragraph "k: v" [1:0+4@0]
+#3 Paragraph "text" [3:0+4@0]

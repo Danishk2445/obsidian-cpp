@@ -1,0 +1,47 @@
+=== input
+Text[^1].
+
+[^1]: Footnote text
+    continued
+lazy line
+
+[^note]: Second
+
+    Paragraph two in the footnote.
+
+Outside again.
+[^x]:
+[^ bad]: not a footnote
+=== tree
+Document [0,14)
+  Paragraph [0,1)
+  FootnoteDef [2,5) label=1
+    Paragraph [2,5)
+  FootnoteDef [6,9) label=note
+    Paragraph [6,7)
+    Paragraph [8,9)
+  Paragraph [10,11)
+  FootnoteDef [11,12) label=x
+  Paragraph [12,13)
+--
+0 Paragraph c0 |Text[^1].|
+1 Blank c0 ||
+2 Paragraph c6 FL0-6#2 |[^1]: Footnote text|
+3 Paragraph c4 FI0-4#2 |    continued|
+4 Paragraph c0 |lazy line|
+5 Blank c0 ||
+6 Paragraph c9 FL0-9#4 |[^note]: Second|
+7 Blank c0 FI0-0#4 ||
+8 Paragraph c4 FI0-4#4 |    Paragraph two in the footnote.|
+9 Blank c0 ||
+10 Paragraph c0 |Outside again.|
+11 Blank c5 FL0-5#8 |[^x]:|
+12 Paragraph c0 |[^ bad]: not a footnote|
+13 Blank c0 ||
+-- content
+#1 Paragraph "Text[^1]." [0:0+9@0]
+#3 Paragraph "Footnote text\ncontinued\nlazy line" [2:6+13@0 3:4+9@14 4:0+9@24]
+#5 Paragraph "Second" [6:9+6@0]
+#6 Paragraph "Paragraph two in the footnote." [8:4+30@0]
+#7 Paragraph "Outside again." [10:0+14@0]
+#9 Paragraph "[^ bad]: not a footnote" [12:0+23@0]

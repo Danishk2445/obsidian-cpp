@@ -1,0 +1,19 @@
+=== input
+---
+title: x
+tags: [a, b]
+---
+# Body
+=== tree
+Document [0,6)
+  Frontmatter [0,4)
+  AtxHeading [4,5) h1 text=2-6 marker=0-2
+--
+0 FrontmatterOpen c0 |---|
+1 FrontmatterBody c0 |title: x|
+2 FrontmatterBody c0 |tags: [a, b]|
+3 FrontmatterClose c0 |---|
+4 AtxHeading c0 |# Body|
+5 Blank c0 ||
+-- content
+#2 AtxHeading "Body" [4:2+4@0]

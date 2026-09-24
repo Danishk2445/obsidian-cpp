@@ -1,0 +1,17 @@
+=== input
+---  
+k: v
+--- 	
+text
+=== tree
+Document [0,5)
+  Frontmatter [0,3)
+  Paragraph [3,4)
+--
+0 FrontmatterOpen c0 |---  |
+1 FrontmatterBody c0 |k: v|
+2 FrontmatterClose c0 |--- 	|
+3 Paragraph c0 |text|
+4 Blank c0 ||
+-- content
+#2 Paragraph "text" [3:0+4@0]
