@@ -1,11 +1,12 @@
 #pragma once
 
-// Obsidian's embedRegistry for non-Markdown files: file extensions -> embed providers (PDF, audio,
-// video...). The editor only knows the interface; the media module registers the providers.
+// Obsidian's embedRegistry: file extensions -> embed providers (PDF, audio, video, notes...). The
+// editor only knows the interface; the media module (ui/views/media) and the note embeds
+// (editor/embeds/note_embed.h, "md") register the providers.
 //
-// An embed ("![[doc.pdf#page=3]]", "![](a.mp3)") is laid out as an EmbedWidget (an inline widget of
-// the provider's size that paints a static rendering) and, in an EditorView, the provider's live
-// QWidget is hosted over it while it is near the viewport (see hosted_embeds.h).
+// An embed ("![[doc.pdf#page=3]]", "![](a.mp3)", "![[Note#Heading]]") is laid out as an EmbedWidget
+// (an inline widget of the provider's size that paints a static rendering) and, in an EditorView,
+// the provider's live QWidget is hosted over it while it is near the viewport (see hosted_embeds.h).
 
 #include <QHash>
 #include <QObject>
@@ -24,6 +25,8 @@ class QWidget;
 namespace oc {
 
 class InlineWidget;
+class StyleSheet;
+class Theme;
 
 // One embed of a vault file, as written in a note.
 struct EmbedRequest {
@@ -107,5 +110,35 @@ private:
 // decorator's resolveAttachment), or nullptr when no provider handles its extension.
 std::shared_ptr<InlineWidget> makeEmbedWidget(const QString& absPath, const QString& target, const QString& subpath, int width,
                                               int height, qreal maxWidth);
+
+// The inline widget for an embed as written in a note ("![[target#subpath|WxH]]", "![](target#subpath)"),
+// or nullptr when no provider handles it: a target whose own extension is registered ("doc.pdf")
+// goes to that provider; otherwise the target is resolved (`resolve`: link path -> absolute path,
+// "" when unresolved) and the file's extension decides, so notes ("![[Note#Heading]]") reach the
+// "md" provider. An unresolved note ("![[New note]]": no extension, or ".md") goes to the "md"
+// provider with an empty absPath (Obsidian's "not created yet" embed); image targets are left to
+// the caller.
+std::shared_ptr<InlineWidget> makeLinkEmbedWidget(const std::function<QString(const QString& linkpath)>& resolve, const QString& target,
+                                                  const QString& subpath, int width, int height, qreal maxWidth);
+
+// While alive, embeds are laid out and painted for print (PDF export; Obsidian's @media print rules):
+// providers drop their actions and max-heights and render with the export's theme / styles (light).
+// Scopes nest; GUI thread only.
+class EmbedPrintScope {
+public:
+    EmbedPrintScope(std::shared_ptr<const Theme> theme, std::shared_ptr<const StyleSheet> styles);
+    ~EmbedPrintScope();
+    EmbedPrintScope(const EmbedPrintScope&) = delete;
+    EmbedPrintScope& operator=(const EmbedPrintScope&) = delete;
+
+    static bool active();
+    static std::shared_ptr<const Theme> theme();        // null outside a scope
+    static std::shared_ptr<const StyleSheet> styles();  // null outside a scope
+
+private:
+    std::shared_ptr<const Theme> m_prevTheme;
+    std::shared_ptr<const StyleSheet> m_prevStyles;
+    bool m_prevActive = false;
+};
 
 } // namespace oc

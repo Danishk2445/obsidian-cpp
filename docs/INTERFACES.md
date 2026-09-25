@@ -98,6 +98,14 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `EmbedRequest` (file, subpath params, inline / popover); `hosted_embeds.h` — `EmbedWidget` (the decorator's inline
   placeholder) and `HostedEmbeds` (created by every `EditorView`: live widgets near the viewport, pooled; a widget
   with the `ocEmbedBusy` property is kept alive). Providers: `src/ui/views/media` (`registerMediaViews`).
+  Additive: `makeLinkEmbedWidget(resolve, target, subpath, w, h, maxWidth)` — the decorator's entry point: a
+  registered extension in the link, else the resolved file's extension (notes → "md"; an unresolved note → the "md"
+  provider with an empty absPath); `EmbedPrintScope(theme, styles)` — while alive (PDF export) embeds lay out and
+  paint for print (`active()`, `theme()`, `styles()`).
+- Note embeds: `src/editor/embeds/note_embed.h` — `NoteEmbeds` (layout cache keyed by content hash + width +
+  nesting chain, depth limit 5 / cycles, `noteChanged` / `linksChanged`, `NoteEmbedHost` per vault),
+  `NoteEmbedLayout` (size, static paint, hit testing), `NoteEmbedProvider` ("md"). UI: `src/ui/views/markdown/
+  note_embed_view.h` — `NoteEmbedWidget` (live widget) and `registerNoteEmbeds(session)` (provider + session host).
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,

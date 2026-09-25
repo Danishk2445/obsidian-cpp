@@ -5,6 +5,7 @@ oc_add_library(oc_editor
     editor_view_fold.cpp
     embeds/embed_registry.cpp
     embeds/hosted_embeds.cpp
+    embeds/note_embed.cpp
     fold/fold_service.cpp
     export/pdf_exporter.cpp
     markdown_commands.cpp

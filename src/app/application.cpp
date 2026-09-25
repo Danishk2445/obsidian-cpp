@@ -49,6 +49,7 @@
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/views/markdown/note_embed_view.h"
 #include "ui/views/markdown/properties/properties_commands.h"
 #include "ui/views/canvas/canvas_registration.h"
 #include "ui/views/media/media_views.h"
@@ -518,6 +519,7 @@ void Application::populateWindow(MainWindow* w)
     registerGraphViews(*registry);       // "graph" + "localgraph"
     registerMediaViews(*registry);       // image, audio, video, pdf views + their embeds
     registerCanvasView(*registry);       // .canvas view + canvas embeds
+    registerNoteEmbeds(session);         // "![[Note#Heading]]" embeds (the "md" embed provider + this session as note host)
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
