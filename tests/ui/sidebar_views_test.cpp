@@ -380,6 +380,29 @@ TEST_F(SidebarTest, BacklinksFilterAndLinkAction)
     EXPECT_EQ(readFile(root + "/Folder/Deep.md"), QByteArray("Deep note mentions [[target]].\n| a | target |\n|---|---|\n"));
 }
 
+TEST_F(SidebarTest, BacklinksFollowChanges)
+{
+    open("Target.md");
+    auto* view = side<BacklinkView>("backlink");
+    BacklinkPane* pane = view->pane();
+    pane->setUnlinkedCollapsed(false);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return !pane->isSearchingUnlinked() && pane->unlinkedFiles().size() == 3; }, 5000));
+    // a new note mentioning the target shows up (re-checked by the search engine)
+    QString err;
+    ASSERT_TRUE(vault->createFile("New.md", "A new note about Target.\n", &err)) << qPrintable(err);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return pane->unlinkedFiles().contains("New.md"); }, 5000));
+    // linking it moves it to the linked mentions (once its links are parsed)
+    ASSERT_TRUE(pane->linkUnlinkedMention("New.md", 0));
+    EXPECT_EQ(readFile(root + "/New.md"), QByteArray("A new note about [[Target]].\n"));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return !pane->unlinkedFiles().contains("New.md") && !pane->isSearchingUnlinked(); }, 5000));
+    if (!meta->fileCache("Linker.md")->links.isEmpty()) {
+        EXPECT_TRUE(QTest::qWaitFor([&] { return pane->linkedFiles().contains("New.md"); }, 5000));
+    }
+    // a deleted note disappears
+    ASSERT_TRUE(vault->trash(vault->file("Other.md"), Vault::TrashMode::Permanent, &err)) << qPrintable(err);
+    EXPECT_TRUE(QTest::qWaitFor([&] { return !pane->unlinkedFiles().contains("Other.md"); }, 5000));
+}
+
 TEST_F(SidebarTest, BacklinksClickOpensMatch)
 {
     open("Target.md");

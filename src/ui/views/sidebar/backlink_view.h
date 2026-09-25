@@ -83,6 +83,8 @@ private:
     VaultSession* session() const;
     void recomputeLinked();
     void recomputeUnlinked();
+    void startUnlinkedSearch(const QStringList& files, bool incremental);
+    void runPendingUnlinked();
     void cancelUnlinked();
     std::optional<Result> linkedResult(const QString& source) const;
     std::optional<Result> unlinkedResult(const QString& source, const QString* text = nullptr) const;
@@ -109,12 +111,15 @@ private:
     bool m_unlinkedCollapsed = true;
     search::SearchQuery m_filter;
     QHash<QString, Result> m_linked;
+    QStringList m_linkedSources; // backlinksOf() when the linked results were computed
     QHash<QString, Result> m_unlinked;
     QString m_unlinkedAliases; // the aliases the unlinked results were computed for
     std::unique_ptr<search::SearchEngine> m_engine;
     std::shared_ptr<search::SearchJob> m_job;
     QTimer m_rebuild;
     QTimer m_linkedTimer;
+    QTimer m_unlinkedTimer;
+    QSet<QString> m_unlinkedPending; // notes changed since their unlinked mentions were checked
     QList<QMetaObject::Connection> m_connections;
 };
 

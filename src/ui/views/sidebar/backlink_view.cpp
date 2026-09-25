@@ -157,6 +157,9 @@ BacklinkPane::BacklinkPane(View* owner, QWidget* parent)
     m_linkedTimer.setSingleShot(true);
     m_linkedTimer.setInterval(50);
     connect(&m_linkedTimer, &QTimer::timeout, this, &BacklinkPane::recomputeLinked);
+    m_unlinkedTimer.setSingleShot(true);
+    m_unlinkedTimer.setInterval(100);
+    connect(&m_unlinkedTimer, &QTimer::timeout, this, &BacklinkPane::runPendingUnlinked);
 
     if (VaultSession* s = session()) {
         if (MetadataCache* mc = s->metadata()) {
@@ -167,7 +170,14 @@ BacklinkPane::BacklinkPane(View* owner, QWidget* parent)
                 if (a || b)
                     scheduleRebuild();
             });
-            m_connections << connect(mc, &MetadataCache::resolved, this, [this] { m_linkedTimer.start(); });
+            // The link graph changed (e.g. a new note makes links resolve): recompute when the notes
+            // linking here differ from the results (content changes come through changed()).
+            m_connections << connect(mc, &MetadataCache::resolved, this, [this, mc] {
+                if (m_backlinkCollapsed || m_path.isEmpty())
+                    return;
+                if (mc->backlinksOf(m_path) != m_linkedSources)
+                    m_linkedTimer.start();
+            });
         }
     }
     rebuild();
@@ -317,10 +327,12 @@ void BacklinkPane::recomputeLinked()
 {
     m_linkedTimer.stop();
     m_linked.clear();
+    m_linkedSources.clear();
     VaultSession* s = session();
     MetadataCache* mc = s ? s->metadata() : nullptr;
     if (!m_backlinkCollapsed && !m_path.isEmpty() && mc) {
-        for (const QString& source : mc->backlinksOf(m_path))
+        m_linkedSources = mc->backlinksOf(m_path);
+        for (const QString& source : std::as_const(m_linkedSources))
             if (std::optional<Result> r = linkedResult(source))
                 m_linked.insert(source, *r);
     }
@@ -367,6 +379,8 @@ void BacklinkPane::recomputeUnlinked()
 {
     cancelUnlinked();
     m_unlinked.clear();
+    m_unlinkedPending.clear();
+    m_unlinkedTimer.stop();
     VaultSession* s = session();
     Vault* vault = s ? s->vault() : nullptr;
     const QStringList names = mentionNames();
@@ -375,21 +389,29 @@ void BacklinkPane::recomputeUnlinked()
         scheduleRebuild();
         return;
     }
-    // The search engine finds the notes containing a name (substring, any case); the whole-word,
-    // link and frontmatter checks run on the results.
-    QStringList terms;
-    for (const QString& n : names)
-        if (!n.trimmed().isEmpty() && !terms.contains(quoted(n), Qt::CaseInsensitive))
-            terms << quoted(n);
-    if (terms.isEmpty()) {
-        scheduleRebuild();
-        return;
-    }
-    const search::SearchQuery query = search::parseSearchQuery(QStringLiteral("content:(%1)").arg(terms.join(QStringLiteral(" OR "))));
     QStringList files;
     for (TFile* f : vault->markdownFiles())
         if (f->path() != m_path)
             files << f->path();
+    startUnlinkedSearch(files, false);
+}
+
+// The search engine finds the notes containing a name (substring, any case); the whole-word, link and
+// frontmatter checks run on its results. `incremental`: only `files` are re-checked (the others keep
+// their results).
+void BacklinkPane::startUnlinkedSearch(const QStringList& files, bool incremental)
+{
+    VaultSession* s = session();
+    Vault* vault = s ? s->vault() : nullptr;
+    QStringList terms;
+    for (const QString& n : mentionNames())
+        if (!n.trimmed().isEmpty() && !terms.contains(quoted(n), Qt::CaseInsensitive))
+            terms << quoted(n);
+    if (!vault || terms.isEmpty() || files.isEmpty()) {
+        scheduleRebuild();
+        return;
+    }
+    const search::SearchQuery query = search::parseSearchQuery(QStringLiteral("content:(%1)").arg(terms.join(QStringLiteral(" OR "))));
     // Open documents may hold newer text than the disk.
     QHash<QString, QString> open;
     if (DocumentManager* dm = s->documents())
@@ -411,17 +433,45 @@ void BacklinkPane::recomputeUnlinked()
         }
         return doc;
     };
+    auto found = std::make_shared<QSet<QString>>();
     search::SearchCallbacks cb;
     cb.context = this;
-    cb.onResults = [this](QList<search::SearchResult> batch) {
-        for (const search::SearchResult& r : batch)
+    cb.onResults = [this, found, incremental](QList<search::SearchResult> batch) {
+        for (const search::SearchResult& r : batch) {
+            found->insert(r.path);
             if (std::optional<Result> res = unlinkedResult(r.path))
                 m_unlinked.insert(r.path, *res);
+            else if (incremental)
+                m_unlinked.remove(r.path);
+        }
         scheduleRebuild();
     };
-    cb.onFinished = [this](const search::SearchStats&) { scheduleRebuild(); };
+    cb.onFinished = [this, found, files, incremental](const search::SearchStats& stats) {
+        if (incremental && !stats.canceled)
+            for (const QString& f : files)
+                if (!found->contains(f))
+                    m_unlinked.remove(f); // no longer mentions it
+        if (!m_unlinkedPending.isEmpty())
+            m_unlinkedTimer.start();
+        scheduleRebuild();
+    };
     m_job = m_engine->search(query, source, cb);
     scheduleRebuild();
+}
+
+void BacklinkPane::runPendingUnlinked()
+{
+    if (isSearchingUnlinked() || m_unlinkedCollapsed || m_path.isEmpty()) {
+        if (m_unlinkedCollapsed)
+            m_unlinkedPending.clear();
+        return; // a running search restarts the timer when it finishes
+    }
+    QStringList files;
+    for (const QString& p : std::as_const(m_unlinkedPending))
+        if (p != m_path && p.endsWith(QLatin1String(".md"), Qt::CaseInsensitive))
+            files << p;
+    m_unlinkedPending.clear();
+    startUnlinkedSearch(files, true);
 }
 
 bool BacklinkPane::isSearchingUnlinked() const { return m_job && !m_job->isFinished(); }
@@ -437,23 +487,20 @@ void BacklinkPane::onMetadataChanged(const QString& path)
             recomputeUnlinked();
         return;
     }
-    bool changed = false;
     if (!m_backlinkCollapsed) {
+        // cheap unless the note links here (only then is its text read)
+        const bool had = m_linked.remove(path) > 0;
         if (std::optional<Result> r = linkedResult(path))
             m_linked.insert(path, *r);
-        else
-            m_linked.remove(path);
-        changed = true;
+        if (had || m_linked.contains(path))
+            scheduleRebuild();
     }
-    if (!m_unlinkedCollapsed && !isSearchingUnlinked()) {
-        if (std::optional<Result> r = unlinkedResult(path))
-            m_unlinked.insert(path, *r);
-        else
-            m_unlinked.remove(path);
-        changed = true;
+    if (!m_unlinkedCollapsed) {
+        // re-checked in batches by the search engine (off the GUI thread)
+        m_unlinkedPending.insert(path);
+        if (!isSearchingUnlinked())
+            m_unlinkedTimer.start();
     }
-    if (changed)
-        scheduleRebuild();
 }
 
 bool BacklinkPane::linkUnlinkedMention(const QString& sourcePath, int matchIndex)
