@@ -23,6 +23,9 @@
 #include "ui/shell/main_window.h"
 #include "ui/views/markdown/editor_search_bar.h"
 #include "ui/views/markdown/inline_title.h"
+#include "ui/views/markdown/properties/properties_style.h"
+#include "ui/views/markdown/properties/properties_widget.h"
+#include "core/properties/frontmatter_editor.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
@@ -31,6 +34,7 @@
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QUrl>
@@ -56,6 +60,77 @@ NoticeManager* noticesFor(const View* v)
     MainWindow* w = ws ? ws->window() : nullptr;
     return w ? w->notices() : nullptr;
 }
+
+// The editor's top widget: the inline title with the properties below it (Obsidian's .inline-title and
+// .metadata-container at the top of the sizer). It reaches kHeaderOverhang px into the gutter left of
+// the text column, where the properties' collapse indicator sits; the properties are shifted 4px left
+// of the text (.metadata-container: translateX(-4px)) and followed by a 2rem margin.
+constexpr int kHeaderOverhang = 28;
+
+class DocumentHeader : public QWidget {
+public:
+    DocumentHeader(InlineTitle* title, PropertiesWidget* properties)
+        : m_title(title)
+        , m_properties(properties)
+    {
+        setObjectName(QStringLiteral("ocDocumentHeader"));
+        setAttribute(Qt::WA_TranslucentBackground);
+        title->setParent(this);
+        properties->setParent(this);
+        properties->setLeftInset(kHeaderOverhang - 4);
+        QSizePolicy sp(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        sp.setHeightForWidth(true);
+        setSizePolicy(sp);
+    }
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int w) const override { return layoutChildren(w, false); }
+    QSize sizeHint() const override { return {700, heightForWidth(width() > 0 ? width() : 700)}; }
+    void relayout()
+    {
+        layoutChildren(width(), true);
+        updateGeometry();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* e) override
+    {
+        QWidget::resizeEvent(e);
+        layoutChildren(width(), true);
+    }
+    bool event(QEvent* e) override
+    {
+        if (e->type() == QEvent::LayoutRequest)
+            layoutChildren(width(), true);
+        return QWidget::event(e);
+    }
+
+private:
+    int layoutChildren(int width, bool apply) const
+    {
+        const int w = std::max(50, width - kHeaderOverhang);
+        int y = 0;
+        if (!m_title->isHidden()) {
+            const int h = m_title->heightForWidth(w);
+            if (apply)
+                m_title->setGeometry(kHeaderOverhang, y, w, h);
+            y += h + m_title->bottomMargin();
+        }
+        const bool props = m_properties->shouldShow();
+        if (apply && m_properties->isHidden() == props)
+            m_properties->setVisible(props);
+        if (props) {
+            const int pw = std::max(50, width - 4);
+            const int h = m_properties->heightForWidth(pw);
+            if (apply)
+                m_properties->setGeometry(0, y, pw, h);
+            y += h + propui::style().marginBottom;
+        }
+        return y;
+    }
+
+    InlineTitle* m_title;
+    PropertiesWidget* m_properties;
+};
 } // namespace
 
 void MarkdownView::setTagHandler(std::function<void(const QString&, MarkdownView*)> handler) { g_tagHandler = std::move(handler); }
@@ -65,6 +140,8 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     , m_editor(new EditorView(this))
     , m_searchBar(new EditorSearchBar(m_editor, this))
     , m_title(new InlineTitle)
+    , m_properties(new PropertiesWidget)
+    , m_header(new DocumentHeader(m_title, m_properties))
     , m_suggest(new EditorSuggest(this, m_editor))
 {
     setObjectName(QStringLiteral("ocMarkdownView"));
@@ -73,7 +150,8 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     v->setSpacing(0);
     v->addWidget(m_searchBar);
     v->addWidget(m_editor, 1);
-    m_editor->setTopWidget(m_title, m_title->bottomMargin());
+    m_editor->setTopWidget(m_header, 0);
+    m_editor->setTopWidgetOverhang(kHeaderOverhang);
     setFocusProxy(m_editor);
 
     connect(m_title, &InlineTitle::renameRequested, this, &MarkdownView::renameFromTitle);
@@ -85,6 +163,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     connect(m_editor, &EditorView::linkActivated, this, &MarkdownView::openLink);
     connect(m_editor, &EditorView::modeChanged, this, [this](EditorView::Mode m) {
         m_title->setEditable(m != EditorView::Mode::Reading);
+        refreshProperties(false);
         emit modeChanged(m);
         emit stateChanged();
     });
@@ -96,7 +175,84 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
             m_foldSave.start();
     });
     if (auto* tm = ThemeManager::instance())
-        connect(tm, &ThemeManager::themeChanged, this, [this] { m_editor->setTopWidget(m_title, m_title->bottomMargin()); });
+        connect(tm, &ThemeManager::themeChanged, this, [this] {
+            static_cast<DocumentHeader*>(m_header)->relayout();
+            m_editor->updateTopWidget();
+        });
+
+    // Properties: the metadata editor between the inline title and the text.
+    {
+        PropertyEditorContext ctx;
+        ctx.session = [this] { return session(); };
+        ctx.sourcePath = [this] { return m_file ? m_file->path() : QString(); };
+        ctx.openLink = [this](const QString& target, int kind, bool newLeaf) {
+            openLinkText(workspace(), target, kind == 3 ? 3 : 0, m_file ? m_file->path() : QString(), newLeaf);
+        };
+        ctx.openTag = [this](const QString& tag) {
+            if (g_tagHandler)
+                g_tagHandler(tag, this);
+        };
+        ctx.hoverLink = [this](const QString& linktext, const QRect& rect, QWidget* parent) {
+            Workspace* ws = workspace();
+            PagePreview* pp = PagePreview::of(ws ? ws->window() : nullptr);
+            if (!pp)
+                return;
+            if (linktext.isEmpty())
+                pp->onLinkUnhover(parent);
+            else
+                pp->onLinkHover(mode() == EditorView::Mode::Reading ? QStringLiteral("preview") : QStringLiteral("editor"), linktext,
+                                m_file ? m_file->path() : QString(), rect, parent);
+        };
+        ctx.isResolved = [this](const QString& target) {
+            VaultSession* s = session();
+            MetadataCache* mc = s ? s->metadata() : nullptr;
+            const QString path = LinkResolver::splitSubpath(target).first;
+            if (!mc || path.isEmpty())
+                return true;
+            return !mc->resolver().resolve(path, m_file ? m_file->path() : QString()).isEmpty();
+        };
+        ctx.notice = [this](const QString& message) {
+            if (NoticeManager* n = noticesFor(this))
+                n->show(message);
+        };
+        m_properties->setContext(ctx);
+    }
+    m_properties->setEditHandler([this](const PropertiesWidget::Edit& edit) { return editFrontmatter(edit); });
+    connect(m_properties, &PropertiesWidget::heightChanged, this, [this] {
+        static_cast<DocumentHeader*>(m_header)->relayout();
+        m_editor->updateTopWidget();
+    });
+    connect(m_properties, &PropertiesWidget::focusAfterRequested, this, [this] {
+        m_editor->setFocus(Qt::OtherFocusReason);
+        if (m_doc) {
+            const Text& t = m_doc->text();
+            const int line = m_frontmatterEnd >= 0 ? std::min(m_frontmatterEnd + 1, t.lineCount() - 1) : 0;
+            m_editor->setCursorPosition(t.lineStart(line), false);
+            clampSelectionToBody();
+        }
+    });
+    connect(m_properties, &PropertiesWidget::focusBeforeRequested, this, [this] {
+        if (m_title->isVisible() && mode() != EditorView::Mode::Reading)
+            m_title->beginRename(false);
+    });
+    connect(m_properties, &PropertiesWidget::undoRequested, this, [this] { m_editor->undo(); });
+    connect(m_properties, &PropertiesWidget::redoRequested, this, [this] { m_editor->redo(); });
+    connect(m_properties, &PropertiesWidget::showSourceRequested, this, [this] {
+        setMode(EditorView::Mode::Source);
+        m_editor->setFocus(Qt::OtherFocusReason);
+        m_editor->setCursorPosition(0, true);
+    });
+    // The frontmatter hidden behind the properties (Live Preview / Reading): zero-height lines.
+    m_editor->addDecorationLayer([this](int line, LineDecoration& d) {
+        if (m_frontmatterEnd >= 0 && line <= m_frontmatterEnd && m_editor->mode() != EditorView::Mode::Source)
+            d.hidden = true;
+    });
+    connect(m_editor, &EditorView::selectionChanged, this, &MarkdownView::clampSelectionToBody);
+    connect(m_editor, &EditorView::focusChangedIn, this, [this](bool in) {
+        if (in)
+            clampSelectionToBody();
+    });
+    m_editor->installEventFilter(this);
 
     // Link resolution for rendering: unresolved-link styling and image embeds.
     if (LivePreviewDecorator* lp = m_editor->livePreview()) {
@@ -229,6 +385,7 @@ void MarkdownView::applySettings()
     m_editor->setFoldOptions(fo);
     const bool showTitle = cfg->flag(QStringLiteral("showInlineTitle"));
     m_title->setVisible(showTitle);
+    static_cast<DocumentHeader*>(m_header)->relayout();
     m_editor->updateTopWidget();
     const bool spell = cfg->flag(QStringLiteral("spellcheck"));
     if (spell != m_spellcheck) {
@@ -265,6 +422,7 @@ void MarkdownView::loadFile(TFile* file)
     m_foldSave.stop();
     m_editor->setDocument(nullptr);
     m_suggest->documentChanged();
+    disconnect(m_propsConn);
     m_doc.reset();
     m_file = file;
     if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
@@ -273,6 +431,8 @@ void MarkdownView::loadFile(TFile* file)
             for (const char* k : keys)
                 if (key == QLatin1String(k))
                     applySettings();
+            if (key == u"propertiesInDocument")
+                refreshProperties(false);
         });
     }
     applySettings();
@@ -313,13 +473,170 @@ void MarkdownView::loadFile(TFile* file)
                         m_typingPos = u.tr.selection->main().head;
                 }
             });
+            m_propsConn = connect(d, &Document::changed, this, [this](const DocUpdate& u) {
+                // only changes at the top of the note can touch the frontmatter
+                int first = INT_MAX;
+                u.tr.changes.iterChangedRanges([&](qsizetype fa, qsizetype, qsizetype, qsizetype) { first = std::min(first, u.before.lineAt(fa)); });
+                const bool mayStart = u.after.lineCount() > 1 && u.after.lineView(0).startsWith(u"---");
+                if (first <= std::max(m_frontmatterClose + 1, 1) || (m_frontmatterClose < 0 && mayStart))
+                    refreshProperties(false);
+            });
+            m_frontmatterSynced = false;
+            refreshProperties(true);
             restoreFolds();
         } else if (NoticeManager* n = noticesFor(this)) {
             n->show(tr("Failed to open \"%1\": %2").arg(file->path(), err.isEmpty() ? tr("no document manager") : err));
         }
     }
+    if (!m_doc)
+        refreshProperties(true);
     updateTitle();
     emit titleChanged();
+}
+
+// ---------------------------------------------------------------------------------------------
+// properties
+// ---------------------------------------------------------------------------------------------
+void MarkdownView::refreshProperties(bool force)
+{
+    VaultConfig* cfg = session() ? session()->vaultConfig() : nullptr;
+    const QString setting = cfg ? cfg->string(QStringLiteral("propertiesInDocument")) : QStringLiteral("visible");
+    const EditorView::Mode m = mode();
+    if (!m_doc) {
+        m_frontmatterRaw.clear();
+        m_frontmatterClose = -1;
+        m_frontmatterValid = false;
+        m_frontmatterSynced = false;
+        m_frontmatterEnd = -1;
+        m_properties->synchronize(props::FrontmatterEditor::State::None, {});
+    } else {
+        const Text& t = m_doc->text();
+        const props::FrontmatterSpan span = props::findFrontmatter(t);
+        const QString raw = span.exists ? t.slice(0, t.lineEnd(span.closeLine)) : QString();
+        if (force || !m_frontmatterSynced || raw != m_frontmatterRaw) {
+            const props::FrontmatterEditor ed(t);
+            m_properties->synchronize(ed.state(), ed.properties());
+            m_frontmatterRaw = raw;
+            m_frontmatterClose = span.exists ? span.closeLine : -1;
+            m_frontmatterValid = ed.state() != props::FrontmatterEditor::State::Invalid;
+            m_frontmatterSynced = true;
+        }
+    }
+    // Obsidian: valid frontmatter is replaced by the widget in Live Preview (unless "source") and never
+    // shown as text in Reading view; invalid YAML stays visible as source.
+    const bool hide = m_frontmatterClose >= 0 && m_frontmatterValid
+                      && ((m == EditorView::Mode::LivePreview && setting != u"source") || m == EditorView::Mode::Reading);
+    const int end = hide ? m_frontmatterClose : -1;
+    if (end != m_frontmatterEnd) {
+        const int last = std::max(end, m_frontmatterEnd);
+        m_frontmatterEnd = end;
+        m_editor->refreshDecorations(0, last + 1);
+    }
+    const bool normal = (m == EditorView::Mode::LivePreview && setting == u"visible") || (m == EditorView::Mode::Reading && setting != u"hidden");
+    m_properties->setDisplay(normal ? PropertiesWidget::Display::Normal : PropertiesWidget::Display::ErrorOnly);
+    // Reading view shows the properties read-only (like the inline title there).
+    m_properties->setReadOnly(m == EditorView::Mode::Reading || !m_doc || m_doc->isReadOnly());
+    static_cast<DocumentHeader*>(m_header)->relayout();
+    m_editor->updateTopWidget();
+    clampSelectionToBody();
+}
+
+bool MarkdownView::canShowProperties() const
+{
+    VaultConfig* cfg = session() ? session()->vaultConfig() : nullptr;
+    const QString setting = cfg ? cfg->string(QStringLiteral("propertiesInDocument")) : QStringLiteral("visible");
+    return m_doc && mode() == EditorView::Mode::LivePreview && setting == u"visible" && !m_doc->isReadOnly();
+}
+
+void MarkdownView::addProperty(const QString& key)
+{
+    if (!canShowProperties())
+        return;
+    m_editor->setScrollTop(-1e9); // the properties are at the top
+    m_properties->addProperty(key);
+}
+
+bool MarkdownView::editFrontmatter(const std::function<void(props::FrontmatterEditor&)>& edit)
+{
+    if (!m_doc || m_doc->isReadOnly())
+        return false;
+    props::FrontmatterEditor ed(m_doc->text());
+    if (!ed.isEditable()) {
+        if (NoticeManager* n = noticesFor(this))
+            n->show(tr("Failed to read properties."));
+        return false;
+    }
+    edit(ed);
+    const QList<ChangeSpec> specs = ed.changes();
+    if (specs.isEmpty())
+        return true;
+    Transaction tr;
+    tr.changes = ChangeSet::of(specs, m_doc->text().length());
+    tr.userEvent = QStringLiteral("input.properties"); // one undo step per property edit
+    tr.scrollIntoView = false;
+    m_doc->dispatch(tr, m_editor, m_editor->selection());
+    return true;
+}
+
+void MarkdownView::clampSelectionToBody()
+{
+    // Obsidian keeps the cursor out of the frontmatter the properties replace (Live Preview).
+    if (m_clamping || m_frontmatterEnd < 0 || !m_doc || mode() != EditorView::Mode::LivePreview)
+        return;
+    const Text& t = m_doc->text();
+    if (m_frontmatterEnd >= t.lineCount())
+        return;
+    const qsizetype limit = t.lineEnd(m_frontmatterEnd);
+    const Selection sel = m_editor->selection();
+    bool inside = false;
+    for (const SelRange& r : sel.ranges())
+        inside = inside || r.from() <= limit;
+    if (!inside)
+        return;
+    m_clamping = true;
+    if (m_frontmatterEnd + 1 >= t.lineCount()) {
+        // No line after the frontmatter: like Obsidian, add one once the user is in the editor.
+        if (m_editor->hasFocus() && !m_editor->isReadOnly()) {
+            Transaction tr;
+            tr.changes = ChangeSet::of(ChangeSpec{t.length(), t.length(), QStringLiteral("\n")}, t.length());
+            tr.selection = Selection::cursor(t.length() + 1);
+            tr.userEvent = QStringLiteral("input");
+            m_editor->dispatch(tr);
+        }
+        m_clamping = false;
+        return;
+    }
+    const qsizetype body = t.lineStart(m_frontmatterEnd + 1);
+    QList<SelRange> ranges;
+    for (const SelRange& r : sel.ranges())
+        ranges << SelRange(std::max(r.anchor, body), std::max(r.head, body));
+    m_editor->setSelection(Selection::create(ranges, sel.mainIndex()), false, false);
+    m_clamping = false;
+}
+
+bool MarkdownView::eventFilter(QObject* obj, QEvent* ev)
+{
+    // ↑ on the first line of the text goes to the properties (their last row / "Add property"),
+    // else to the inline title (Obsidian's shiftFocusBefore).
+    if (obj == m_editor && ev->type() == QEvent::KeyPress && m_doc && mode() != EditorView::Mode::Reading
+        && !m_editor->property("ocSuggestActive").toBool()) {
+        auto* ke = static_cast<QKeyEvent*>(ev);
+        if (ke->key() == Qt::Key_Up && (ke->modifiers() & ~Qt::KeypadModifier) == Qt::NoModifier) {
+            const Selection& sel = m_editor->selection();
+            const Text& t = m_doc->text();
+            const int first = m_frontmatterEnd >= 0 ? m_frontmatterEnd + 1 : 0;
+            if (sel.size() == 1 && sel.main().empty() && first < t.lineCount() && t.lineAt(sel.main().head) == first
+                && std::abs(m_editor->caretRectAt(sel.main().head).top() - m_editor->caretRectAt(t.lineStart(first)).top()) < 1) {
+                if (m_properties->isVisible() && !m_properties->isInvalid() && m_properties->focus(true))
+                    return true;
+                if (m_title->isVisible()) {
+                    m_title->beginRename(false);
+                    return true;
+                }
+            }
+        }
+    }
+    return FileView::eventFilter(obj, ev);
 }
 
 FoldStore* MarkdownView::foldStore() const
@@ -401,10 +718,19 @@ void MarkdownView::setEphemeralState(const QJsonObject& e)
         const QJsonArray matches = e.value(QStringLiteral("match")).toObject().value(QStringLiteral("matches")).toArray();
         if (!matches.isEmpty()) {
             const QJsonArray m = matches.first().toArray();
-            const qsizetype len = m_doc->text().length();
+            const Text& t = m_doc->text();
+            const qsizetype len = t.length();
             const qsizetype a = std::clamp<qsizetype>(m.at(0).toInteger(), 0, len), b = std::clamp<qsizetype>(m.at(1).toInteger(), 0, len);
-            m_editor->setSelection(Selection::single(a, b), false);
-            m_editor->scrollToPos(a, true);
+            if (m_frontmatterEnd >= 0 && a <= t.lineEnd(m_frontmatterEnd)) {
+                // a match in the frontmatter the properties replace: focus that property (Obsidian's propertyMatches)
+                m_editor->setScrollTop(-1e9);
+                const QString key = props::FrontmatterEditor(t).keyAtLine(t.lineAt(a));
+                if (!key.isEmpty())
+                    m_properties->focusProperty(key);
+            } else {
+                m_editor->setSelection(Selection::single(a, b), false);
+                m_editor->scrollToPos(a, true);
+            }
         }
     }
     if (e.contains(QStringLiteral("rename")) && m_title->isVisible() && mode() != EditorView::Mode::Reading)

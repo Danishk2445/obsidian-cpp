@@ -205,6 +205,10 @@ void EditorView::paintLineNumbers(QPainter& p)
         const double vy = docToViewport(QPointF(0, top)).y();
         if (vy > viewH)
             break;
+        if (m_layout.lineHeight(line) <= 0) { // collapsed (hidden frontmatter): no number
+            ++line;
+            continue;
+        }
         if (top != lastTop) { // one number per unit (a rendered block shows its first line's)
             lastTop = top;
             double baseline = std::round(m_layout.lineHeight(line) / 2 + fm.ascent() / 2 - fm.descent() / 2);
@@ -240,14 +244,24 @@ void EditorView::setTopWidget(QWidget* widget, int bottomMargin)
     updateTopWidget();
 }
 
+void EditorView::setTopWidgetOverhang(int px)
+{
+    m_topOverhang = std::max(0, px);
+    updateTopWidget();
+}
+
+qreal EditorView::measureTopWidget() const
+{
+    if (!m_topWidget || m_topWidget->isHidden())
+        return 0;
+    const int w = int(m_columnWidth) + m_topOverhang; // the whole text column, gutter included
+    return (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
+}
+
 void EditorView::updateTopWidget()
 {
     const double docTop = scrollTop();
-    qreal h = 0;
-    if (m_topWidget && !m_topWidget->isHidden()) {
-        const int w = int(m_layout.contentWidth());
-        h = (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
-    }
+    const qreal h = measureTopWidget();
     m_topWidgetH = h;
     m_marginTop = m_topBase + m_topWidgetH;
     if (docTop > 0)
@@ -261,9 +275,9 @@ void EditorView::positionTopWidget()
 {
     if (!m_topWidget)
         return;
-    const int w = int(m_columnWidth);
+    const int w = int(m_columnWidth) + m_topOverhang;
     const int h = int(std::max<qreal>(0, m_topWidgetH - m_topWidgetMargin));
-    m_topWidget->setGeometry(int(m_columnLeft), int(std::round(m_topBase - m_scrollTop)), w, h);
+    m_topWidget->setGeometry(int(m_columnLeft) - m_topOverhang, int(std::round(m_topBase - m_scrollTop)), w, h);
 }
 
 void EditorView::setLineWrapping(bool) {}
@@ -475,9 +489,8 @@ void EditorView::updateGeometryAndLayout()
     m_layout.setContentWidth(lineWidth);
     if (m_topWidget) {
         // its height depends on the width (wrapping title)
-        const int w = int(m_columnWidth);
-        const qreal h = (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
-        if (!qFuzzyCompare(h, m_topWidgetH)) {
+        const qreal h = measureTopWidget();
+        if (!qFuzzyCompare(h + 1, m_topWidgetH + 1)) {
             m_topWidgetH = h;
             m_marginTop = m_topBase + m_topWidgetH;
         }
@@ -809,9 +822,7 @@ bool EditorView::viewportEvent(QEvent* e)
         updateHoveredLink(QPoint(-1, -1));
     } else if (e->type() == QEvent::LayoutRequest && m_topWidget) {
         // the top widget's content changed (updateGeometry() posts this to its parent)
-        const int w = int(m_layout.contentWidth());
-        const qreal h = m_topWidget->isHidden() ? 0
-                        : (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
+        const qreal h = measureTopWidget();
         if (!qFuzzyCompare(h + 1, m_topWidgetH + 1))
             updateTopWidget();
     }

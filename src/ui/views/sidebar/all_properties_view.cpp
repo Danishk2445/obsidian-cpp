@@ -2,12 +2,19 @@
 
 #include "core/config/config_store.h"
 #include "core/metadata/metadata_cache.h"
+#include "core/properties/property_types.h"
+#include "core/properties/vault_properties.h"
 #include "core/vault_session.h"
 #include "markdown/metadata.h"
+#include "render/theme/icons.h"
+#include "ui/overlay/modal.h"
+#include "ui/overlay/overlay_layer.h"
+#include "ui/shell/main_window.h"
 #include "ui/views/file_explorer/file_actions.h"
 #include "ui/workspace/workspace.h"
 
 #include <QJsonObject>
+#include <QMenu>
 #include <QVBoxLayout>
 
 namespace oc {
@@ -44,6 +51,27 @@ AllPropertiesView::AllPropertiesView(WorkspaceLeaf* leaf, QWidget* parent)
         if (workspace() && this->leaf())
             workspace()->setActiveLeaf(this->leaf(), false);
     };
+    h.contextMenu = [this](TreeList::Node* n, const QPoint& globalPos) {
+        if (!n || n->kind != TreeList::Kind::Item)
+            return;
+        auto* menu = new QMenu(this);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        populateMenu(menu, n->data.toString());
+        menu->popup(globalPos);
+    };
+    h.rename = [this](TreeList::Node* n) {
+        if (n && n->kind == TreeList::Kind::Item && !PropertyTypeManager::isReserved(n->data.toString()))
+            m_tree->startRename(n);
+    };
+    h.renamed = [this](TreeList::Node* n, const QString& text) { renameProperty(n->data.toString(), text.trimmed()); };
+    h.remove = [this](const QList<TreeList::Node*>& nodes) {
+        QStringList names;
+        for (TreeList::Node* n : nodes)
+            if (n->kind == TreeList::Kind::Item && !PropertyTypeManager::isReserved(n->data.toString()))
+                names << n->data.toString();
+        for (const QString& name : std::as_const(names))
+            deleteProperty(name);
+    };
 
     m_update.setSingleShot(true);
     m_update.setInterval(100); // Obsidian's requestUpdate debounce
@@ -58,6 +86,8 @@ AllPropertiesView::AllPropertiesView(WorkspaceLeaf* leaf, QWidget* parent)
             });
             m_connections << connect(mc, &MetadataCache::deleted, this, [this] { m_update.start(); });
         }
+    if (PropertyTypeManager* types = PropertyTypeManager::of(session()))
+        m_connections << connect(types, &PropertyTypeManager::changed, this, [this] { m_update.start(); });
 }
 
 AllPropertiesView::~AllPropertiesView()
@@ -121,6 +151,83 @@ void AllPropertiesView::activateProperty(const QString& name, bool modifier)
     searchFor(sessionWindow(session()), QStringLiteral("[\"%1\"]").arg(name), modifier);
 }
 
+void AllPropertiesView::populateMenu(QMenu* menu, const QString& name)
+{
+    PropertyTypeManager* types = PropertyTypeManager::of(session());
+    if (!types)
+        return;
+    const bool reserved = PropertyTypeManager::isReserved(name);
+    auto icon = [](const QString& n) { return IconProvider::instance().icon(n, 16); };
+    QMenu* sub = menu->addMenu(icon(QStringLiteral("menu")), tr("Property type"));
+    const QString assigned = types->assignedType(name);
+    if (!reserved) {
+        const QString inferred = props::propertyType(types->typeInfo(name).inferred).name;
+        QAction* a = sub->addAction(icon(QStringLiteral("loader")), assigned.isEmpty() ? tr("Automatic (%1)").arg(inferred) : tr("Automatic"), this,
+                                    [types, name] { types->unsetType(name); });
+        a->setCheckable(true);
+        a->setChecked(assigned.isEmpty());
+    }
+    for (const props::PropertyType& t : props::menuPropertyTypes(name)) {
+        QAction* a = sub->addAction(icon(t.icon), t.name, this, [types, name, id = t.id] { types->setType(name, id); });
+        a->setCheckable(true);
+        a->setChecked(t.id == assigned);
+        a->setEnabled(!reserved);
+    }
+    menu->addSeparator();
+    QAction* rename = menu->addAction(icon(QStringLiteral("edit-3")), tr("Rename"), this, [this, name] {
+        if (TreeList::Node* n = m_tree->findNode(name.toLower()))
+            m_tree->startRename(n);
+    });
+    rename->setEnabled(!reserved);
+    menu->addSeparator();
+    QAction* del = menu->addAction(icon(QStringLiteral("trash-2")), tr("Delete property"), this, [this, name] { deleteProperty(name); });
+    del->setEnabled(!reserved);
+    del->setProperty("ocWarning", true);
+}
+
+void AllPropertiesView::renameProperty(const QString& from, const QString& to)
+{
+    VaultSession* s = session();
+    MainWindow* w = sessionWindow(s);
+    if (to == from)
+        return;
+    if (to.isEmpty()) {
+        if (w)
+            w->notices()->show(tr("Property name cannot be empty."));
+        return;
+    }
+    auto run = [this, from, to] {
+        QString err;
+        props::renameProperty(session(), from, to, &err);
+        if (!err.isEmpty())
+            if (MainWindow* win = sessionWindow(session()))
+                win->notices()->show(err);
+        m_update.start();
+    };
+    if (props::propertyExists(s, to) && to.compare(from, Qt::CaseInsensitive) != 0 && w && w->overlay()) {
+        QPointer<AllPropertiesView> self = this;
+        ConfirmModal::ask(w->overlay(), tr("Merge property “%1” with “%2”?").arg(from, to),
+                          tr("In case of conflicts, the values will be merged or the value from “%1” will be used.").arg(from),
+                          {{tr("Save"), Modal::ButtonStyle::Cta}, {tr("Cancel"), Modal::ButtonStyle::Normal}}, QString(),
+                          [self, run](int button, bool) {
+                              if (self && button == 0)
+                                  run();
+                          });
+        return;
+    }
+    run();
+}
+
+void AllPropertiesView::deleteProperty(const QString& name)
+{
+    QString err;
+    props::deleteProperty(session(), name, &err);
+    if (!err.isEmpty())
+        if (MainWindow* w = sessionWindow(session()))
+            w->notices()->show(err);
+    m_update.start();
+}
+
 void AllPropertiesView::update()
 {
     m_update.stop();
@@ -132,12 +239,8 @@ void AllPropertiesView::update()
             caches << mc->fileCache(path);
     // Assigned types: the reserved ones plus types.json ({"types": {name: type}}) from the clone's config.
     QHash<QString, QPair<QString, QString>> assigned = reservedPropertyTypes();
-    if (s && s->config()) {
-        const QJsonObject types = s->config()->object(QStringLiteral("types")).value(QStringLiteral("types")).toObject();
-        for (auto it = types.begin(); it != types.end(); ++it)
-            if (!assigned.contains(it.key().toLower()))
-                assigned.insert(it.key().toLower(), {it.key(), it.value().toString()});
-    }
+    if (PropertyTypeManager* types = PropertyTypeManager::of(s))
+        assigned = types->assignedTypes();
     const QHash<QString, PropertyInfo> all = collectProperties(caches, assigned);
     m_properties.clear();
     for (const PropertyInfo& p : all)

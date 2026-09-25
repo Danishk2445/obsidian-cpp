@@ -7,6 +7,8 @@
 
 #include <QTimer>
 
+class QMenu;
+
 namespace oc {
 
 // Obsidian's "All properties" view (view type "all-properties", core plugin "properties"): every
@@ -40,6 +42,11 @@ public:
     QList<PropertyInfo> properties() const { return m_properties; } // in display order
     void update();
     void activateProperty(const QString& name, bool modifier);
+    // The context menu (Obsidian's): Property type submenu, Rename, Delete property — through the
+    // properties core (PropertyTypeManager, props::renameProperty / deleteProperty).
+    void populateMenu(QMenu* menu, const QString& name);
+    void renameProperty(const QString& from, const QString& to); // asks before merging into an existing one
+    void deleteProperty(const QString& name);
 
 private:
     NavHeader* m_header;

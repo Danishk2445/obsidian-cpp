@@ -412,8 +412,8 @@ TEST_F(SidebarTest, BacklinksClickOpensMatch)
     ASSERT_TRUE(QTest::qWaitFor([&] { return !pane->linkedFiles().isEmpty(); }, 5000));
     settle();
     TreeList* t = pane->tree();
-    int row = -1;
-    for (int i = 0; i < t->rowCount() && row < 0; ++i)
+    int row = -1; // the last match: the first one is the link in the properties, which get the focus instead
+    for (int i = 0; i < t->rowCount(); ++i)
         if (t->nodeAt(i)->kind == TreeList::Kind::Match)
             row = i;
     ASSERT_GE(row, 0);
