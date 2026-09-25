@@ -40,6 +40,7 @@
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/placeholder_views.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -51,6 +52,7 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTimer>
@@ -357,6 +359,11 @@ void Application::populateWindow(MainWindow* w)
         GraphViewHooks gh;
         gh.openSearch = [](Workspace* ws, const QString& query) { openGlobalSearch(ws->session(), query); };
         gh.deleteFile = [](VaultSession* s, TFile* f) { promptForDeletion(s, f); };
+        gh.fileMenu = [](QMenu* menu, TFile* file, WorkspaceLeaf* leaf) {
+            QList<MenuEntry> items;
+            FileMenuHooks::collect(items, file, QStringLiteral("graph-context-menu"), leaf, leaf ? leaf->view() : nullptr);
+            buildSectionedMenu(menu, items);
+        };
         setGraphViewHooks(std::move(gh));
     }
     {
