@@ -62,7 +62,7 @@ protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
 
 private:
-    enum class Kind { None, Link, Tag, Footnote };
+    enum class Kind { None, Link, Tag, Footnote, Command };
     struct Context {
         Kind kind = Kind::None;
         int line = -1;
@@ -84,6 +84,8 @@ private:
     void chooseLink(const LinkSuggestion& s, const QString& key);
     void chooseTag(const TagSuggestion& s, bool tab);
     void chooseFootnote(const FootnoteItem& f);
+    void chooseCommand(const QString& id);
+    bool slashCommandsEnabled() const;
     bool insertBlockIdElsewhere(const LinkSuggestion& s, const QString& id);
 
     QPointer<MarkdownView> m_view;
@@ -100,6 +102,7 @@ private:
     QList<LinkSuggestion> m_linkItems;
     QList<TagSuggestion> m_tagItems;
     QList<FootnoteItem> m_footnoteItems;
+    QStringList m_commandItems; // command ids
 };
 
 } // namespace oc
