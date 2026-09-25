@@ -94,7 +94,7 @@ TEST_P(MediaShots, PdfView)
     v->viewer()->showSearch();
     v->viewer()->findInput()->setText("needle");
     QTest::keyClick(v->viewer()->findInput(), Qt::Key_Return);
-    QTest::qWaitFor([&] { return !v->viewer()->search()->isPending(); }, 5000);
+    (void)QTest::qWaitFor([&] { return !v->viewer()->search()->isPending(); }, 5000);
     settle();
     EXPECT_TRUE(shot("media-pdf-find-" + suffix() + ".png"));
 }
@@ -117,7 +117,7 @@ TEST_P(MediaShots, ImageAudioVideoViews)
     settle();
     // the first frame, paused at 0.5 s
     vv->player()->controller()->play();
-    QTest::qWaitFor([&] { return vv->player()->controller()->position() > 500; }, 4000);
+    (void)QTest::qWaitFor([&] { return vv->player()->controller()->position() > 500; }, 4000);
     vv->player()->controller()->pause();
     settle();
     EXPECT_TRUE(shot("media-video-" + suffix() + ".png"));
