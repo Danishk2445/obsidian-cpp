@@ -1401,7 +1401,8 @@ void Workspace::Impl::buildDefaultLayout()
             t->currentTab = 0;
     };
     addSide(left, {QStringLiteral("file-explorer"), QStringLiteral("search"), QStringLiteral("bookmarks")});
-    addSide(right, {QStringLiteral("backlink"), QStringLiteral("outgoing-link"), QStringLiteral("tag"), QStringLiteral("outline")});
+    addSide(right, {QStringLiteral("backlink"), QStringLiteral("outgoing-link"), QStringLiteral("tag"), QStringLiteral("outline"),
+                    QStringLiteral("all-properties")});
     WorkspaceLeaf* main = mostRecentLeaf(root);
     // Like Obsidian, a fresh layout reopens the most recent file.
     if (main && !lastOpenFiles.isEmpty()) {

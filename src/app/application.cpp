@@ -40,6 +40,7 @@
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
 #include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
@@ -329,6 +330,7 @@ void Application::populateWindow(MainWindow* w)
     // views land). Other modules register theirs here too.
     auto* registry = new ViewRegistry;
     registerCoreViews(*registry);
+    registerSidebarViews(*registry); // backlinks, outgoing links, tags, outline, bookmarks, all properties
     registerMarkdownView(*registry);
     registerFileExplorerView(*registry); // replaces the placeholder
     registerNavigationViews(*registry);  // replaces the "search" placeholder
@@ -356,6 +358,7 @@ void Application::populateWindow(MainWindow* w)
     registerGraphCommands(*commands, workspace);
     registerFileRecoveryCommands(*commands, w);
     registerNoteComposerCommands(*commands, w);
+    registerSidebarCommands(*commands, w);
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
@@ -491,7 +494,11 @@ void Application::wireStatusBar(MainWindow* w)
         }
         sb->setItemVisible(QStringLiteral("editor-status"), true);
     };
-    connect(sb, &StatusBar::itemClicked, w, [sb, activeMarkdown, modes](const QString& id) {
+    connect(sb, &StatusBar::itemClicked, w, [sb, session, activeMarkdown, modes](const QString& id) {
+        if (id == u"backlinks" && session->commands()) {
+            session->commands()->execute(QStringLiteral("backlink:open")); // like Obsidian's backlink count
+            return;
+        }
         MarkdownView* mv = activeMarkdown();
         if (id != u"editor-status" || !mv)
             return;
