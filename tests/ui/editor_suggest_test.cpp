@@ -1,6 +1,7 @@
 // Editor suggest popups in a real window: "[[" link suggestions (typing opens, Enter / Tab / "#"
 // accept, Escape closes), "#" tags, "[^" footnotes, the hotkey dispatcher leaving the keys alone.
 #include "core/commands/command_registry.h"
+#include "core/config/config_store.h"
 #include "core/documents/document.h"
 #include "core/documents/document_manager.h"
 #include "core/metadata/metadata_cache.h"
@@ -17,6 +18,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTest>
 #include <gtest/gtest.h>
@@ -266,4 +268,45 @@ TEST_F(EditorSuggestTest, HotkeysYieldToPopup)
     QTest::keyClick(e, Qt::Key_Tab);
     EXPECT_EQ(runs, 0);
     EXPECT_EQ(lastLine(e), "[[Other]]");
+}
+
+TEST_F(EditorSuggestTest, SlashCommands)
+{
+    auto* reg = new CommandRegistry(session.get());
+    session->setCommands(reg);
+    int runs = 0;
+    Command c;
+    c.id = "test:shout";
+    c.name = "Test: Shout loudly";
+    c.callback = [&] { ++runs; };
+    c.defaultHotkeys = {Hotkey::parse("Mod+Shift+L")};
+    reg->add(c);
+    Command other;
+    other.id = "test:other";
+    other.name = "Something else";
+    other.callback = [] {};
+    reg->add(other);
+    MarkdownView* mv = open("Welcome.md");
+    ASSERT_TRUE(mv);
+    EditorView* e = mv->editor();
+    EditorSuggest* s = mv->editorSuggest();
+    // Off by default (core plugin "slash-command").
+    typeAtEnd(e, " /sho");
+    QTest::qWait(150);
+    EXPECT_FALSE(s->isOpen());
+    session->config()->setObject("core-plugins", QJsonObject{{"slash-command", true}});
+    typeAtEnd(e, "u");
+    ASSERT_TRUE(QTest::qWaitFor([&] { return s->isOpen(); }, 2000));
+    const QList<Suggestion> rows = s->popup()->list()->suggestions();
+    ASSERT_EQ(rows.size(), 1);
+    EXPECT_EQ(rows[0].prefix, "Test");
+    EXPECT_EQ(rows[0].title, "Shout loudly");
+    EXPECT_FALSE(rows[0].hotkeys.isEmpty());
+    QTest::keyClick(e, Qt::Key_Return);
+    EXPECT_EQ(runs, 1);
+    EXPECT_EQ(lastLine(e), " "); // "/shou" removed (Welcome.md ends with a newline)
+    // "/" inside a word or path doesn't trigger.
+    typeAtEnd(e, "a/b");
+    QTest::qWait(150);
+    EXPECT_FALSE(s->isOpen());
 }
