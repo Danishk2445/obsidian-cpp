@@ -717,6 +717,20 @@ QList<Property> FrontmatterEditor::properties() const
     return out;
 }
 
+QString FrontmatterEditor::keyAtLine(int line) const
+{
+    if (!m_span.exists || !m_mappable || m_modified || m_state != State::Valid)
+        return {};
+    int l = m_span.openLine + 1;
+    for (const ItemPtr& it : m_items) {
+        const int n = int(it->lines.size());
+        if (line >= l && line < l + n)
+            return it->entry ? it->key : QString();
+        l += n;
+    }
+    return {};
+}
+
 int FrontmatterEditor::entryIndex(const QString& key) const
 {
     for (int i = 0; i < m_items.size(); ++i)

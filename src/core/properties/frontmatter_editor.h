@@ -58,6 +58,9 @@ public:
     bool isMappable() const { return m_mappable; }
     // Line (in the text) of the first YAML syntax error, or -1 (for the editor's error marker).
     int errorLine() const { return m_errorLine; }
+    // The property whose lines (leading comments, key line, value) hold `line` of the original text; ""
+    // for other lines, unmappable frontmatter or once edited.
+    QString keyAtLine(int line) const;
 
     // The properties in order (reflecting the edits made so far).
     QList<Property> properties() const;
