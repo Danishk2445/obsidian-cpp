@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 
 class QMimeData;
 
@@ -36,6 +37,10 @@ bool isUrl(const QString& text);
 bool handlePaste(MarkdownView& view, const QMimeData& data);
 // Drops: the same, minus the URL-over-selection rule.
 bool handleDrop(MarkdownView& view, const QMimeData& data);
+
+// editor:attach-file: copies each file in as a new attachment (even one already in the vault, like
+// Obsidian) and replaces the selection with its embed. Returns the number inserted.
+int attachFiles(MarkdownView& view, const QStringList& absolutePaths);
 
 // Registers the paste/drop handlers with EditorHooks once (MarkdownView does this).
 void installHooks();

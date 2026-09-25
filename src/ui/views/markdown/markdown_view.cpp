@@ -482,6 +482,11 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
 
 void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)
 {
+    openLinkText(ws, target, kind, source, newLeaf ? Workspace::NewLeaf::Tab : Workspace::NewLeaf::No);
+}
+
+void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, Workspace::NewLeaf mode)
+{
     enum { WikiLink = 0, Embed = 1, MdLink = 2, Url = 3, Tag = 4 };
     QString t = target;
     if (kind == MdLink)
@@ -522,7 +527,7 @@ void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, 
     QJsonObject eState;
     if (!subpath.isEmpty())
         eState.insert(QStringLiteral("subpath"), subpath);
-    ws->openFile(file, newLeaf ? Workspace::NewLeaf::Tab : Workspace::NewLeaf::No, eState);
+    ws->openFile(file, mode, eState);
 }
 
 void MarkdownView::navigateToSubpath(const QString& subpath)
