@@ -308,10 +308,14 @@ CachedMetadata extractMetadata(const SyntaxTree& tree, const Text& text)
                     }
                 }
                 md.blocks.insert(bid.toLower(), BlockCache{bid, r});
-                // attach to the containing list item / section
+                // attach to the (innermost) list item it belongs to / the containing section
+                ListItemCache* item = nullptr;
                 for (ListItemCache& li : md.listItems)
-                    if (li.position.start.line <= n.fromLine && li.position.end.line >= n.toLine - 1)
-                        li.id = bid;
+                    if (li.position.start.line <= n.fromLine && li.position.end.line >= n.toLine - 1
+                        && (!item || li.position.start.line >= item->position.start.line))
+                        item = &li;
+                if (item)
+                    item->id = bid;
                 for (SectionCache& sc : md.sections)
                     if (sc.position.start.line <= n.fromLine && sc.position.end.line >= n.toLine - 1)
                         sc.id = bid;

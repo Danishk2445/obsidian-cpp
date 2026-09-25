@@ -357,7 +357,7 @@ void NoteEmbedWidget::mouseMoveEvent(QMouseEvent* e)
 {
     if (e->buttons() == Qt::NoButton)
         updateHover(e->position().toPoint());
-    QWidget::mouseMoveEvent(e);
+    e->accept(); // (the note's view under it would report its own link: the embed's markdown)
 }
 
 void NoteEmbedWidget::mousePressEvent(QMouseEvent* e)

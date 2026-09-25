@@ -73,3 +73,4 @@ oc_add_test(perf_vim_test SOURCES perf/vim_perf_test.cpp editor/vim_test_support
 oc_add_test(ui_media_pdf_test SOURCES ui/media_pdf_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_media_player_test SOURCES ui/media_player_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_media_embeds_test SOURCES ui/media_embeds_test.cpp ui/media_shots_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_note_embeds_test SOURCES ui/note_embeds_test.cpp ui/note_embeds_shots_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
