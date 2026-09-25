@@ -1132,8 +1132,14 @@ void MultiSelectPropertyEditor::setReadOnly(bool ro)
 
 void MultiSelectPropertyEditor::rebuild()
 {
-    const bool hadFocus = hasFocusWithin() && !m_input->hasFocus();
-    qDeleteAll(m_pills);
+    // Pills may be rebuilt from their own event handlers (Backspace removes the focused pill): they go
+    // later, never while Qt is still delivering an event to them.
+    for (PropertyPill* p : std::as_const(m_pills)) {
+        if (p->hasFocus())
+            p->clearFocus();
+        p->hide();
+        p->deleteLater();
+    }
     m_pills.clear();
     for (int i = 0; i < m_values.size(); ++i) {
         auto* pill = new PropertyPill(this, i, m_values[i]);
@@ -1147,7 +1153,6 @@ void MultiSelectPropertyEditor::rebuild()
     }
     m_input->setPlaceholderText(m_values.isEmpty() ? kEmpty : QString());
     m_input->setVisible(!m_readOnly || m_values.isEmpty());
-    Q_UNUSED(hadFocus);
     relayout();
 }
 
@@ -1345,7 +1350,10 @@ void MultiSelectPropertyEditor::editValue(int index)
 {
     if (m_readOnly || index < 0 || index >= m_values.size())
         return;
-    delete m_editInput;
+    if (m_editInput)
+        finishEdit(true); // one pill at a time
+    if (index >= m_values.size())
+        return;
     m_editIndex = index;
     m_editInput = new QLineEdit(this);
     m_editInput->setObjectName(QStringLiteral("ocPropertyListInput"));
@@ -1360,6 +1368,33 @@ void MultiSelectPropertyEditor::editValue(int index)
     relayout();
     m_editInput->setFocus(Qt::OtherFocusReason);
     m_editInput->selectAll();
+}
+
+void MultiSelectPropertyEditor::finishEdit(bool accept)
+{
+    if (!m_editInput)
+        return;
+    const int i = m_editIndex;
+    const QString text = m_editInput->text();
+    QLineEdit* ed = m_editInput;
+    m_editInput = nullptr;
+    m_editIndex = -1;
+    ed->hide();
+    ed->deleteLater();
+    bool changedValue = false;
+    if (accept && !text.isEmpty()) {
+        if (const auto opt = createOption(text)) {
+            const int dup = findDuplicate(*opt, m_values);
+            if ((dup < 0 || dup == i) && m_values.value(i) != *opt) {
+                m_values[i] = *opt;
+                changedValue = true;
+            }
+        }
+    }
+    rebuild();
+    focusPill(i);
+    if (changedValue)
+        triggerChange();
 }
 
 void MultiSelectPropertyEditor::triggerChange() { emit changed(QVariant(m_values)); }
@@ -1440,44 +1475,22 @@ bool MultiSelectPropertyEditor::eventFilter(QObject* obj, QEvent* ev)
             commitInput();
         }
     } else if (m_editInput && obj == m_editInput) {
-        auto finish = [this](bool accept) {
-            if (!m_editInput)
-                return;
-            const int i = m_editIndex;
-            const QString text = m_editInput->text();
-            QLineEdit* ed = m_editInput;
-            m_editInput = nullptr;
-            m_editIndex = -1;
-            ed->deleteLater();
-            bool changedValue = false;
-            if (accept && !text.isEmpty()) {
-                if (const auto opt = createOption(text)) {
-                    QStringList others = m_values;
-                    others.removeAt(i);
-                    const int dup = findDuplicate(*opt, m_values);
-                    if ((dup < 0 || dup == i) && m_values.value(i) != *opt) {
-                        m_values[i] = *opt;
-                        changedValue = true;
-                    }
-                }
-            }
-            rebuild();
-            focusPill(i);
-            if (changedValue)
-                triggerChange();
-        };
         if (ev->type() == QEvent::KeyPress) {
             auto* ke = static_cast<QKeyEvent*>(ev);
             if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) && !m_editInput->text().isEmpty()) {
-                finish(true);
+                finishEdit(true);
                 return true;
             }
             if (ke->key() == Qt::Key_Escape) {
-                finish(false);
+                finishEdit(false);
                 return true;
             }
         } else if (ev->type() == QEvent::FocusOut && static_cast<QFocusEvent*>(ev)->reason() != Qt::PopupFocusReason) {
-            QTimer::singleShot(0, this, [finish] { finish(true); });
+            QPointer<QLineEdit> ed = m_editInput;
+            QTimer::singleShot(0, this, [this, ed] {
+                if (ed && ed == m_editInput)
+                    finishEdit(true);
+            });
         }
     }
     return PropertyValueEditor::eventFilter(obj, ev);

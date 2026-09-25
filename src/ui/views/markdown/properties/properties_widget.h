@@ -192,6 +192,7 @@ private:
     int layoutContent(int width, bool apply) const;
     void relayout();
     void rowTypeChanged(const QString& lowerKey);
+    void connectTypes();
     PropertyRow* pendingRow() const;
 
     PropertyEditorContext m_ctx;

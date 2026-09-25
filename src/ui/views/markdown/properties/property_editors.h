@@ -321,6 +321,7 @@ private:
     int findDuplicate(const QString& value, const QStringList& in) const;
     void triggerChange();
     void commitInput();
+    void finishEdit(bool accept); // the pill being edited in place
 
     Kind m_kind;
     QStringList m_values;

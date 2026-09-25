@@ -922,8 +922,19 @@ void PropertiesWidget::setContext(const PropertyEditorContext& ctx)
 {
     m_ctx = ctx;
     disconnect(m_typesConn);
-    if (PropertyTypeManager* types = PropertyTypeManager::of(session()))
-        m_typesConn = connect(types, &PropertyTypeManager::changed, this, &PropertiesWidget::rowTypeChanged);
+    m_typesOwner = nullptr;
+    connectTypes();
+}
+
+void PropertiesWidget::connectTypes()
+{
+    // the session may only be known once a file is loaded
+    PropertyTypeManager* types = PropertyTypeManager::of(session());
+    if (!types || m_typesOwner == types)
+        return;
+    disconnect(m_typesConn);
+    m_typesOwner = types;
+    m_typesConn = connect(types, &PropertyTypeManager::changed, this, &PropertiesWidget::rowTypeChanged);
 }
 
 void PropertiesWidget::rowTypeChanged(const QString& lowerKey)
@@ -935,6 +946,7 @@ void PropertiesWidget::rowTypeChanged(const QString& lowerKey)
 
 void PropertiesWidget::synchronize(props::FrontmatterEditor::State state, const QList<props::Property>& properties)
 {
+    connectTypes();
     m_state = state;
     QList<PropertyRow*> rows;
     if (state != props::FrontmatterEditor::State::Invalid) {

@@ -13,6 +13,8 @@
 #include "ui/views/markdown/properties/properties_style.h"
 #include "ui/views/markdown/properties/properties_widget.h"
 #include "ui/views/markdown/properties/property_suggest.h"
+#include "ui/views/sidebar/all_properties_view.h"
+#include "ui/views/sidebar/sidebar_registration.h"
 
 #include <QClipboard>
 #include <QJsonArray>
@@ -191,6 +193,16 @@ TEST_F(PropertiesTest, AddAndRemoveListItems)
     list->focusPill(1);
     QTest::keyClick(list->pill(1), Qt::Key_Backspace);
     EXPECT_TRUE(text(mv).contains("list:\n  - two\nmeta:"));
+    // Enter on a focused pill edits it in place
+    list = qobject_cast<MultiSelectPropertyEditor*>(p->row("list")->editor());
+    list->focusPill(0);
+    QTest::keyClick(list->pill(0), Qt::Key_Return);
+    QLineEdit* editing = qobject_cast<QLineEdit*>(QApplication::focusWidget());
+    ASSERT_TRUE(editing && editing != list->input());
+    editing->selectAll();
+    QTest::keyClicks(editing, "2");
+    QTest::keyClick(editing, Qt::Key_Return);
+    EXPECT_TRUE(text(mv).contains("list:\n  - \"2\"\nmeta:"));
     // removing every item stores null
     list = qobject_cast<MultiSelectPropertyEditor*>(p->row("list")->editor());
     list->removeValue(0);
@@ -564,6 +576,44 @@ TEST_F(PropertiesTest, NotesWithoutEditsAreNotWritten)
     EXPECT_FALSE(mv->document()->isDirty());
     mv->save();
     EXPECT_EQ(test::readFile(root + "/Note.md"), before);
+}
+
+TEST_F(PropertiesTest, AllPropertiesMenuRenameAndDelete)
+{
+    registerSidebarViews(*registry);
+    MarkdownView* mv = open("Note.md");
+    WorkspaceLeaf* leaf = window->workspace()->ensureSideLeaf(QStringLiteral("all-properties"), Workspace::Side::Right, true);
+    auto* view = qobject_cast<AllPropertiesView*>(leaf->view());
+    ASSERT_TRUE(view);
+    view->update();
+    QMenu menu;
+    view->populateMenu(&menu, QStringLiteral("status"));
+    QStringList titles;
+    for (QAction* a : menu.actions())
+        if (!a->isSeparator())
+            titles << a->text();
+    EXPECT_EQ(titles, QStringList({"Property type", "Rename", "Delete property"}));
+    // changing the type in the sidebar re-renders the open note's property
+    for (QAction* a : menu.actions().first()->menu()->actions())
+        if (a->text() == "Checkbox")
+            a->trigger();
+    EXPECT_EQ(PropertyTypeManager::of(session.get())->assignedType("status"), "checkbox");
+    PropertyTypeManager::of(session.get())->setType("title", "multitext");
+    EXPECT_EQ(props(mv)->row("title")->widgetType(), "multitext");
+    // rename across the vault (the open note through its document: one undoable change)
+    view->renameProperty(QStringLiteral("count"), QStringLiteral("total"));
+    EXPECT_TRUE(text(mv).contains("\ntotal: 3\ndone: false\n"));
+    ASSERT_TRUE(props(mv)->row("total"));
+    // delete across the vault: Other.md loses "status" (its other property stays)
+    view->deleteProperty(QStringLiteral("status"));
+    EXPECT_EQ(test::readFile(root + "/Other.md"), QByteArray("---\ntitle: Other note\n---\nOther body\n"));
+    EXPECT_EQ(PropertyTypeManager::of(session.get())->assignedType("status"), "");
+    // reserved properties can't be renamed or deleted
+    QMenu reserved;
+    view->populateMenu(&reserved, QStringLiteral("tags"));
+    for (QAction* a : reserved.actions())
+        if (a->text() == "Rename" || a->text() == "Delete property")
+            EXPECT_FALSE(a->isEnabled());
 }
 
 // ---- screenshots (OC_SHOT_DIR) ----------------------------------------------------------------------
