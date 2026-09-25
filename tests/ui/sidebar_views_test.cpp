@@ -789,6 +789,33 @@ TEST_F(SidebarTest, Screenshots)
             settle();
             window->grab().save(dir + QStringLiteral("/sidebar-%1-%2.png").arg(QString::fromLatin1(s.name), QString::fromLatin1(suffix)));
             l->view()->grab().save(dir + QStringLiteral("/sidebar-%1-%2-view.png").arg(QString::fromLatin1(s.name), QString::fromLatin1(suffix)));
+            // states: a hovered match (Link / more-context buttons), the focus ring, the current section
+            TreeList* t = l->view()->findChild<TreeList*>();
+            if (!t)
+                continue;
+            window->workspace()->setActiveLeaf(l, false);
+            int hover = -1, focus = -1;
+            for (int i = 0; i < t->rowCount(); ++i) {
+                if (t->nodeAt(i)->kind == TreeList::Kind::Match)
+                    hover = i; // the last one
+                else if (t->nodeAt(i)->kind == TreeList::Kind::Item && focus < 0)
+                    focus = i;
+            }
+            if (auto* o = qobject_cast<OutlineView*>(l->view())) {
+                auto* mv = qobject_cast<MarkdownView*>(window->workspace()->activeRootLeaf()->view());
+                mv->editor()->setCursorPosition(mv->document()->text().lineStart(11));
+                o->updateActiveHeading();
+            }
+            if (focus >= 0)
+                t->setFocusedNode(t->nodeAt(focus), false);
+            if (hover >= 0)
+                sendMouse(t->viewport(), QEvent::MouseMove, t->rowRect(hover).center(), Qt::NoButton, Qt::NoButton);
+            else if (focus >= 0 && t->rowCount() > focus + 1)
+                sendMouse(t->viewport(), QEvent::MouseMove, t->rowRect(focus + 1).center(), Qt::NoButton, Qt::NoButton);
+            settle();
+            l->view()->grab().save(dir + QStringLiteral("/sidebar-%1-%2-states.png").arg(QString::fromLatin1(s.name), QString::fromLatin1(suffix)));
+            t->setFocusedNode(nullptr, false);
+            sendMouse(t->viewport(), QEvent::MouseMove, QPoint(-10, -10), Qt::NoButton, Qt::NoButton);
         }
         // the bookmark modal
         open("Target.md");

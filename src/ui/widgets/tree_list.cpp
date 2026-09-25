@@ -29,6 +29,7 @@ QColor tok(const ThemePtr& t, const char* name, const QColor& fallback = {})
 }
 
 constexpr int kDragThreshold = 5;
+constexpr int kHoverIcon = 12; // the match rows' more-context chevrons (both fit a one-line match)
 constexpr int kExpandOnHoverMs = 750;
 constexpr int kAutoScrollEdge = 24;
 
@@ -687,7 +688,7 @@ QRect TreeList::moreButtonRect(int row, bool before) const
     const Node* n = nodeAt(row);
     if (r.isNull() || !n || n->kind != Kind::Match || !(before ? n->moreBefore : n->moreAfter))
         return {};
-    const int w = m_m->iconSize + 6, h = m_m->iconSize + 2;
+    const int w = kHoverIcon + 6, h = kHoverIcon + 2; // .search-result-hover-button: padding 1px 3px
     const int bottom = r.bottom() - (isLastMatch(row) ? 0 : 1);
     return before ? QRect(r.right() - 2 - w + 1, r.top() + 2, w, h) : QRect(r.right() - 2 - w + 1, bottom - 2 - h + 1, w, h);
 }
@@ -1102,9 +1103,10 @@ void TreeList::paintMatch(QPainter& p, int row, const QRect& r)
                 bp.addRoundedRect(QRectF(b), radius, radius);
                 p.fillPath(bp, tok(t, "--background-modifier-hover"));
             }
-            const QPixmap pm = IconProvider::instance().pixmap(before ? QStringLiteral("chevron-up") : QStringLiteral("chevron-down"), m.iconSize,
+            constexpr int icon = kHoverIcon;
+            const QPixmap pm = IconProvider::instance().pixmap(before ? QStringLiteral("chevron-up") : QStringLiteral("chevron-down"), icon,
                                                                hot ? tok(t, "--text-normal") : tok(t, "--text-faint"), 2.0, devicePixelRatioF());
-            p.drawPixmap(QPointF(b.left() + (b.width() - m.iconSize) / 2.0, b.top() + (b.height() - m.iconSize) / 2.0), pm);
+            p.drawPixmap(QPointF(b.left() + (b.width() - icon) / 2.0, b.top() + (b.height() - icon) / 2.0), pm);
         }
         const QRect b = buttonRect(row);
         if (!b.isNull()) {

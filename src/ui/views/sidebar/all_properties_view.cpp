@@ -51,7 +51,11 @@ AllPropertiesView::AllPropertiesView(WorkspaceLeaf* leaf, QWidget* parent)
     if (VaultSession* s = session())
         if (MetadataCache* mc = s->metadata()) {
             m_connections << connect(mc, &MetadataCache::resolved, this, [this] { m_update.start(); });
-            m_connections << connect(mc, &MetadataCache::changed, this, [this] { m_update.start(); });
+            // during the initial index only resolved() (the end of a batch) counts
+            m_connections << connect(mc, &MetadataCache::changed, this, [this, mc] {
+                if (mc->isReady())
+                    m_update.start();
+            });
             m_connections << connect(mc, &MetadataCache::deleted, this, [this] { m_update.start(); });
         }
 }

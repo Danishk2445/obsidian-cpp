@@ -104,3 +104,24 @@ Open parity questions:
   code span or math it stays `\|` where GFM shows `|`.
 - Bare URLs: Obsidian's editor uses a liberal URL regex (many schemes such as `obsidian://`, `file:///`, `ssh://`,
   `www1.`, `example.com/path`, different trailing-punctuation rules); we implement GFM's extended autolinks only.
+
+## Sidebar views (M3)
+- ✅ Backlinks: linked mentions (links, embeds, property links resolving to the note) and unlinked mentions (name +
+  aliases as whole words, any case, outside links and frontmatter; found with the search engine, re-checked
+  incrementally), Obsidian's snippets (100 chars of line context, "Show more context" = list item / section /
+  paragraph, per-snippet more-context buttons), Collapse results, sort orders, search filter, the "Link" button,
+  "Backlinks for X" when pinned / opened for a note; state keys as Obsidian's.
+- ✅ Outgoing links: one row per destination (headings, blocks, unresolved "Not created yet"), unlinked mentions of
+  other notes with destination chips that link them (pipes escaped in tables).
+- ✅ Tags view: vaultTags() counts, nested / flat, name / frequency orders, filter, folds ("tag-pane-fold").
+- ✅ Outline: heading tree (plain-text headings), current section (cursor; scroll in reading view), auto-scroll,
+  collapse / expand all, filter, click → eState {line}, drag a heading to move its section.
+- ✅ Bookmarks: bookmarks.json (Obsidian's item shapes, unknown keys kept), groups, drag reorder (into groups),
+  inline rename, remove, "Bookmark..." modal, the bookmarks:* commands, file-menu / editor-menu items, folds.
+- ✅ All properties: names with counts and type icons (types.json + reserved), orders, filter, click → ["name"].
+- ⬜ Backlinks in document (needs an EditorView bottom widget); All properties' context menu (type, rename,
+  delete); bookmarks for URLs / graphs are kept and shown but can't be created here; leaf groups aren't persisted
+  (a "... for the current file" view follows its note until restart).
+- Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
+  group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
+  the very top adds no blank line before it.
