@@ -62,6 +62,17 @@ public:
     bool runLinkUpdate(const std::function<bool()>& operation, const LinkUpdater::Retarget& retarget,
                        const QStringList& skipSources = {});
 
+    // Obsidian's metadataCache.updateInternalLinks(): apply link edits without asking (open notes get
+    // one undoable change each, closed files a compare-and-swap patch). Returns the links changed.
+    int updateInternalLinks(const QHash<QString, QList<LinkUpdater::Edit>>& edits, int* filesChanged = nullptr)
+    {
+        int files = 0;
+        const int n = applyLinkEdits(edits, &files);
+        if (filesChanged)
+            *filesChanged = files;
+        return n;
+    }
+
 signals:
     // After a rename rewrote links: counts for the "Updated N links in M files." notice.
     void linksUpdated(int links, int files);

@@ -33,6 +33,7 @@
 #include "ui/plugins/file_recovery_ui.h"
 #include "ui/plugins/note_composer_ui.h"
 #include "ui/plugins/pdf_export_ui.h"
+#include "ui/plugins/rename_subpath.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/settings/settings_modal.h"
 #include "ui/settings/settings_pages.h"
@@ -386,6 +387,7 @@ void Application::populateWindow(MainWindow* w)
     registerSidebarCommands(*commands, w);
     registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
     registerExportPdfCommand(*commands, w);  // workspace:export-pdf
+    rename_subpath::registerCommands(*commands, w); // editor:rename-heading + editor menu "Rename this heading/block ID..."
     installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
     SettingsController* settings = SettingsController::of(w);
     settings->setVaultRegistry(m_registry); // "Window frame style" is a registry option

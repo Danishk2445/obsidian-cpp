@@ -25,6 +25,7 @@ oc_add_library(oc_ui
     plugins/core_plugins.cpp
     plugins/file_recovery_ui.cpp
     plugins/pdf_export_ui.cpp
+    plugins/rename_subpath.cpp
     plugins/note_composer_ui.cpp
     plugins/note_plugins_ui.cpp
     settings/hotkeys_tab.cpp
