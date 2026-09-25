@@ -98,7 +98,7 @@ Interfaces other modules/agents build against. Change deliberately and update al
   (`PagePreview::of(window)`: `onLinkHover(source, linktext, sourcePath, globalRect, hoverParent)` for any view
   that shows links; sources: "editor", "preview", "file-explorer", "search", "backlink", "outline", "graph", …).
 - Headless driving: `--script <file>` (src/app/scenario_runner.h: open/cursor/type/key/command/wait/screenshot/
-  expect-line).
+  expect-line; `try <line>` ignores a failing line).
 - `src/ui/widgets/tree_list.h` — `TreeList`: Obsidian's generic `.tree-item` list (painted, virtualized, file
   explorer metrics): items (chevron / icon, prefix, title with highlights, sub-text, flair), pane section headers,
   search-result match snippets (matches box, more-context / action buttons, destination chips) and messages;

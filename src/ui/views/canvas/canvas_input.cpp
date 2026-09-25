@@ -2,6 +2,7 @@
 #include "ui/views/canvas/canvas_widget_p.h"
 
 #include "core/files/file_manager.h"
+#include "core/util/owned_menu.h"
 #include "core/metadata/link_resolver.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/vault/vault.h"
@@ -1269,9 +1270,7 @@ bool CanvasWidget::eventFilter(QObject* obj, QEvent* ev)
 
 QMenu* CanvasWidget::newMenu()
 {
-    auto* menu = new QMenu(this);
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-    return menu;
+    return ownedMenu(this); // an item may close the canvas while the menu is shown
 }
 
 void CanvasWidget::popupMenu(QMenu* menu, const QPoint& globalPos)

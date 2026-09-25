@@ -1,5 +1,6 @@
 #include "editor/editor_view.h"
 
+#include "core/util/owned_menu.h"
 #include "editor/editor_hooks.h"
 #include "editor/embeds/hosted_embeds.h"
 #include "editor/live_preview_decorator.h"
@@ -156,6 +157,67 @@ void EditorView::setReadableLineLength(bool on)
     viewport()->update();
 }
 
+void EditorView::setShowLineNumbers(bool on)
+{
+    if (m_lineNumbers == on)
+        return;
+    m_lineNumbers = on;
+    updateGeometryAndLayout();
+    viewport()->update();
+}
+
+double EditorView::gutterWidth() const
+{
+    if (!m_lineNumbers || m_mode == Mode::Reading || !m_doc)
+        return 0;
+    // .cm-lineNumbers .cm-gutterElement: padding 0 3px 0 5px, min-width 20px (border-box), widest number;
+    // then margin-inline-end: var(--file-folding-offset)
+    const ThemePtr t = currentTheme();
+    QFont f = font();
+    f.setPixelSize(int(std::round(t->px(QStringLiteral("--font-ui-smaller"), -1, 12))));
+    const int digits = int(QString::number(std::max(1, m_doc->text().lineCount())).size());
+    const double numW = QFontMetricsF(f).horizontalAdvance(QString(digits, u'9'));
+    return std::max(20.0, std::ceil(numW) + 8) + t->px(QStringLiteral("--file-folding-offset"), -1, 24);
+}
+
+void EditorView::paintLineNumbers(QPainter& p)
+{
+    const double g = gutterWidth();
+    if (g <= 0 || m_layout.lineCount() == 0)
+        return;
+    const ThemePtr t = currentTheme();
+    QFont f = font();
+    f.setPixelSize(int(std::round(t->px(QStringLiteral("--font-ui-smaller"), -1, 12))));
+    f.setFeature(QFont::Tag("tnum"), 1);
+    p.setFont(f);
+    p.setPen(t->color(QStringLiteral("--text-faint")));
+    const QFontMetricsF fm(f);
+    const double right = m_contentLeft - t->px(QStringLiteral("--file-folding-offset"), -1, 24) - 3;
+    const double viewH = viewport()->height();
+    int line = m_layout.lineAtY(viewportToDoc(QPointF(0, 0)).y());
+    double lastTop = -1;
+    while (line >= 0 && line < m_layout.lineCount()) {
+        if (m_layout.isHidden(line)) {
+            line = std::max(line + 1, m_layout.hiddenRunEnd(line));
+            continue;
+        }
+        const double top = m_layout.lineTop(line);
+        const double vy = docToViewport(QPointF(0, top)).y();
+        if (vy > viewH)
+            break;
+        if (top != lastTop) { // one number per unit (a rendered block shows its first line's)
+            lastTop = top;
+            double baseline = std::round(m_layout.lineHeight(line) / 2 + fm.ascent() / 2 - fm.descent() / 2);
+            if (!m_layout.isInBlock(line))
+                if (const DocLayout::UnitLayout* ul = m_layout.layoutFor(line); ul && !ul->lines.isEmpty())
+                    baseline = ul->lines.first().baseline;
+            const QString n = QString::number(line + 1);
+            p.drawText(QPointF(right - fm.horizontalAdvance(n), vy + baseline), n);
+        }
+        ++line;
+    }
+}
+
 void EditorView::setMargins(qreal horizontal, qreal top, qreal bottom)
 {
     m_marginX = horizontal;
@@ -199,9 +261,9 @@ void EditorView::positionTopWidget()
 {
     if (!m_topWidget)
         return;
-    const int w = int(m_layout.contentWidth());
+    const int w = int(m_columnWidth);
     const int h = int(std::max<qreal>(0, m_topWidgetH - m_topWidgetMargin));
-    m_topWidget->setGeometry(int(m_contentLeft), int(std::round(m_topBase - m_scrollTop)), w, h);
+    m_topWidget->setGeometry(int(m_columnLeft), int(std::round(m_topBase - m_scrollTop)), w, h);
 }
 
 void EditorView::setLineWrapping(bool) {}
@@ -409,11 +471,17 @@ void EditorView::updateGeometryAndLayout()
         lineWidth = std::min(lineWidth, fileW);
     }
     m_contentLeft = std::max(m_marginX, std::floor((w - lineWidth) / 2));
+    m_columnLeft = m_contentLeft;
+    m_columnWidth = lineWidth;
+    if (const double g = gutterWidth(); g > 0 && lineWidth - g >= 80) {
+        m_contentLeft += g;
+        lineWidth -= g;
+    }
     m_lp->setContentWidth(lineWidth);
     m_layout.setContentWidth(lineWidth);
     if (m_topWidget) {
         // its height depends on the width (wrapping title)
-        const int w = int(lineWidth);
+        const int w = int(m_columnWidth);
         const qreal h = (m_topWidget->hasHeightForWidth() ? m_topWidget->heightForWidth(w) : m_topWidget->sizeHint().height()) + m_topWidgetMargin;
         if (!qFuzzyCompare(h, m_topWidgetH)) {
             m_topWidgetH = h;
@@ -634,6 +702,7 @@ void EditorView::paintEvent(QPaintEvent*)
         }
     }
     p.resetTransform();
+    paintLineNumbers(p);
     paintFoldIndicators(p);
     if (m_dropPos >= 0) { // where a drag would drop
         const QRectF r = caretRectAt(m_dropPos);
@@ -811,6 +880,8 @@ void EditorView::onDocumentChanged(const DocUpdate& u)
     if (u.syntax.structural || u.syntax.toLine > u.syntax.fromLine)
         m_layout.invalidateLines(u.syntax.fromLine, u.syntax.toLine);
     mapFolds(u);
+    if (m_lineNumbers && QString::number(u.before.lineCount()).size() != QString::number(u.after.lineCount()).size())
+        updateGeometryAndLayout(); // the gutter grew / shrank by a digit
 
     if (u.origin == this && u.tr.selection)
         m_sel = u.tr.selection->clamped(u.after.length());
@@ -1895,7 +1966,7 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
         inside |= pos >= r.from() && pos <= r.to() && !r.empty();
     if (!inside)
         setSelection(Selection::cursor(pos), false);
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this); // an item may close this editor's tab
     QAction* cutA = menu.addAction(tr("Cut"), this, &EditorView::cut);
     QAction* copyA = menu.addAction(tr("Copy"), this, &EditorView::copy);
     QAction* pasteA = menu.addAction(tr("Paste"), this, &EditorView::paste);
@@ -1908,6 +1979,8 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
     emit contextMenuAboutToShow(&menu, pos); // owners add their entries (spelling suggestions first)
     if (!menu.isEmpty())
         menu.exec(e->globalPos());
+    else
+        menu.deleteLater();
 }
 
 } // namespace oc

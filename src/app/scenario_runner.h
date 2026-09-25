@@ -23,7 +23,9 @@ class MainWindow;
 //   wait <ms>                                  extra wait
 //   screenshot <png>                           save the window (relative paths: to the script's folder)
 //   expect-line <n> <text>                     fail unless line n (-1 = last) of the active note is <text>
+//   try <line>                                 run <line>, ignoring its failure
 //   quit                                       stop here (also at the end of the script)
+// Lines run from a queued call, so the script keeps going inside nested event loops (menus, dialogs).
 // The process exits 0 when everything ran, 3 on an unknown command or a failed expectation.
 class ScenarioRunner : public QObject {
     Q_OBJECT
@@ -46,6 +48,7 @@ private:
     QElapsedTimer m_clock;
     qint64 m_quietSince = -1;
     qint64 m_waitUntil = 0;
+    bool m_done = false;
 };
 
 } // namespace oc
