@@ -28,6 +28,7 @@
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
 #include "ui/plugins/file_recovery_ui.h"
+#include "ui/plugins/note_composer_ui.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
@@ -39,6 +40,7 @@
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/placeholder_views.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -50,6 +52,7 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTimer>
@@ -350,11 +353,17 @@ void Application::populateWindow(MainWindow* w)
     registerNavigationCommands(*commands, session, w->overlay());
     registerGraphCommands(*commands, workspace);
     registerFileRecoveryCommands(*commands, w);
+    registerNoteComposerCommands(*commands, w);
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
         gh.openSearch = [](Workspace* ws, const QString& query) { openGlobalSearch(ws->session(), query); };
         gh.deleteFile = [](VaultSession* s, TFile* f) { promptForDeletion(s, f); };
+        gh.fileMenu = [](QMenu* menu, TFile* file, WorkspaceLeaf* leaf) {
+            QList<MenuEntry> items;
+            FileMenuHooks::collect(items, file, QStringLiteral("graph-context-menu"), leaf, leaf ? leaf->view() : nullptr);
+            buildSectionedMenu(menu, items);
+        };
         setGraphViewHooks(std::move(gh));
     }
     {
