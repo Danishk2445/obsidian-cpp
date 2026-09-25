@@ -17,6 +17,8 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 
+#include <cstdio>
+
 namespace oc {
 
 namespace {
@@ -82,11 +84,16 @@ void ScenarioRunner::step()
             finish(0);
             return;
         }
-        if (!run(line)) {
-            qCritical("oc: script line %d failed: %s", m_next, qPrintable(line));
-            finish(3);
-            return;
-        }
+        static const bool trace = qEnvironmentVariableIsSet("OC_SCRIPT_TRACE");
+        if (trace)
+            fprintf(stderr, "oc-script %d: %s\n", m_next, qPrintable(line));
+        // Queued: a command that opens a nested event loop (QMenu::exec) must not block this timer.
+        QTimer::singleShot(0, this, [this, line, n = m_next] {
+            if (!m_done && !run(line)) {
+                qCritical("oc: script line %d failed: %s", n, qPrintable(line));
+                finish(3);
+            }
+        });
         m_quietSince = -1; // wait for the effects of this command
         return;
     }
@@ -95,12 +102,15 @@ void ScenarioRunner::step()
 
 void ScenarioRunner::finish(int code)
 {
+    m_done = true;
     m_timer.stop();
     QApplication::exit(code);
 }
 
 QWidget* ScenarioRunner::keyTarget() const
 {
+    if (QWidget* popup = QApplication::activePopupWidget()) // like the window system: an open menu gets the keys
+        return popup;
     if (QWidget* f = QApplication::focusWidget())
         return f;
     if (m_window && m_window->focusWidget())
@@ -134,19 +144,30 @@ bool ScenarioRunner::run(const QString& line)
     const qsizetype sp = line.indexOf(u' ');
     const QString cmd = sp < 0 ? line : line.left(sp);
     const QString arg = sp < 0 ? QString() : line.mid(sp + 1);
+    if (cmd == u"try") { // "try <line>": run it, ignore failure (monkey scripts)
+        run(arg);
+        return true;
+    }
     if (cmd == u"wait") {
         m_waitUntil = m_clock.elapsed() + arg.toInt();
         return true;
     }
     if (cmd == u"open") {
-        const QStringList parts = arg.split(u' ');
+        // "open <path> [live|source|reading]"; the path may contain spaces
+        QString path = arg, mode;
+        if (const qsizetype last = arg.lastIndexOf(u' '); last > 0) {
+            const QString m = arg.mid(last + 1);
+            if (m == u"live" || m == u"source" || m == u"reading") {
+                mode = m;
+                path = arg.left(last);
+            }
+        }
         VaultSession* s = m_window ? m_window->session() : nullptr;
-        TFile* f = s && s->vault() ? s->vault()->file(parts.value(0)) : nullptr;
+        TFile* f = s && s->vault() ? s->vault()->file(path) : nullptr;
         if (!f)
             return false;
         m_window->workspace()->openFile(f, Workspace::NewLeaf::No);
         if (MarkdownView* mv = activeMarkdown(m_window)) {
-            const QString mode = parts.value(1);
             if (mode == u"source")
                 mv->setMode(EditorView::Mode::Source);
             else if (mode == u"reading")

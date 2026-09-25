@@ -84,7 +84,10 @@ private:
     int m_pending = 0;
     bool m_ready = false;
     quint64 m_generation = 0;
-    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+    // Parse chunks running on the thread pool; the destructor waits for them (they read through the
+    // content provider and post their results to this object).
+    struct Workers;
+    std::shared_ptr<Workers> m_workers;
 };
 
 } // namespace oc

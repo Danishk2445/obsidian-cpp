@@ -6,9 +6,12 @@
 #include "core/util/busy.h"
 #include "text/codec.h"
 
-#include <QPointer>
 #include <QThreadPool>
 #include <QtConcurrent>
+
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 
 namespace oc {
 
@@ -24,12 +27,29 @@ QString linkNameKey(const QString& linkpath)
 }
 } // namespace
 
+struct MetadataCache::Workers {
+    std::mutex mutex;
+    std::condition_variable idle;
+    int running = 0;
+    std::atomic<bool> alive = true;
+};
+
 MetadataCache::MetadataCache(QObject* parent)
     : QObject(parent)
+    , m_workers(std::make_shared<Workers>())
 {
 }
 
-MetadataCache::~MetadataCache() { *m_alive = false; }
+MetadataCache::~MetadataCache()
+{
+    // Stop the chunks between files and wait for the running ones: they call the provider (vault,
+    // documents) and post to this object. Results still queued are dropped with this object.
+    m_workers->alive = false;
+    std::unique_lock lock(m_workers->mutex);
+    m_workers->idle.wait(lock, [this] { return m_workers->running == 0; });
+    for (int i = 0; i < m_pending; ++i)
+        Busy::end();
+}
 
 md::CachedMetadata MetadataCache::parseBytes(const QByteArray& bytes)
 {
@@ -70,37 +90,45 @@ void MetadataCache::parseAsync(const QStringList& paths)
         return;
     // Read on the GUI thread? No: reading may be slow (FUSE); do read+parse on the pool.
     ContentProvider provider = m_provider;
-    std::shared_ptr<bool> alive = m_alive;
-    QPointer<MetadataCache> self(this);
+    std::shared_ptr<Workers> workers = m_workers;
+    MetadataCache* self = this; // alive while a chunk runs: ~MetadataCache waits for them
     const int batch = 16;
     for (qsizetype i = 0; i < paths.size(); i += batch) {
         const QStringList chunk = paths.mid(i, batch);
         ++m_pending;
         Busy::begin();
-        QThreadPool::globalInstance()->start([chunk, provider, alive, self] {
+        {
+            std::lock_guard lock(workers->mutex);
+            ++workers->running;
+        }
+        QThreadPool::globalInstance()->start([chunk, provider, workers, self] {
             QList<Result> results;
             for (const QString& p : chunk) {
-                if (!*alive)
+                if (!workers->alive)
                     break;
                 const std::optional<QByteArray> bytes = provider(p);
                 if (!bytes)
                     continue;
                 results.push_back({p, parseBytes(*bytes)});
             }
-            QMetaObject::invokeMethod(
-                self.data(),
-                [self, results = std::move(results)]() mutable {
-                    Busy::end();
-                    if (!self)
-                        return;
-                    for (Result& r : results)
-                        self->applyResult(r.path, std::move(r.meta));
-                    if (--self->m_pending == 0) {
-                        self->m_ready = true;
-                        emit self->resolved();
-                    }
-                },
-                Qt::QueuedConnection);
+            if (workers->alive) {
+                // a queued call on `self`: dropped if it is destroyed before the call runs
+                QMetaObject::invokeMethod(
+                    self,
+                    [self, results = std::move(results)]() mutable {
+                        Busy::end();
+                        for (Result& r : results)
+                            self->applyResult(r.path, std::move(r.meta));
+                        if (--self->m_pending == 0) {
+                            self->m_ready = true;
+                            emit self->resolved();
+                        }
+                    },
+                    Qt::QueuedConnection);
+            }
+            std::lock_guard lock(workers->mutex);
+            if (--workers->running == 0)
+                workers->idle.notify_all();
         });
     }
 }
