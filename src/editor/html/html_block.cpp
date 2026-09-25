@@ -446,13 +446,23 @@ HtmlBlockWidget::~HtmlBlockWidget() = default;
 
 void HtmlBlockWidget::build()
 {
-    const Rewrite rw = rewrite(m_source, m_style, m_resolve, &m_detailsOpen);
-    m_qtHtml = rw.html;
+    // Only the (cheap) rewrite: the QTextDocument is made when the block is first laid out, so opening a note
+    // doesn't lay out every HTML block in it.
+    Rewrite rw = rewrite(m_source, m_style, m_resolve, &m_detailsOpen);
+    m_qtHtml = std::move(rw.html);
+    m_imagePaths = std::move(rw.images);
     m_visible = rw.visible;
     m_doc.reset();
+    m_width = -1;
+}
+
+void HtmlBlockWidget::ensureDocument() const
+{
+    if (m_doc || !m_visible)
+        return;
     if (!m_images)
         m_images = std::make_unique<html::ImageHandler>();
-    m_images->paths = rw.images;
+    m_images->paths = m_imagePaths;
     m_images->placeholder = m_style.codeBg;
     m_doc = std::make_unique<QTextDocument>();
     m_doc->setUndoRedoEnabled(false);
@@ -510,7 +520,6 @@ void HtmlBlockWidget::build()
         if (m_doc->lastBlock().position() <= frames.last()->lastPosition() + 1)
             zeroMargin(frames.last(), false);
     }
-    m_width = -1;
 }
 
 qreal HtmlBlockWidget::layout(qreal width)
@@ -522,6 +531,7 @@ qreal HtmlBlockWidget::layout(qreal width)
         m_height = 0;
         return 0;
     }
+    ensureDocument();
     m_doc->setTextWidth(width);
     m_height = std::ceil(m_doc->size().height());
     return m_height;
@@ -531,6 +541,7 @@ void HtmlBlockWidget::paint(QPainter* p, const QRectF& rect)
 {
     if (!m_visible)
         return;
+    ensureDocument();
     p->save();
     p->translate(rect.topLeft());
     QAbstractTextDocumentLayout::PaintContext ctx;
@@ -546,6 +557,7 @@ bool HtmlBlockWidget::click(const QPointF& local, Qt::KeyboardModifiers)
 {
     if (!m_visible)
         return false;
+    ensureDocument();
     const QString anchor = m_doc->documentLayout()->anchorAt(local);
     if (!anchor.startsWith(QLatin1String("oc-details:")))
         return false;
@@ -562,13 +574,24 @@ QString HtmlBlockWidget::linkAt(const QPointF& local) const
 {
     if (!m_visible)
         return {};
+    ensureDocument();
     const QString anchor = m_doc->documentLayout()->anchorAt(local);
     if (anchor.isEmpty() || anchor.startsWith(QLatin1String("oc-details:")))
         return {};
     return html::hasUrlScheme(anchor) ? anchor : QUrl::fromPercentEncoding(anchor.toUtf8());
 }
 
-QString HtmlBlockWidget::plainText() const { return m_visible ? m_doc->toPlainText() : QString(); }
+QString HtmlBlockWidget::plainText() const
+{
+    ensureDocument();
+    return m_doc ? m_doc->toPlainText() : QString();
+}
+
+const QTextDocument* HtmlBlockWidget::document() const
+{
+    ensureDocument();
+    return m_doc.get();
+}
 
 namespace html {
 

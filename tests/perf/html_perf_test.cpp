@@ -1,6 +1,7 @@
 // Raw HTML rendering cost in Live Preview and Reading view: a note full of inline HTML (kbd / sub / span
 // colours / <br>), a 2000-line paragraph of <br>-separated lines (tags pair across the whole leaf) and HTML
-// blocks. Budgets are asserted in optimized builds with OC_PERF_ASSERT=1.
+// blocks, measured against the same note written without HTML in the same run (so the gates hold on a busy
+// machine). Budgets are asserted in optimized builds with OC_PERF_ASSERT=1.
 #include "core/documents/document.h"
 #include "core/documents/local_storage.h"
 #include "editor/editor_view.h"
@@ -21,22 +22,25 @@ using namespace oc;
 
 namespace {
 
-QByteArray htmlDoc()
+// `html` false: the same structure with Markdown formatting instead of HTML.
+QByteArray note(bool html)
 {
     QString out = QStringLiteral("# HTML heavy\n\n");
     for (int i = 0; i < 3000; ++i) {
-        out += QStringLiteral("Press <kbd>Ctrl</kbd> + <kbd>%1</kbd>, H<sub>2</sub>O, x<sup>%1</sup>, <span style=\"color: #e93147\">red %1</span>, "
-                              "<mark>mark</mark> and <a href=\"https://example.com/%1\">a link</a><br>second line <b>bold</b>.\n\n")
+        out += (html ? QStringLiteral("Press <kbd>Ctrl</kbd> + <kbd>%1</kbd>, H<sub>2</sub>O, x<sup>%1</sup>, <span style=\"color: #e93147\">red %1</span>, "
+                                      "<mark>mark</mark> and <a href=\"https://example.com/%1\">a link</a><br>second line <b>bold</b>.\n\n")
+                     : QStringLiteral("Press `Ctrl` + `%1`, H2O, x^%1, *red %1*, ==mark== and [a link](https://example.com/%1)  \n"
+                                      "second line **bold**.\n\n"))
                    .arg(i);
         if (i % 50 == 0)
-            out += QStringLiteral("<p align=\"center\">Centered <b>block</b> %1<br>line two</p>\n\n<table>\n<tr><th>K</th><th>V</th></tr>\n"
-                                  "<tr><td><kbd>A</kbd></td><td>%1</td></tr>\n</table>\n\n")
+            out += (html ? QStringLiteral("<p align=\"center\">Centered <b>block</b> %1<br>line two</p>\n\n<table>\n<tr><th>K</th><th>V</th></tr>\n"
+                                          "<tr><td><kbd>A</kbd></td><td>%1</td></tr>\n</table>\n\n")
+                         : QStringLiteral("Centered **block** %1  \nline two\n\n| K | V |\n| - | - |\n| `A` | %1 |\n\n"))
                        .arg(i);
     }
-    // One huge paragraph: every line of it carries an element, and all of them pair within one leaf.
-    const bool plain = qEnvironmentVariableIntValue("OC_HTML_PERF_PLAIN") == 1; // baseline: the same without HTML
+    // One huge paragraph: every line of it carries elements, and all of them pair within one leaf.
     for (int i = 0; i < 2000; ++i)
-        out += (plain ? QStringLiteral("verse %1 with *some* `keys`  \n") : QStringLiteral("verse %1 with <i>some</i> <kbd>keys</kbd><br>\n")).arg(i);
+        out += (html ? QStringLiteral("verse %1 with <i>some</i> <kbd>keys</kbd><br>\n") : QStringLiteral("verse %1 with *some* `keys`  \n")).arg(i);
     out += QStringLiteral("\nend\n");
     return out.toUtf8();
 }
@@ -57,25 +61,25 @@ Stats stats(std::vector<double> v)
 }
 bool assertPerf() { return qEnvironmentVariableIntValue("OC_PERF_ASSERT") == 1; }
 
-} // namespace
+struct Measured {
+    double firstPaint = 0, reading = 0;
+    Stats live, move, key, readingScroll;
+};
 
-TEST(HtmlPerf, LivePreviewAndReading)
+Measured measure(const QString& dirPath, bool html)
 {
-    ThemeManager themes;
-    themes.setMode(ThemeManager::Mode::Dark);
-    themes.apply();
-    QTemporaryDir dir;
-    ASSERT_TRUE(dir.isValid());
-    const QByteArray bytes = htmlDoc();
+    Measured r;
+    const QString name = html ? QStringLiteral("html.md") : QStringLiteral("plain.md");
     {
-        QFile f(dir.path() + "/html.md");
-        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
-        f.write(bytes);
+        QFile f(dirPath + "/" + name);
+        if (!f.open(QIODevice::WriteOnly))
+            return r;
+        f.write(note(html));
     }
-    LocalFileStorage storage(dir.path());
-    auto doc = std::make_shared<Document>(&storage, QStringLiteral("html.md"));
-    ASSERT_TRUE(doc->load());
-
+    LocalFileStorage storage(dirPath);
+    auto doc = std::make_shared<Document>(&storage, name);
+    if (!doc->load())
+        return r;
     EditorView view;
     view.resize(1200, 900);
     view.setMode(EditorView::Mode::LivePreview);
@@ -85,9 +89,7 @@ TEST(HtmlPerf, LivePreviewAndReading)
     view.show();
     QImage img(view.viewport()->size(), QImage::Format_ARGB32_Premultiplied);
     view.viewport()->render(&img);
-    const double firstPaintMs = t.nsecsElapsed() / 1e6;
-    std::printf("[perf] html: %lld bytes, %d lines; setDocument+first paint (live) %.1f ms\n", static_cast<long long>(bytes.size()),
-                doc->text().lineCount(), firstPaintMs);
+    r.firstPaint = t.nsecsElapsed() / 1e6;
 
     auto scrollFrames = [&](int fromLine) {
         view.setScrollTop(view.layout().lineTop(fromLine));
@@ -100,8 +102,7 @@ TEST(HtmlPerf, LivePreviewAndReading)
         }
         return stats(frames);
     };
-    const Stats live = scrollFrames(doc->text().lineCount() / 4);
-    std::printf("[perf] html scroll half-page frame (live): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", live.p50, live.p95, live.max);
+    r.live = scrollFrames(doc->text().lineCount() / 4);
 
     // Moving the cursor through the huge paragraph reveals / hides elements line by line.
     const int bigPara = doc->text().lineCount() - 1000;
@@ -116,8 +117,7 @@ TEST(HtmlPerf, LivePreviewAndReading)
         view.viewport()->render(&img);
         moves.push_back(t.nsecsElapsed() / 1e6);
     }
-    const Stats mv = stats(moves);
-    std::printf("[perf] html cursor down in a 2000-line paragraph (live): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", mv.p50, mv.p95, mv.max);
+    r.move = stats(moves);
 
     std::vector<double> keys;
     for (int i = 0; i < 100; ++i) {
@@ -126,24 +126,47 @@ TEST(HtmlPerf, LivePreviewAndReading)
         view.viewport()->render(&img);
         keys.push_back(t.nsecsElapsed() / 1e6);
     }
-    const Stats ks = stats(keys);
-    std::printf("[perf] html keystroke in a 2000-line paragraph (live): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", ks.p50, ks.p95, ks.max);
+    r.key = stats(keys);
 
     t.restart();
     view.setMode(EditorView::Mode::Reading);
     view.viewport()->render(&img);
-    const double readingMs = t.nsecsElapsed() / 1e6;
-    const Stats reading = scrollFrames(doc->text().lineCount() / 2);
-    std::printf("[perf] html switch to reading + paint %.1f ms; scroll frame (reading): p50 %.2f ms, p95 %.2f ms, max %.2f ms\n", readingMs,
-                reading.p50, reading.p95, reading.max);
+    r.reading = t.nsecsElapsed() / 1e6;
+    r.readingScroll = scrollFrames(doc->text().lineCount() / 2);
+    return r;
+}
+
+void print(const char* label, const Measured& r)
+{
+    std::printf("[perf] %s: first paint (live) %.1f ms; scroll frame live p95 %.2f / reading p95 %.2f ms; cursor down in a 2000-line "
+                "paragraph p50 %.2f p95 %.2f ms; keystroke there p50 %.2f p95 %.2f ms; switch to reading + paint %.1f ms\n",
+                label, r.firstPaint, r.live.p95, r.readingScroll.p95, r.move.p50, r.move.p95, r.key.p50, r.key.p95, r.reading);
+}
+
+} // namespace
+
+TEST(HtmlPerf, LivePreviewAndReading)
+{
+    ThemeManager themes;
+    themes.setMode(ThemeManager::Mode::Dark);
+    themes.apply();
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const Measured plain = measure(dir.path(), false);
+    const Measured html = measure(dir.path(), true);
+    print("markdown", plain);
+    print("html", html);
+    ASSERT_GT(html.firstPaint, 0);
 
     if (assertPerf()) {
-        EXPECT_LT(firstPaintMs, 400.0);
-        EXPECT_LT(live.p95, 16.0);
-        EXPECT_LT(reading.p95, 16.0);
-        EXPECT_LT(mv.p95, 16.0);
-        // Typing re-parses the whole 80 KB paragraph; the same paragraph without HTML (OC_HTML_PERF_PLAIN=1) costs
-        // as much (~20-30 ms), so this only guards the HTML part.
-        EXPECT_LT(ks.p95, 40.0);
+        // HTML blocks are laid out when they come into view, not when the note opens.
+        EXPECT_LT(html.firstPaint, plain.firstPaint * 2 + 20.0);
+        EXPECT_LT(html.reading, plain.reading * 2 + 20.0);
+        EXPECT_LT(html.live.p95, 16.0);
+        EXPECT_LT(html.readingScroll.p95, 16.0);
+        // Typing / moving in the huge paragraph re-decorates (and re-parses) it; HTML may cost a bit more than
+        // the Markdown equivalent, never a multiple of it.
+        EXPECT_LT(html.move.p50, plain.move.p50 * 1.5 + 3.0);
+        EXPECT_LT(html.key.p50, plain.key.p50 * 1.5 + 5.0);
     }
 }

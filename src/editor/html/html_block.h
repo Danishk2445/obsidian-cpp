@@ -63,7 +63,7 @@ public:
     // Introspection (tests).
     const QString& qtHtml() const { return m_qtHtml; }
     QString plainText() const;
-    const QTextDocument* document() const { return m_doc.get(); }
+    const QTextDocument* document() const; // built on first use
 
     // The rewrite of `html` for QTextDocument. `detailsOpen` holds the state of each <details> in order
     // (entries are appended from the `open` attribute the first time).
@@ -76,15 +76,17 @@ public:
 
 private:
     void build();
+    void ensureDocument() const;
 
     QString m_source;
     html::BlockStyle m_style;
     ResolveFn m_resolve;
     QList<bool> m_detailsOpen;
     QString m_qtHtml;
+    QStringList m_imagePaths;
     bool m_visible = false;
-    std::unique_ptr<html::ImageHandler> m_images;
-    std::unique_ptr<QTextDocument> m_doc;
+    mutable std::unique_ptr<html::ImageHandler> m_images; // outlives m_doc (declared first)
+    mutable std::unique_ptr<QTextDocument> m_doc;
     quint64 m_signature = 0;
     qreal m_width = -1;
     qreal m_height = 0;
