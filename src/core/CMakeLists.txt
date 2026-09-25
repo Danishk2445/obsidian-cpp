@@ -1,6 +1,11 @@
 oc_add_library(oc_core
   SOURCES
     bookmarks/bookmarks.cpp
+    canvas/canvas_document.cpp
+    canvas/canvas_geometry.cpp
+    canvas/canvas_json.cpp
+    canvas/canvas_links.cpp
+    canvas/canvas_model.cpp
     commands/command_registry.cpp
     commands/hotkey.cpp
     config/clone_paths.cpp
@@ -31,6 +36,10 @@ oc_add_library(oc_core
     metadata/outline.cpp
     metadata/property_index.cpp
     metadata/tag_tree.cpp
+    properties/frontmatter_editor.cpp
+    properties/property_types.cpp
+    properties/property_yaml.cpp
+    properties/vault_properties.cpp
     recovery/file_recovery.cpp
     recovery/snapshot_store.cpp
     util/word_count.cpp
@@ -44,5 +53,5 @@ oc_add_library(oc_core
     vault_bindings.cpp
     vault_session.cpp
   PUBLIC_DEPS oc_text oc_markdown Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent
-  PRIVATE_DEPS KF6::KIOCore SQLite3::SQLite3 zstd::libzstd
+  PRIVATE_DEPS KF6::KIOCore SQLite3::SQLite3 zstd::libzstd yaml-cpp::yaml-cpp
 )

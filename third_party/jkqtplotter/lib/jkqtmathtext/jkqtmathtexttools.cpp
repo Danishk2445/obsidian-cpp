@@ -24,6 +24,7 @@
 #include "jkqtcommon/jkqtpstringtools.h"
 #include "jkqtcommon/jkqtpcachingtools.h"
 #include <cmath>
+#include <algorithm>
 #include <QFontMetricsF>
 #include <QDebug>
 #include <QFontDatabase>
@@ -710,7 +711,7 @@ QFont JKQTMathTextEnvironment::getFont(const JKQTMathText* parent) const {
     f.setStrikeOut(strike);
     f.setCapitalization(capitalization);
     if (fontSizeUnit==POINTS) f.setPointSizeF(fontSize);
-    else if (fontSizeUnit==PIXELS) f.setPixelSize(static_cast<int>(fontSize));
+    else if (fontSizeUnit==PIXELS) f.setPixelSize(std::max(1, qRound(fontSize))); // obsidian-cpp patch: round, never <= 0
     const QFont::StyleStrategy strat=static_cast<QFont::StyleStrategy>(QFont::NoFontMerging|QFont::PreferAntialias);
     f.setStyleStrategy(strat);
     return f;

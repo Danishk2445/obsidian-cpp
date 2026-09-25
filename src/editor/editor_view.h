@@ -44,6 +44,8 @@ public:
     bool readableLineLength() const { return m_readable; }
     void setMargins(qreal horizontal, qreal top, qreal bottom);
     void setLineWrapping(bool on);
+    // The viewport's fill (default: --background-primary), e.g. a tinted canvas card.
+    void setBackgroundColor(const QColor& color);
     // Obsidian's "Show line number": a gutter of line numbers left of the text in the editing modes, inside
     // the text column (like .cm-gutters in .cm-contentContainer); the inline title keeps the full column.
     void setShowLineNumbers(bool on);
@@ -123,6 +125,9 @@ public:
     void setTopWidget(QWidget* widget, int bottomMargin = 0);
     QWidget* topWidget() const { return m_topWidget; }
     void updateTopWidget(); // re-measure after its content changed
+    // Let the top widget extend `px` to the left of the text column (into the fold gutter, e.g. for
+    // the properties' collapse indicator); it is then measured and laid out at that larger width.
+    void setTopWidgetOverhang(int px);
 
     DocLayout& layout() { return m_layout; }
     double contentLeft() const { return m_contentLeft; }
@@ -232,12 +237,15 @@ private:
     Mode m_mode = Mode::Source;
     bool m_readOnly = false;
     bool m_readable = true;
+    QColor m_background; // invalid = theme
     qreal m_marginX = 32, m_marginTop = 32, m_marginBottom = 32;
     qreal m_topBase = 32;       // top margin without the top widget
     QPointer<QWidget> m_topWidget;
     int m_topWidgetMargin = 0;
     qreal m_topWidgetH = 0;     // reserved height (widget + margin)
+    int m_topOverhang = 0;      // setTopWidgetOverhang()
     void positionTopWidget();
+    qreal measureTopWidget() const; // height + margin at the current width (0 when hidden)
     QPointer<QWidget> m_bottomPanel;
     CursorShape m_cursorShape = CursorShape::Bar;
     bool m_cursorMainOnly = false;

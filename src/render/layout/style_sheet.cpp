@@ -98,7 +98,7 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     {
         StyleSpec& sp = s->m_specs[size_t(StyleId::InlineCode)];
         sp.format.setFontFamilies({t.monospaceFamily()});
-        sp.format.setFontPointSize(-1);
+        sp.format.clearProperty(QTextFormat::FontPointSize);
         sp.format.setProperty(QTextFormat::FontPixelSize, int(std::lround(codePx)));
         sp.format.setForeground(codeNormal);
         sp.box.enabled = true;
@@ -187,7 +187,6 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
         //       border-radius: --radius-s; font-size: --code-size; padding: 0.1em 0.25em }
         StyleSpec& sp = s->m_specs[size_t(StyleId::Kbd)];
         sp = s->m_specs[size_t(StyleId::InlineCode)];
-        sp.format.clearProperty(QTextFormat::FontPointSize); // the pixel size rules (a -1 point size only warns)
         sp.box.radius = t.px(QStringLiteral("--radius-s"), base, 4);
         sp.box.padX = 0.25 * codePx;
     }

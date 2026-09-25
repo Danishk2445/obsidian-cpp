@@ -27,6 +27,7 @@ protected:
 private:
     QList<QPointer<QWidget>> m_blocking;
     QTimer m_refreshTimer;
+    bool m_destroying = false; // ~OverlayLayer: overlays being deleted must not re-show / raise the layer
 };
 
 class Notice;

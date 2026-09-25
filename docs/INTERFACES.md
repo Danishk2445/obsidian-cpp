@@ -63,9 +63,17 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `HotkeyDispatcher` (app-wide; skips widgets inside `ocCapturesKeys` overlays and the navigation keys of an editor
   whose `ocSuggestActive` property is set).
 
+## Properties (src/core/properties, additive)
+- `FrontmatterEditor(const Text&)`: minimal byte-exact frontmatter patches (`set/add/rename/remove/reorder/merge/clear`
+  → `changes()`), `property_yaml.h` (Obsidian's YAML output for a changed value), `PropertyTypeManager::of(session)`
+  (types.json in the clone config), `vault_properties.h` (`renameProperty` / `deleteProperty` vault-wide via
+  FileManager::editFile). `src/core/util/owned_menu.h`: `ownedMenu(owner)` for context menus whose items may destroy
+  their owner (never a stack `QMenu m(owner)` there).
+
 ## Editor & UI building blocks (stable; additive changes only)
 - `EditorView` (src/editor/editor_view.h): decoration layers (`addDecorationLayer`), folding API (`foldLine`,
-  `setFolds`, `foldsChanged`), top widget (inline title), `setVisibleLineRange` (embed a section),
+  `setFolds`, `foldsChanged`), top widget (MarkdownView's DocumentHeader: inline title + properties; spans the text
+  column, `setTopWidgetOverhang(px)` reaches into the left margin), `setShowLineNumbers`, `setVisibleLineRange` (embed a section),
   `caretRectAt`, `documentHeight`, signals `linkActivated(target, kind, newLeaf)` / `linkHovered(target, kind,
   rect)` (kind 0 wikilink, 1 embed, 2 markdown link, 3 url, 4 tag). `editor/search/*` = find/replace logic.
 - `EditorHooks` (src/editor/editor_hooks.h), additive: `KeyHandler` / `addKeyHandler` / `runKey` — a key hook run
@@ -90,6 +98,14 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `EmbedRequest` (file, subpath params, inline / popover); `hosted_embeds.h` — `EmbedWidget` (the decorator's inline
   placeholder) and `HostedEmbeds` (created by every `EditorView`: live widgets near the viewport, pooled; a widget
   with the `ocEmbedBusy` property is kept alive). Providers: `src/ui/views/media` (`registerMediaViews`).
+  Additive: `makeLinkEmbedWidget(resolve, target, subpath, w, h, maxWidth)` — the decorator's entry point: a
+  registered extension in the link, else the resolved file's extension (notes → "md"; an unresolved note → the "md"
+  provider with an empty absPath); `EmbedPrintScope(theme, styles)` — while alive (PDF export) embeds lay out and
+  paint for print (`active()`, `theme()`, `styles()`).
+- Note embeds: `src/editor/embeds/note_embed.h` — `NoteEmbeds` (layout cache keyed by content hash + width +
+  nesting chain, depth limit 5 / cycles, `noteChanged` / `linksChanged`, `NoteEmbedHost` per vault),
+  `NoteEmbedLayout` (size, static paint, hit testing), `NoteEmbedProvider` ("md"). UI: `src/ui/views/markdown/
+  note_embed_view.h` — `NoteEmbedWidget` (live widget) and `registerNoteEmbeds(session)` (provider + session host).
 - Render layer, additive (raw HTML): `Mark::custom` + `LineDecoration::customStyles` / `addCustomStyle()` /
   `markSpec()` (marks with styles that aren't theme constants, e.g. `style="color: …"`; `Mark` stays 12 bytes),
   `StyleId::{Underline, Kbd, Subscript, Superscript, SmallText, LargeText, Monospace}`,
@@ -127,3 +143,15 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `settings_pages.h`: the tabs, `corePluginInfos()`, `css_snippets::*`, `resolveFontList`. `path_suggest.h`:
   `FolderSuggest` (text input + folder popup), `FilePicker` (file combobox). `hotkeys_tab.h`: `HotkeysTab`,
   `HotkeyChip`. Widgets: `ui/widgets/{dropdown,button,color_swatch}.h`.
+- Canvas (M9). `src/core/canvas/*`: `canvas_json.h` (ordered JSON keeping source lexemes, `stringifyCanvas` =
+  Obsidian's canvas file layout), `canvas_model.h` (`CanvasData`/`Node`/`Edge`, `parseCanvas`, byte-stable
+  `serializeCanvas`), `canvas_geometry.h` (viewport, bezier edge routing, hit testing, snapping, resizing, zoom-to-fit),
+  `canvas_document.h` (edits + snapshot undo history), `canvas_links.h` (canvas files as link sources, text-card
+  link rewrites on rename). UI: `src/ui/views/canvas/canvas_registration.h` — `registerCanvasView(ViewRegistry&)`
+  (view "canvas" for .canvas, plus the "canvas" EmbedProvider: `![[x.canvas]]` minimaps) and
+  `registerCanvasCommands(CommandRegistry&, MainWindow*)` (canvas:new-file / export-as-image / jump-to-group /
+  convert-to-file, "New canvas" folder menu item, card updates on renames); `canvas_settings.h` (settings tab).
+- Additive for the canvas: `MetadataCache::fileLinks(path)` / `canvasFiles()` (.canvas files count in resolvedLinks /
+  unresolvedLinks / backlinks but have no `fileCache`); `EditorView::setBackgroundColor`; `NestedRenderer::linkHitAt`;
+  file drags from the file explorer are offered to any widget under the pointer that has the invokable
+  `bool ocFileDrag(QStringList paths, QPoint globalPos, bool drop)` (the canvas) before the workspace's split targets.

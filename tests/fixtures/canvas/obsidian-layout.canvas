@@ -1,0 +1,30 @@
+{
+	"nodes":[
+		{"id":"g1","type":"group","x":-420,"y":-300,"width":900,"height":620,"color":"4","label":"Ideas"},
+		{"id":"t1","type":"text","text":"# Hello\n\nSome **bold** text and a [[Note A]] link.\n\n- one\n- two","x":-380,"y":-240,"width":300,"height":180},
+		{"id":"f1","type":"file","file":"Note A.md","x":20,"y":-240,"width":400,"height":400,"color":"2"},
+		{"id":"f2","type":"file","file":"Note B.md","subpath":"#Section","x":-380,"y":0,"width":300,"height":200},
+		{
+			"id":"l1",
+			"type":"link",
+			"url":"https://obsidian.md",
+			"x":520,
+			"y":-240,
+			"width":400,
+			"height":300,
+			"myKey":[1,2]
+		},
+		{"id":"x1","type":"widget","x":0,"y":0,"width":10,"height":10},
+		{"id":"t2","x":600,"y":200,"width":250,"height":60,"type":"text","text":"Created in a session: order id,x,y,w,h,type,text","cardMeta":"kept"}
+	],
+	"edges":[
+		{"id":"e1","fromNode":"t1","fromSide":"right","toNode":"f1","toSide":"left"},
+		{"id":"e2","fromNode":"f1","fromSide":"bottom","toNode":"f2","toSide":"top","fromEnd":"arrow","toEnd":"arrow","color":"1","label":"relates to"},
+		{"id":"e3","fromNode":"f1","toNode":"l1","toEnd":"none"},
+		{"id":"e4","fromNode":"t1","fromSide":"top","toNode":"gone","toSide":"left"}
+	],
+	"metadata":{
+		"version":"1.0",
+		"frontmatter":{}
+	}
+}

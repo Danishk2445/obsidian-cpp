@@ -46,6 +46,24 @@ oc_add_library(oc_ui
     shell/ribbon.cpp
     shell/status_bar.cpp
     shell/window_frame.cpp
+    views/canvas/canvas_controls.cpp
+    views/canvas/canvas_controls.h
+    views/canvas/canvas_input.cpp
+    views/canvas/canvas_items.cpp
+    views/canvas/canvas_items.h
+    views/canvas/canvas_modals.cpp
+    views/canvas/canvas_modals.h
+    views/canvas/canvas_registration.cpp
+    views/canvas/canvas_registration.h
+    views/canvas/canvas_render.cpp
+    views/canvas/canvas_render.h
+    views/canvas/canvas_settings.cpp
+    views/canvas/canvas_settings.h
+    views/canvas/canvas_view.cpp
+    views/canvas/canvas_view.h
+    views/canvas/canvas_widget.cpp
+    views/canvas/canvas_widget.h
+    views/canvas/canvas_widget_p.h
     views/file_explorer/file_actions.cpp
     views/file_explorer/file_actions.h
     views/file_explorer/file_explorer_view.cpp
@@ -68,7 +86,13 @@ oc_add_library(oc_ui
     views/markdown/markdown_commands.cpp
     views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
+    views/markdown/note_embed_view.cpp
     views/markdown/page_preview.cpp
+    views/markdown/properties/properties_commands.cpp
+    views/markdown/properties/properties_style.cpp
+    views/markdown/properties/properties_widget.cpp
+    views/markdown/properties/property_editors.cpp
+    views/markdown/properties/property_suggest.cpp
     views/sidebar/all_properties_view.cpp
     views/sidebar/all_properties_view.h
     views/sidebar/backlink_view.cpp

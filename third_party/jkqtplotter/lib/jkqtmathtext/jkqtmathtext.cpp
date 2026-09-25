@@ -500,7 +500,10 @@ void JKQTMathText::setFontSizePixels(double __value)
 
 double JKQTMathText::getFontSize() const
 {
-    return getFontPointSize();
+    // obsidian-cpp patch: in the unit set by setFontPointSize() / setFontSizePixels(). The environment
+    // commands (\displaystyle, \tiny...) assign this to an environment of that unit; with pixel sizes the
+    // point size is -1, which made those commands fall back to Qt's default font size.
+    return fontSize;
 }
 
 double JKQTMathText::getFontPointSize() const
