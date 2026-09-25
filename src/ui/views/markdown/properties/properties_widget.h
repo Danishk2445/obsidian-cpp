@@ -207,6 +207,7 @@ private:
     bool m_readOnly = false;
     bool m_collapsed = false;
     QMetaObject::Connection m_typesConn;
+    QMetaObject::Connection m_focusConn;
     QPointer<QObject> m_typesOwner;
 };
 

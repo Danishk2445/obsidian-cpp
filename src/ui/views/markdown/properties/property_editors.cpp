@@ -36,6 +36,15 @@ void drawIcon(QPainter& p, const QString& name, const QPointF& center, int size,
     p.drawPixmap(QPointF(center.x() - size / 2.0, center.y() - size / 2.0), pm);
 }
 
+// --line-height-normal as a percentage of the font's line spacing (Qt's proportional line height).
+double lineHeightPercent()
+{
+    const propui::Style& s = propui::style();
+    const double lh = currentTheme()->number(QStringLiteral("--line-height-normal"), 1.5);
+    const double px = s.inputFont.pixelSize() > 0 ? s.inputFont.pixelSize() : 14;
+    return std::round(100.0 * px * lh / QFontMetricsF(s.inputFont).lineSpacing());
+}
+
 // Line box of the metadata inputs: the editor's line height (--line-height-normal) at the input size.
 int inputLineHeight()
 {
@@ -185,8 +194,10 @@ LongTextEdit::LongTextEdit(QWidget* parent)
     styleFlatInput(this);
     setStyleSheet(QStringLiteral("QTextEdit#ocPropertyText { background: transparent; border: none; padding: 0; }"));
     const propui::Style& s = propui::style();
-    setViewportMargins(s.padX, s.padY, s.padX, s.padY);
-    setPlaceholderText(kEmpty);
+    // the first line's text is centered in the input height like the key's (line-height 1.5 below)
+    m_top = int(std::round((s.inputHeight - QFontMetricsF(s.inputFont).height()) / 2));
+    setViewportMargins(s.padX, m_top, s.padX, s.padY);
+    m_placeholder = kEmpty;
     connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged, this, [this] { updateGeometry(); });
 }
 
@@ -200,7 +211,7 @@ int LongTextEdit::heightForWidth(int w) const
     QTextCursor c(doc);
     c.select(QTextCursor::Document);
     QTextBlockFormat bf;
-    bf.setLineHeight(line, QTextBlockFormat::FixedHeight);
+    bf.setLineHeight(lineHeightPercent(), QTextBlockFormat::ProportionalHeight);
     c.mergeBlockFormat(bf);
     int h = int(std::ceil(doc->size().height()));
     delete doc;
@@ -209,7 +220,9 @@ int LongTextEdit::heightForWidth(int w) const
         h = std::min(h, 3 * line); // --metadata-input-longtext-lines
     else
         h = std::min(h, 300);
-    return std::max(h + 2 * s.padY, s.inputHeight);
+    // the last line's box ends below its text by the leading; the bottom padding follows the text
+    const int leading = std::max(0, line - int(std::ceil(QFontMetricsF(font()).height())));
+    return std::max(m_top + h - leading + s.padY, s.inputHeight);
 }
 
 QSize LongTextEdit::sizeHint() const { return {200, heightForWidth(width() > 0 ? width() : 300)}; }
@@ -248,18 +261,24 @@ void LongTextEdit::focusOutEvent(QFocusEvent* e)
 
 void LongTextEdit::paintEvent(QPaintEvent* e)
 {
-    // line-height 1.5 like the editor's lines
+    // line-height 1.5 like the editor's lines (the leading goes below each line)
     const int line = inputLineHeight();
     QTextCursor c(document());
     c.select(QTextCursor::Document);
-    if (c.blockFormat().lineHeight() != line || c.blockFormat().lineHeightType() != QTextBlockFormat::FixedHeight) {
+    if (c.blockFormat().lineHeight() != lineHeightPercent() || c.blockFormat().lineHeightType() != QTextBlockFormat::ProportionalHeight) {
         QTextBlockFormat bf;
-        bf.setLineHeight(line, QTextBlockFormat::FixedHeight);
+        bf.setLineHeight(lineHeightPercent(), QTextBlockFormat::ProportionalHeight);
         const bool mod = document()->isModified();
         c.mergeBlockFormat(bf);
         document()->setModified(mod);
     }
     QTextEdit::paintEvent(e);
+    if (document()->isEmpty() && !m_placeholder.isEmpty()) {
+        QPainter p(viewport());
+        p.setFont(font());
+        p.setPen(propui::style().placeholder);
+        p.drawText(QRect(0, 0, viewport()->width(), line), Qt::AlignLeft | Qt::AlignTop, m_placeholder);
+    }
 }
 
 void LongTextEdit::insertFromMimeData(const QMimeData* source)
@@ -382,9 +401,9 @@ QRect TextPropertyEditor::linkRect() const
     if (!m_link)
         return {};
     const propui::Style& s = propui::style();
-    QFontMetrics fm(s.inputFont);
+    const QFontMetricsF fm(s.inputFont);
     const int avail = width() - 2 * s.padX - s.iconXs - 8;
-    const int w = std::min(fm.horizontalAdvance(m_link->title), std::max(10, avail));
+    const int w = std::min(int(std::ceil(fm.horizontalAdvance(m_link->title))) + 1, std::max(10, avail));
     const int h = inputLineHeight();
     return QRect(s.padX, (height() - h) / 2, w, h);
 }
@@ -471,7 +490,7 @@ NumberPropertyEditor::NumberPropertyEditor(const PropertyEditorContext& ctx, con
     styleFlatInput(m_input);
     m_input->setStyleSheet(QStringLiteral("QLineEdit#ocPropertyNumber { background: transparent; border: none; padding: 0; }"));
     const propui::Style& s = propui::style();
-    m_input->setTextMargins(s.padX, 0, s.padX, 0);
+    m_input->setTextMargins(s.padX - 2, 0, s.padX - 2, 0); // QLineEdit adds 2px of its own
     m_input->setPlaceholderText(kEmpty);
     m_input->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("[-+]?[0-9]*[.]?[0-9]*([eE][-+]?[0-9]*)?")), m_input));
     m_input->installEventFilter(this);
@@ -693,7 +712,7 @@ DateInput::DateInput(bool withTime, QWidget* parent)
     const propui::Style& s = propui::style();
     setStyleSheet(QStringLiteral("QDateTimeEdit#ocPropertyDate { background: transparent; border: none; padding: 0 0 0 %1px; }"
                                  "QDateTimeEdit#ocPropertyDate::drop-down { width: 0; border: none; }")
-                      .arg(s.padX));
+                      .arg(s.padX - 2)); // the inner line edit adds 2px
     setDateTime(QDateTime(QDate::currentDate(), QTime(0, 0)));
     connect(this, &QDateTimeEdit::dateTimeChanged, this, [this] {
         m_dirty = true;
@@ -871,10 +890,13 @@ QSize PropertyPill::sizeHint() const
 {
     const propui::Style& s = propui::style();
     const bool tag = m_owner->kind() == MultiSelectPropertyEditor::Kind::Tags;
-    QFontMetrics fm(s.inputFont);
-    int w = fm.horizontalAdvance(displayText()) + 2 + s.iconXs; // content, gap (--size-2-1), remove button
+    const bool remove = !m_owner->isReadOnly();
+    const QFontMetricsF fm(s.inputFont);
+    int w = int(std::ceil(fm.horizontalAdvance(displayText()))) + 1;
+    if (remove)
+        w += 2 + s.iconXs; // gap (--size-2-1) and the remove button
     if (tag)
-        w += int(std::round(s.tagPadX)) + std::min(6, int(std::round(s.tagPadX)));
+        w += int(std::round(s.tagPadX)) + (remove ? std::min(6, int(std::round(s.tagPadX))) : int(std::round(s.tagPadX)));
     return {w, pillLineHeight(tag)};
 }
 
@@ -882,6 +904,8 @@ QRect PropertyPill::removeRect() const
 {
     const propui::Style& s = propui::style();
     const bool tag = m_owner->kind() == MultiSelectPropertyEditor::Kind::Tags;
+    if (m_owner->isReadOnly()) // no remove button: an empty rect at the end of the text
+        return QRect(width() - (tag ? int(std::round(s.tagPadX)) : 0) + 2, height() / 2, 0, 0);
     const int right = tag ? std::min(6, int(std::round(s.tagPadX))) : 0;
     return QRect(width() - right - s.iconXs, (height() - s.iconXs) / 2, s.iconXs, s.iconXs);
 }
@@ -965,7 +989,7 @@ void PropertyPill::mouseDoubleClickEvent(QMouseEvent* e)
 
 void PropertyPill::mouseMoveEvent(QMouseEvent* e)
 {
-    const bool overRemove = removeRect().adjusted(-2, -2, 2, 2).contains(e->pos());
+    const bool overRemove = !m_owner->isReadOnly() && removeRect().adjusted(-2, -2, 2, 2).contains(e->pos());
     if (overRemove != m_hoverRemove) {
         m_hoverRemove = overRemove;
         update();
@@ -1099,8 +1123,10 @@ void MultiSelectPropertyEditor::setReadOnly(bool ro)
     m_input->setVisible(!ro || m_values.isEmpty());
     if (m_suggest)
         m_suggest->setEnabled(!ro);
-    for (PropertyPill* p : std::as_const(m_pills))
+    for (PropertyPill* p : std::as_const(m_pills)) {
+        p->updateGeometry();
         p->update();
+    }
     relayout();
 }
 

@@ -346,7 +346,7 @@ PropertyRow::PropertyRow(PropertiesWidget* owner, const props::Property& entry)
     pal.setColor(QPalette::Base, Qt::transparent);
     m_keyInput->setPalette(pal);
     m_keyInput->setStyleSheet(QStringLiteral("QLineEdit#ocPropertyKey { background: transparent; border: none; padding: 0; }"));
-    m_keyInput->setTextMargins(s.padX, 0, s.padX, 0);
+    m_keyInput->setTextMargins(s.padX - 2, 0, s.padX - 2, 0); // QLineEdit adds 2px of its own
     m_keyInput->setText(entry.key);
     m_keyInput->setCursorPosition(0);
     m_keyInput->setToolTip(entry.key);
@@ -365,11 +365,10 @@ PropertyRow::PropertyRow(PropertiesWidget* owner, const props::Property& entry)
     m_keySuggest = new PropertySuggest(m_keyInput, PropertySuggest::Mode::Keys, src, this);
     connect(m_keySuggest, &PropertySuggest::accepted, this, [this](const QString& text, bool, int) {
         m_keyInput->setText(text.trimmed());
-        if (commitKey(text.trimmed()))
-            QTimer::singleShot(0, this, [this] {
-                render(m_entry, true);
-                focusValue();
-            });
+        if (commitKey(text.trimmed())) {
+            render(m_entry, true);
+            focusValue();
+        }
     });
     render(entry, true);
 }
@@ -713,11 +712,10 @@ bool PropertyRow::eventFilter(QObject* obj, QEvent* ev)
         if ((k == Qt::Key_Return || k == Qt::Key_Enter || k == Qt::Key_Tab) && isPlainKey(ke)) {
             if (m_readOnly)
                 return false;
-            if (commitKey(m_keyInput->text().trimmed()))
-                QTimer::singleShot(0, this, [this] {
-                    render(m_entry, true);
-                    focusValue();
-                });
+            if (commitKey(m_keyInput->text().trimmed())) {
+                render(m_entry, true);
+                focusValue();
+            }
             return true;
         }
         if (k == Qt::Key_Backtab) {
@@ -895,7 +893,7 @@ PropertiesWidget::PropertiesWidget(QWidget* parent)
     sp.setHeightForWidth(true);
     setSizePolicy(sp);
     m_errorBox->hide();
-    connect(qApp, &QApplication::focusChanged, this, [this](QWidget* old, QWidget* now) {
+    m_focusConn = connect(qApp, &QApplication::focusChanged, this, [this](QWidget* old, QWidget* now) {
         if ((old && isAncestorOf(old)) || (now && isAncestorOf(now))) {
             update();
             for (PropertyRow* r : std::as_const(m_rows))
@@ -911,7 +909,14 @@ PropertiesWidget::PropertiesWidget(QWidget* parent)
     relayout();
 }
 
-PropertiesWidget::~PropertiesWidget() { disconnect(m_typesConn); }
+PropertiesWidget::~PropertiesWidget()
+{
+    disconnect(m_typesConn);
+    disconnect(m_focusConn); // the rows are deleted after this destructor (and move the focus)
+    const QList<PropertyRow*> rows = m_rows;
+    m_rows.clear();
+    qDeleteAll(rows);
+}
 
 void PropertiesWidget::setContext(const PropertyEditorContext& ctx)
 {

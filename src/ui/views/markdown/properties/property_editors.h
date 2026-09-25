@@ -104,6 +104,7 @@ protected:
 
 private:
     QString m_placeholder;
+    int m_top = 5; // top margin: the first line centered in the input height
 };
 
 class TextPropertyEditor : public PropertyValueEditor {

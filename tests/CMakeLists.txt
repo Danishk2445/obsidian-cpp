@@ -66,3 +66,4 @@ oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS
 oc_add_test(core_properties_yaml_test SOURCES core/properties_yaml_test.cpp core/properties_yaml_vectors.h DEPS oc_core)
 oc_add_test(core_properties_patch_test SOURCES core/properties_patch_test.cpp DEPS oc_core)
 oc_add_test(core_properties_types_test SOURCES core/properties_types_test.cpp DEPS oc_core Qt6::Test GUI)
+oc_add_test(ui_properties_test SOURCES ui/properties_widget_test.cpp DEPS oc_ui Qt6::Test GUI)
