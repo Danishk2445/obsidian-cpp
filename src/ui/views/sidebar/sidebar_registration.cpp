@@ -275,7 +275,16 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
     c.checkCallback = [w](bool checking) { return openForCurrent(w, QStringLiteral("backlink"), checking); };
     r.add(c);
     c = makeCommand("backlink:toggle-backlinks-in-document", tr("Backlinks: Toggle backlinks in document"), "link");
-    c.checkCallback = [](bool) { return false; }; // backlinks in document are not implemented
+    c.checkCallback = [w](bool checking) {
+        // Obsidian: the active markdown view's own toggle (not the option for new views)
+        WorkspaceLeaf* leaf = w && w->workspace() ? w->workspace()->activeLeaf() : nullptr;
+        auto* mv = leaf ? qobject_cast<MarkdownView*>(leaf->view()) : nullptr;
+        if (!mv || !mv->canToggleBacklinks())
+            return false;
+        if (!checking)
+            mv->setShowBacklinks(!mv->showBacklinks());
+        return true;
+    };
     r.add(c);
 
     // ---- outgoing-link ----

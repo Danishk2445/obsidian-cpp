@@ -139,6 +139,12 @@ public:
 
     // Content margins of the list (the pane's padding).
     void setContentMargins(int left, int top, int right, int bottom);
+    // Natural height (backlinks embedded in a note): no scrolling, sizeHint() = the whole content, wheel
+    // events go to the parent; only the exposed part is painted.
+    void setAutoHeight(bool on);
+    bool autoHeight() const { return m_autoHeight; }
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
     // ---- expansion --------------------------------------------------------------------------------
     void setCollapsed(Node* node, bool collapsed);
@@ -210,8 +216,11 @@ protected:
     bool viewportEvent(QEvent* e) override;
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void changeEvent(QEvent* e) override;
+    void wheelEvent(QWheelEvent* e) override;
 
 private:
+    bool m_autoHeight = false;
+    int m_reportedHeight = -1;
     struct Metrics;
     enum class Hit { None, Row, Chevron, Button, MoreBefore, MoreAfter, Chip };
 

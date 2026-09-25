@@ -106,6 +106,12 @@ Interfaces other modules/agents build against. Change deliberately and update al
   nesting chain, depth limit 5 / cycles, `noteChanged` / `linksChanged`, `NoteEmbedHost` per vault),
   `NoteEmbedLayout` (size, static paint, hit testing), `NoteEmbedProvider` ("md"). UI: `src/ui/views/markdown/
   note_embed_view.h` — `NoteEmbedWidget` (live widget) and `registerNoteEmbeds(session)` (provider + session host).
+- Render layer, additive (raw HTML): `Mark::custom` + `LineDecoration::customStyles` / `addCustomStyle()` /
+  `markSpec()` (marks with styles that aren't theme constants, e.g. `style="color: …"`; `Mark` stays 12 bytes),
+  `StyleId::{Underline, Kbd, Subscript, Superscript, SmallText, LargeText, Monospace}`,
+  `StyleSheet::tableBorderColor()` / `tableHeaderBackground()`. Contiguous pills (box marks) merge only within one
+  mark. `src/editor/html/*` (not frozen): `html_parse.h` (tag / style parsing, Obsidian's inline / block / excluded
+  element lists), `html_inline.h` (inline elements as decorations, `anchorAt`), `html_block.h` (`HtmlBlockWidget`).
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,

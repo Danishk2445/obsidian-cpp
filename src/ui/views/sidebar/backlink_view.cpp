@@ -12,12 +12,14 @@
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
+#include "render/theme/theme.h"
 #include "text/codec.h"
 #include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/file_explorer/file_explorer_view.h"
 #include "ui/views/file_explorer/file_tree.h"
 #include "ui/workspace/workspace.h"
 
+#include <QPainter>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -190,6 +192,26 @@ BacklinkPane::~BacklinkPane()
         disconnect(c);
     cancelUnlinked();
     m_engine.reset(); // waits for the workers before the callbacks' context goes away
+}
+
+void BacklinkPane::setEmbedded(bool on)
+{
+    m_embedded = on;
+    m_header->setEmbedded(on);
+    m_tree->setContentMargins(on ? 0 : 12, on ? 0 : 4, on ? 0 : 12, on ? 12 : 32); // .embedded-backlinks .backlink-pane: padding 0
+    m_tree->setAutoHeight(on);
+    if (auto* v = qobject_cast<QVBoxLayout*>(layout()))
+        v->setStretch(1, on ? 0 : 1);
+    setSizePolicy(QSizePolicy::Preferred, on ? QSizePolicy::Fixed : QSizePolicy::Preferred);
+}
+
+void BacklinkPane::paintEvent(QPaintEvent* e)
+{
+    QWidget::paintEvent(e);
+    if (!m_embedded)
+        return;
+    QPainter p(this); // .embedded-backlinks: border-top 1px var(--background-modifier-border)
+    p.fillRect(QRect(0, 0, width(), 1), currentTheme()->color(QStringLiteral("--background-modifier-border")));
 }
 
 VaultSession* BacklinkPane::session() const { return m_owner ? m_owner->session() : nullptr; }

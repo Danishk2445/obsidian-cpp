@@ -128,6 +128,12 @@ public:
     // Let the top widget extend `px` to the left of the text column (into the fold gutter, e.g. for
     // the properties' collapse indicator); it is then measured and laid out at that larger width.
     void setTopWidgetOverhang(int px);
+    // A widget below the last line that scrolls with the text (Obsidian's backlinks in document). It is
+    // reparented to the viewport, laid out at the text column's width, and its height (heightForWidth /
+    // sizeHint, re-measured on its layout requests) plus `topMargin` is reserved below the text.
+    void setFooterWidget(QWidget* widget, int topMargin = 0);
+    QWidget* footerWidget() const { return m_footer; }
+    void updateFooterWidget();
 
     DocLayout& layout() { return m_layout; }
     double contentLeft() const { return m_contentLeft; }
@@ -183,6 +189,7 @@ signals:
     void linkHovered(const QString& target, int kind, const QRect& rect);
 
 protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override;
     void paintEvent(QPaintEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
     void scrollContentsBy(int dx, int dy) override;
@@ -281,6 +288,10 @@ private:
     bool addFold(const FoldRange& r);
     void paintFoldIndicators(QPainter& p);
     void paintLineNumbers(QPainter& p);
+    QPointer<QWidget> m_footer;
+    int m_footerMargin = 0;
+    qreal m_footerH = 0; // reserved height (margin + widget)
+    void positionFooter();
     double gutterWidth() const;
     bool m_lineNumbers = false;
     double m_columnLeft = 0, m_columnWidth = 0; // the text column including the gutter

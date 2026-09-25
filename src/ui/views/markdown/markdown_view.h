@@ -12,6 +12,7 @@
 
 namespace oc {
 
+class BacklinkPane;
 class Document;
 class EditorSearchBar;
 class EditorSuggest;
@@ -84,6 +85,13 @@ public:
     static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, bool newLeaf);
     static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, Workspace::NewLeaf mode);
 
+    // Obsidian's backlinks in document: the backlinks pane below the text (.embedded-backlinks), per view
+    // (state "backlinks" / "backlinkOpts"); new views follow the Backlinks option "backlinkInDocument".
+    bool showBacklinks() const { return m_showBacklinks; }
+    void setShowBacklinks(bool on);
+    bool canToggleBacklinks() const { return m_file != nullptr; }
+    BacklinkPane* embeddedBacklinks() const { return m_backlinks; }
+
 signals:
     void modeChanged(oc::EditorView::Mode mode);
 
@@ -118,6 +126,10 @@ private:
     QMetaObject::Connection m_propsConn;
     EditorSuggest* m_suggest;
     VimController* m_vim = nullptr;
+    bool m_showBacklinks = false;
+    bool m_backlinksDefaulted = false;
+    BacklinkPane* m_backlinks = nullptr; // owned by the editor viewport (footer widget)
+    void updateBacklinksFooter();
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;

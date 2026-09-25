@@ -79,7 +79,7 @@ void EditorView::setVisibleLineRange(int from, int to)
     applyFolds(false);
 }
 
-double EditorView::documentHeight() const { return m_marginTop + m_layout.totalHeight() + m_marginBottom; }
+double EditorView::documentHeight() const { return m_marginTop + m_layout.totalHeight() + m_footerH + m_marginBottom; }
 
 void EditorView::applyFolds(bool emitChange)
 {

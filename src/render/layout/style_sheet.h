@@ -58,6 +58,14 @@ enum class StyleId : quint16 {
     CodePunctuation,
     CodeTag,
     CodeImportant,
+    // raw HTML elements rendered inline (<u>, <kbd>, <sub>, <sup>, <small>, <big>, <tt>)
+    Underline,
+    Kbd,
+    Subscript,
+    Superscript,
+    SmallText,
+    LargeText,
+    Monospace,
     Count
 };
 
@@ -115,6 +123,8 @@ public:
     QColor muted() const { return m_muted; }
     QColor hrColor() const { return m_hr; }
     qreal hrThickness() const { return m_hrThickness; }
+    QColor tableBorderColor() const { return m_tableBorder; }       // --table-border-color
+    QColor tableHeaderBackground() const { return m_tableHeaderBg; } // --table-header-background
     int tabSizeSpaces() const { return 4; }
 
 private:
@@ -124,6 +134,7 @@ private:
     qreal m_textSize = 16, m_listIndent = 36, m_pSpacing = 16, m_listSpacing = 1.2, m_codePadX = 16;
     qreal m_quoteBar = 2, m_quoteIndent = 24, m_codeRadius = 4, m_hrThickness = 2;
     QColor m_codeBg, m_quoteColor, m_selection, m_caret, m_guide, m_guideActive, m_faint, m_muted, m_hr;
+    QColor m_tableBorder, m_tableHeaderBg;
 };
 
 using StyleSheetPtr = std::shared_ptr<const StyleSheet>;
