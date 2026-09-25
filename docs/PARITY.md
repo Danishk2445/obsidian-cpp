@@ -7,7 +7,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started · (V) = verified against Ob
 - ✅ Frameless window with header-row drag, edge resize, min/max/close; native-frame option
 - ✅ Ribbon, left/right sidedocks (icon tabs, collapse), floating status bar, notices
 - ✅ Theme tokens (dark/light/system, accent), Lucide icons, QSS
-- ⬜ Workspace tabs/splits (M1/M4)
+- ✅ Workspace tabs/splits (M1/M4)
 
 (sections for M1..M9 are added as work lands)
 
@@ -125,6 +125,34 @@ Open parity questions:
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
   the very top adds no blank line before it.
+
+## App commands, menus and integration (M4–M7)
+- ✅ Editor commands with Obsidian's ids: checklist toggle / cycle (Obsidian's state machine, numbered items kept),
+  insert footnote (`[^n]` + definition at the end), insert tag, readable line length / line numbers (stored only) /
+  spellcheck toggles (global, like Obsidian's plain callbacks), open link under cursor in a new split.
+- ✅ Workspace commands: close others / close tab group / close others in tab group, copy URL, delete file, show
+  trash (local trash only), toggle ribbon, toggle default new-pane mode, toggle light / dark, open help (F1), show
+  debug info (modal with "Copy to clipboard").
+- ✅ Pane menus: the "more options" and tab-header menus use Obsidian's section order (close, pane, open, action, find,
+  info, info.copy → "Copy path", view, view.linked → "Open linked view", system, danger) with the core file-menu
+  items (copy Obsidian URL / path from vault / from system root, open in default app, show in system explorer,
+  reveal in navigation, move file to..., rename..., delete, open backlinks / outgoing links / outline / local graph /
+  file properties).
+- ✅ Rename prompts: "Note title" / "File name" (validation errors as tooltips); "Rename this heading..."
+  (editor:rename-heading) and "Rename this block ID..." update every link to `note#Heading` / `note#^id` (aliases
+  kept, Markdown links encoded) with "Updated N links in M files."; the note's own change is one undoable edit.
+- ✅ Core plugin switches: disabling a core plugin hides its commands, ribbon actions, status-bar items and views
+  (and detaches its leaves); enabling restores its sidebar leaf.
+- ✅ Export to PDF: Obsidian's modal (include file name, page size, landscape, margin, downscale percent), save
+  dialog, "Preparing PDF..." / "PDF Saved to X" notices, opens the PDF afterwards; settings in pdfExportSettings.
+- ✅ Vaults: "Open another vault" / "Manage vaults..." switcher (fuzzy, "Active"), the vault picker.
+- ✅ Single instance per clone config: a second launch hands its vault / file to the running process;
+  `obsidian-cpp note.md` and `obsidian-cpp 'obsidian://open?vault=...&file=...'` targets; `--new-instance`.
+- ✅ Desktop integration: icon, .desktop entry (Markdown files; it does not claim `obsidian://`), install rules
+  (`cmake --install build/rel --prefix ~/.local`).
+- ⬜ Window zoom (window:zoom-in / zoom-out / reset-zoom, Appearance "Zoom level"): Qt has no public runtime
+  equivalent of Chromium's page zoom; use the font size setting or `QT_SCALE_FACTOR`.
+- ⬜ Pop-out windows (open / move to new window), stacked tabs, always-on-top.
 
 ## Settings (M7)
 - ✅ Modal: Obsidian 1.13's sidebar layout (search, Options / Core plugins / Community plugins groups), setting
