@@ -90,6 +90,12 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `EmbedRequest` (file, subpath params, inline / popover); `hosted_embeds.h` — `EmbedWidget` (the decorator's inline
   placeholder) and `HostedEmbeds` (created by every `EditorView`: live widgets near the viewport, pooled; a widget
   with the `ocEmbedBusy` property is kept alive). Providers: `src/ui/views/media` (`registerMediaViews`).
+- Render layer, additive (raw HTML): `Mark::custom` + `LineDecoration::customStyles` / `addCustomStyle()` /
+  `markSpec()` (marks with styles that aren't theme constants, e.g. `style="color: …"`; `Mark` stays 12 bytes),
+  `StyleId::{Underline, Kbd, Subscript, Superscript, SmallText, LargeText, Monospace}`,
+  `StyleSheet::tableBorderColor()` / `tableHeaderBackground()`. Contiguous pills (box marks) merge only within one
+  mark. `src/editor/html/*` (not frozen): `html_parse.h` (tag / style parsing, Obsidian's inline / block / excluded
+  element lists), `html_inline.h` (inline elements as decorations, `anchorAt`), `html_block.h` (`HtmlBlockWidget`).
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,

@@ -7,6 +7,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 
 namespace oc::html {
@@ -122,6 +123,22 @@ QList<int> htmlTagNodes(const md::InlineTree& tree)
     return out;
 }
 
+std::pair<int, int> contentWindow(const md::LeafContent& content, const Text& text, qsizetype from, qsizetype to)
+{
+    int winFrom = INT_MAX, winTo = -1;
+    const QList<md::LeafContent::Segment>& segs = content.segments;
+    const int la = text.lineAt(from), lb = text.lineAt(to);
+    auto sg = std::lower_bound(segs.cbegin(), segs.cend(), la, [](const md::LeafContent::Segment& s, int l) { return s.line < l; });
+    for (; sg != segs.cend() && sg->line <= lb; ++sg) {
+        const qsizetype start = text.lineStart(sg->line) + sg->col;
+        if (start + sg->length < from || start > to)
+            continue;
+        winFrom = std::min(winFrom, sg->contentFrom + int(std::max<qsizetype>(0, from - start)));
+        winTo = std::max(winTo, sg->contentFrom + int(std::min<qsizetype>(sg->length, to - start)));
+    }
+    return {winFrom, winTo};
+}
+
 md::LeafContent blockContent(const md::SyntaxTree& tree, int leaf, const Text& text)
 {
     md::LeafContent c;
@@ -235,7 +252,14 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
     const std::shared_ptr<const InlineStructure> structure = structureOf(c.tree, htmlNodes);
     const InlineStructure& st = *structure;
 
+    // Markup outside the window is skipped before any document mapping (each line of a long paragraph sees all
+    // of the paragraph's elements).
+    const auto [winFrom, winTo] = contentWindow(*c.content, text, ls, le);
+    auto inWindow = [&](int from, int to) { return to >= winFrom && from <= winTo; };
+
     for (int id : st.comments) {
+        if (!inWindow(it.node(id).from, it.node(id).to))
+            continue;
         const auto [a, b] = nodeRange(id);
         if (browser)
             hide(a, b);
@@ -243,6 +267,8 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
             mark(a, b, StyleId::Comment);
     }
     for (int id : st.strayClosing) {
+        if (!inWindow(it.node(id).from, it.node(id).to))
+            continue;
         if (browser)
             hide(nodeRange(id).first, nodeRange(id).second);
         else
@@ -272,6 +298,12 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
     const qreal basePx = c.styles->line(c.lineStyle).font.pixelSize();
     for (int k = 0; k < st.elements.size(); ++k) {
         const InlineElement& e = st.elements[k];
+        const int contentStart = it.node(e.open).from;
+        const int contentEnd = e.close >= 0 ? it.node(e.close).to : std::max(it.node(e.open).to, e.contentTo);
+        if (contentStart > winTo)
+            break; // elements are in document order
+        if (!inWindow(contentStart, contentEnd))
+            continue;
         const Tag& t = e.tag;
         const auto [oa, ob] = nodeRange(e.open);
         const qsizetype end = elementEnd(e);

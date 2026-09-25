@@ -422,6 +422,9 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
     const QColor textColor = m_styles->line(lineStyle).color;
     const bool reading = m_reading || forceInactive;
     QList<int> htmlTags; // rendered together below (tags pair up across the leaf)
+    // Nodes outside the window are skipped in content offsets, before mapping them to the document (every line
+    // of a long paragraph walks all of the paragraph's nodes).
+    const auto [winFrom, winTo] = html::contentWindow(content, text, ls, le);
     for (int id = 0; id < it->size(); ++id) {
         const md::InlineNode& n = it->node(id);
         if (n.type == InlineType::Mark || n.type == InlineType::Text)
@@ -430,6 +433,8 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
             htmlTags.push_back(id);
             continue;
         }
+        if (n.to < winFrom || n.from > winTo)
+            continue;
         const auto [a, b] = docRange(n);
         if (b < ls || a > le)
             continue;

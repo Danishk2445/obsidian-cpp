@@ -77,6 +77,10 @@ std::optional<AnchorHit> anchorAt(const md::InlineTreePtr& tree, const md::LeafC
 // "https:", "mailto:", "obsidian:"...
 bool hasUrlScheme(const QString& url);
 
+// The content offsets [first, last] of a content's part inside the document range [from, to] (first > last when
+// none): nodes outside it can be skipped without mapping them to the document.
+std::pair<int, int> contentWindow(const md::LeafContent& content, const Text& text, qsizetype from, qsizetype to);
+
 // Inline content of an HTML block leaf (its lines after container markers), for rendering an HTML block
 // that isn't a block widget (inside a list or a quote) with inline decorations.
 md::LeafContent blockContent(const md::SyntaxTree& tree, int leaf, const Text& text);
