@@ -36,6 +36,7 @@ class Document;
 class EditorView;
 class LivePreviewDecorator;
 class MainWindow;
+class Modal;
 class VaultSession;
 
 namespace canvasui {
@@ -158,6 +159,8 @@ public:
     // Opens the context menu for what is at `viewportPos` (tests use it headless: no exec()).
     QMenu* showContextMenu(const QPoint& viewportPos);
     QMenu* lastMenu() const { return m_lastMenu; }
+    // Obsidian's "Canvas help" modal (the controls' help button).
+    Modal* showHelp();
 
     // Painting (called by the items).
     void paintItem(QPainter* p, const canvasui::CanvasItem& item);

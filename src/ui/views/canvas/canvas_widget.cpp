@@ -15,6 +15,9 @@
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "text/codec.h"
+#include "ui/overlay/modal.h"
+#include "ui/settings/setting_item.h" // (before hotkeys_tab.h: SettingGroup)
+#include "ui/settings/hotkeys_tab.h"
 #include "ui/shell/main_window.h"
 #include "ui/views/canvas/canvas_controls.h"
 #include "ui/views/canvas/canvas_items.h"
@@ -27,6 +30,9 @@
 #include <QFontMetricsF>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLineEdit>
@@ -209,26 +215,7 @@ CanvasWidget::CanvasWidget(QWidget* parent)
         } else if (name == u"redo") {
             redo();
         } else if (name == u"help") {
-            QMenu* menu = newMenu();
-            const QStringList lines = {
-                tr("Pan: Space + Drag, Scroll"),
-                tr("Pan horizontally: Shift + Scroll"),
-                tr("Zoom: Ctrl + Scroll, Space + Scroll"),
-                tr("Zoom to fit: Shift + 1"),
-                tr("Zoom to selection: Shift + 2"),
-                tr("Select all: Ctrl + A"),
-                tr("Add to / remove from selection: Shift + Click, Shift + Drag to select"),
-                tr("Create a card with specific size: Ctrl + Drag to select"),
-                tr("Clone card: Ctrl + Drag"),
-                tr("Constrain card movement to axis: Shift + Drag"),
-                tr("Disable snapping while dragging: Alt"),
-                tr("Remove card: Backspace, Delete"),
-                tr("Undo: Ctrl + Z"),
-                tr("Redo: Ctrl + Y, Ctrl + Shift + Z"),
-            };
-            for (const QString& l : lines)
-                menu->addAction(l)->setEnabled(false);
-            popupMenu(menu, global);
+            showHelp();
         }
     });
     connect(m_cardMenu, &canvasui::CardMenu::clicked, this, [this](const QString& kind) {
@@ -2284,6 +2271,64 @@ void CanvasWidget::updateOverlays()
     m_selectionMenu->move(int(std::round(F)) - tb.x(), int(std::round(top)));
     m_selectionMenu->show();
     m_selectionMenu->raise();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Help
+// ---------------------------------------------------------------------------------------------
+
+Modal* CanvasWidget::showHelp()
+{
+    MainWindow* w = mainWindow();
+    if (!w)
+        return nullptr;
+    // Obsidian's "Canvas help" modal: an action and its keys per row (.canvas-instruction).
+    const bool zoomWheel = m_options.defaultWheelBehavior == u"zoom";
+    const QList<QStringList> pan = zoomWheel ? QList<QStringList>{{u"Space"_s, u"Drag"_s}, {u"Ctrl"_s, u"Scroll"_s}, {u"Space"_s, u"Scroll"_s}}
+                                             : QList<QStringList>{{u"Space"_s, u"Drag"_s}, {u"Scroll"_s}};
+    const QList<QStringList> zoom = zoomWheel ? QList<QStringList>{{u"Scroll"_s}} : QList<QStringList>{{u"Ctrl"_s, u"Scroll"_s}, {u"Space"_s, u"Scroll"_s}};
+    const QList<QStringList> panH = zoomWheel ? QList<QStringList>{{u"Ctrl"_s, u"Shift"_s, u"Scroll"_s}, {u"Shift"_s, u"Space"_s, u"Scroll"_s}}
+                                              : QList<QStringList>{{u"Shift"_s, u"Scroll"_s}};
+    const QList<std::pair<QString, QList<QStringList>>> rows = {
+        {tr("Pan"), pan},
+        {tr("Pan horizontally"), panH},
+        {tr("Zoom"), zoom},
+        {tr("Zoom to fit"), {{u"Shift"_s, u"1"_s}}},
+        {tr("Zoom to selection"), {{u"Shift"_s, u"2"_s}}},
+        {tr("Select all"), {{u"Ctrl"_s, u"A"_s}}},
+        {tr("Add to / remove from selection"), {{u"Shift"_s, u"Click"_s}, {u"Shift"_s, u"Drag to select"_s}}},
+        {tr("Create a card with specific size"), {{u"Ctrl"_s, u"Drag to select"_s}}},
+        {tr("Clone card"), {{u"Ctrl"_s, u"Drag"_s}}},
+        {tr("Constrain card movement to axis"), {{u"Shift"_s, u"Drag"_s}}},
+        {tr("Disable snapping while dragging"), {{u"Alt"_s}}},
+        {tr("Remove card"), {{u"Backspace"_s}, {u"Delete"_s}}},
+        {tr("Undo"), {{u"Ctrl"_s, u"Z"_s}}},
+        {tr("Redo"), {{u"Ctrl"_s, u"Y"_s}, {u"Ctrl"_s, u"Shift"_s, u"Z"_s}}},
+    };
+    auto* modal = new Modal(w->overlay());
+    modal->setObjectName(u"ocCanvasHelp"_s);
+    modal->setTitle(tr("Canvas help"));
+    auto* body = new QWidget;
+    auto* grid = new QGridLayout(body);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setVerticalSpacing(12); // .canvas-help gap: var(--size-4-3)
+    grid->setHorizontalSpacing(16);
+    int r = 0;
+    for (const auto& [label, keys] : rows) {
+        auto* l = new QLabel(label);
+        grid->addWidget(l, r, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        auto* chips = new QWidget;
+        auto* h = new QHBoxLayout(chips);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(4); // .canvas-instruction-desc gap: var(--size-4-1)
+        for (const QStringList& k : keys)
+            h->addWidget(new HotkeyChip(k.join(u" + "_s), HotkeyChip::State::Normal, false));
+        grid->addWidget(chips, r, 1, Qt::AlignRight | Qt::AlignVCenter);
+        ++r;
+    }
+    modal->addContentWidget(body);
+    modal->open();
+    return modal;
 }
 
 // ---------------------------------------------------------------------------------------------

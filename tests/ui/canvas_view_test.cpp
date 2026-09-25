@@ -10,6 +10,8 @@
 #include "core/commands/command_registry.h"
 #include "core/config/config_store.h"
 #include "render/theme/theme.h"
+#include "ui/overlay/modal.h"
+#include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
 #include "ui/settings/setting_item.h"
 #include "ui/settings/settings_modal.h"
@@ -28,6 +30,7 @@
 #include <QClipboard>
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
@@ -930,6 +933,23 @@ TEST_F(CanvasTest, CanvasEmbedInANote)
     auto* cv = qobject_cast<CanvasView*>(window->workspace()->activeRootLeaf()->view());
     ASSERT_TRUE(cv);
     EXPECT_EQ(cv->file()->path(), "Mini.canvas");
+}
+
+TEST_F(CanvasTest, HelpModal)
+{
+    CanvasView* cv = openCanvas("Plain.canvas");
+    ASSERT_TRUE(cv);
+    cv->canvas()->controls()->button("help")->click();
+    QApplication::processEvents();
+    auto* m = window->overlay()->findChild<Modal*>("ocCanvasHelp");
+    ASSERT_TRUE(m);
+    EXPECT_TRUE(m->isOpen());
+    EXPECT_EQ(m->title(), "Canvas help");
+    EXPECT_EQ(m->findChildren<QLabel*>().size() >= 14, true);
+    if (const QString dir = qEnvironmentVariable("OC_SHOT_DIR"); !dir.isEmpty())
+        window->grab().save(dir + "/canvas-help-dark.png");
+    m->close();
+    QApplication::processEvents();
 }
 
 TEST_F(CanvasTest, SettingsTab)
