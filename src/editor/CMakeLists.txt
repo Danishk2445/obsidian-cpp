@@ -5,6 +5,9 @@ oc_add_library(oc_editor
     editor_view_fold.cpp
     fold/fold_service.cpp
     export/pdf_exporter.cpp
+    html/html_block.cpp
+    html/html_inline.cpp
+    html/html_parse.cpp
     markdown_commands.cpp
     plugins/greentext_guard.cpp
     search/doc_searcher.cpp

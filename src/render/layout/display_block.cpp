@@ -11,7 +11,12 @@ quint64 LineDecoration::signature() const
 {
     quint64 h = qHashMulti(0, int(lineStyle), paddingTop, paddingBottom, indent, hangingColumn, tabStop, quoteDepth, int(code), hrRule, hideCaret);
     for (const Mark& m : marks)
-        h = qHashMulti(h, m.from, m.to, int(m.style));
+        h = qHashMulti(h, m.from, m.to, int(m.style), m.custom);
+    for (const StyleSpec& s : customStyles) {
+        const QTextCharFormat& f = s.format;
+        h = qHashMulti(h, f.foreground().color().rgba(), f.background().color().rgba(), f.background().style(), f.fontWeight(), f.fontItalic(),
+                       f.fontUnderline(), f.fontStrikeOut(), f.property(QTextFormat::FontPixelSize).toInt(), s.box.enabled);
+    }
     for (const Replace& r : replaces) {
         h = qHashMulti(h, r.from, r.to, int(r.kind), r.text, int(r.style));
         if (r.widget)
@@ -103,7 +108,7 @@ DisplayBlock DisplayBlock::build(QStringView text, const LineDecoration& deco, c
     for (const Mark& m : deco.marks) {
         if (m.to <= m.from)
             continue;
-        const StyleSpec& spec = styles.spec(m.style);
+        const StyleSpec& spec = deco.markSpec(m, styles);
         for (const Segment& s : b.m_segments) {
             if (s.kind != Segment::Kind::Text)
                 continue;

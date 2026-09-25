@@ -180,6 +180,42 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     fg(StyleId::CodeTag, t.color(QStringLiteral("--code-tag")));
     fg(StyleId::CodeImportant, t.color(QStringLiteral("--code-important")));
 
+    // ---- raw HTML elements (app.css `kbd`, UA sheet `sub`/`sup`/`small`/`big`/`u`/`tt`) ----
+    s->m_specs[size_t(StyleId::Underline)].format.setFontUnderline(true);
+    {
+        // kbd { color: --code-normal; font-family: --font-monospace; background-color: --code-background;
+        //       border-radius: --radius-s; font-size: --code-size; padding: 0.1em 0.25em }
+        StyleSpec& sp = s->m_specs[size_t(StyleId::Kbd)];
+        sp = s->m_specs[size_t(StyleId::InlineCode)];
+        sp.format.clearProperty(QTextFormat::FontPointSize); // the pixel size rules (a -1 point size only warns)
+        sp.box.radius = t.px(QStringLiteral("--radius-s"), base, 4);
+        sp.box.padX = 0.25 * codePx;
+    }
+    {
+        // sub/sup { font-size: smaller; vertical-align: sub|super }. Qt draws AlignSub/SuperScript runs at 2/3
+        // of the format's pixel size, so ask for 1.5x the target; the baseline shifts (Blink: parent size / 5 + 1
+        // down, / 3 + 1 up) are percentages of the scaled font's height.
+        const int target = std::max(1, int(std::lround(base / 1.2)));
+        const int requested = (target * 3 + 1) / 2;
+        const QFontMetricsF fm(withPx(textFont, target));
+        const qreal h = std::max<qreal>(1, fm.ascent() + fm.descent());
+        QTextCharFormat& sub = s->m_specs[size_t(StyleId::Subscript)].format;
+        sub.setVerticalAlignment(QTextCharFormat::AlignSubScript);
+        sub.setProperty(QTextFormat::FontPixelSize, requested);
+        sub.setSubScriptBaseline((base / 5 + 1) / h * 100);
+        QTextCharFormat& sup = s->m_specs[size_t(StyleId::Superscript)].format;
+        sup.setVerticalAlignment(QTextCharFormat::AlignSuperScript);
+        sup.setProperty(QTextFormat::FontPixelSize, requested);
+        sup.setSuperScriptBaseline((base / 3 + 1) / h * 100);
+    }
+    s->m_specs[size_t(StyleId::SmallText)].format.setProperty(QTextFormat::FontPixelSize, int(std::lround(base / 1.2)));
+    s->m_specs[size_t(StyleId::LargeText)].format.setProperty(QTextFormat::FontPixelSize, int(std::lround(base * 1.2)));
+    {
+        QTextCharFormat& f = s->m_specs[size_t(StyleId::Monospace)].format;
+        f.setFontFamilies({t.monospaceFamily()});
+        f.setProperty(QTextFormat::FontPixelSize, int(std::lround(codePx)));
+    }
+
     // ---- block visuals ----
     s->m_listIndent = t.px(QStringLiteral("--list-indent"), base, base * 2.25);
     s->m_pSpacing = t.px(QStringLiteral("--p-spacing"), base, 16);
@@ -196,6 +232,8 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     s->m_guideActive = t.color(QStringLiteral("--indentation-guide-color-active"));
     s->m_hr = t.color(QStringLiteral("--hr-color"), t.color(QStringLiteral("--background-modifier-border")));
     s->m_hrThickness = t.px(QStringLiteral("--hr-thickness"), base, 2);
+    s->m_tableBorder = t.color(QStringLiteral("--table-border-color"), t.color(QStringLiteral("--background-modifier-border")));
+    s->m_tableHeaderBg = t.color(QStringLiteral("--table-header-background"));
     return s;
 }
 

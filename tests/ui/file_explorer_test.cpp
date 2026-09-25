@@ -50,7 +50,7 @@ QAction* findAction(const QMenu* menu, const QString& text)
 
 const QStringList kRootOrder{
     "Archive/", "attachments/", "Daily/", "Projects/", "Templates/", "4chan thread.md", "Bash snippets.md", "Code.md", "Embeds.md",
-    "Formatting.md", "Frontmatter.md", "Lists.md", "Math.md", "Quotes and callouts.md", "Tables.md", "Unicode.md", "Welcome.md",
+    "Formatting.md", "Frontmatter.md", "HTML.md", "Lists.md", "Math.md", "Quotes and callouts.md", "Tables.md", "Unicode.md", "Welcome.md",
 };
 } // namespace
 

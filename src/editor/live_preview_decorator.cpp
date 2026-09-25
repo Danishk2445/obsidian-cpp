@@ -3,6 +3,8 @@
 #include "markdown/doc_source.h"
 #include "render/services/code_highlighter.h"
 #include "render/widgets/inline_widgets.h"
+#include "editor/html/html_block.h"
+#include "editor/html/html_inline.h"
 #include "editor/widgets/block_widgets.h"
 
 #include <QFontMetricsF>
@@ -324,6 +326,12 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         const NodeType lt = tree.node(leaf).type;
         if (lt == NodeType::Paragraph || lt == NodeType::AtxHeading || lt == NodeType::SetextHeading)
             inlineDecorations(line, leaf, d);
+        else if (lt == NodeType::HtmlBlock && tree.parent(leaf) > 0 && !active) {
+            // An HTML block inside a list / quote (top-level ones are block widgets): its tags render inline.
+            d.lineStyle = StyleId::Normal;
+            const md::LeafContent content = html::blockContent(tree, leaf, text);
+            inlineDecorationsFor(content, tree.inlineTree(content), text.lineStart(line), text.lineEnd(line), text.lineStart(line), d, d.lineStyle, false);
+        }
     }
 
     std::sort(d.replaces.begin(), d.replaces.end(), [](const Replace& a, const Replace& b) { return a.from < b.from || (a.from == b.from && a.to < b.to); });
@@ -401,10 +409,15 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
     const qreal textPx = m_styles->line(lineStyle).font.pixelSize();
     const QColor textColor = m_styles->line(lineStyle).color;
     const bool reading = m_reading || forceInactive;
+    QList<int> htmlTags; // rendered together below (tags pair up across the leaf)
     for (int id = 0; id < it->size(); ++id) {
         const md::InlineNode& n = it->node(id);
         if (n.type == InlineType::Mark || n.type == InlineType::Text)
             continue;
+        if (n.type == InlineType::HtmlTag) {
+            htmlTags.push_back(id);
+            continue;
+        }
         const auto [a, b] = docRange(n);
         if (b < ls || a > le)
             continue;
@@ -603,15 +616,29 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
             else
                 addMark(a, b, StyleId::BlockId);
             break;
-        case InlineType::HtmlTag:
-            addMark(a, b, StyleId::Html);
-            break;
         case InlineType::Escape:
             marksOf(id, !act);
             break;
         default:
             break;
         }
+    }
+    if (!htmlTags.isEmpty()) {
+        html::InlineContext hc;
+        hc.tree = it.get();
+        hc.content = &content;
+        hc.text = &text;
+        hc.lineFrom = ls;
+        hc.lineTo = le;
+        hc.colBase = colBase;
+        hc.reading = m_reading;
+        hc.forceInactive = forceInactive;
+        hc.touches = [this](qsizetype a, qsizetype b) { return touches(a, b); };
+        hc.styles = m_styles;
+        hc.lineStyle = lineStyle;
+        hc.contentWidth = m_contentWidth;
+        hc.resolveAttachment = resolveAttachment;
+        html::decorateInline(hc, htmlTags, d);
     }
 }
 
@@ -667,6 +694,12 @@ void LivePreviewDecorator::blockRanges(int fromLine, int toLine, QList<BlockRang
             break;
         if (n.fromLine < fromLine)
             continue; // starts before the window: owned by an earlier query
+        if (n.type == NodeType::HtmlBlock) {
+            if (!touches(text.lineStart(n.fromLine), text.lineEnd(n.toLine - 1)))
+                if (auto r = html::blockRangeFor(tree, text, id, *m_styles, m_reading, m_depth, resolveAttachment, m_blockCache))
+                    out.push_back(*r);
+            continue;
+        }
         const bool isTable = n.type == NodeType::Table;
         const bool isCallout = n.type == NodeType::Callout;
         const bool isMath = n.type == NodeType::MathBlock;
@@ -708,7 +741,7 @@ std::optional<LivePreviewDecorator::LinkHit> LivePreviewDecorator::linkAt(qsizet
     const int leaf = tree.leafAt(line);
     if (leaf < 0)
         return std::nullopt;
-    const md::LeafContent content = tree.leafContent(leaf, text);
+    const md::LeafContent content = tree.node(leaf).type == NodeType::HtmlBlock ? html::blockContent(tree, leaf, text) : tree.leafContent(leaf, text);
     const md::InlineTreePtr it = tree.inlineTree(content);
     if (!it)
         return std::nullopt;
@@ -749,6 +782,8 @@ std::optional<LivePreviewDecorator::LinkHit> LivePreviewDecorator::linkAt(qsizet
             break;
         }
     }
+    if (const auto a = html::anchorAt(*it, content, text, off))
+        return LinkHit{a->external ? LinkHit::Kind::Url : LinkHit::Kind::Link, a->href, a->from, a->to};
     return std::nullopt;
 }
 
