@@ -1,8 +1,11 @@
 // DisplayBlock: box (pill) padding is laid out, not painted over the neighbouring text.
 #include "render/layout/display_block.h"
+#include "render/layout/doc_layout.h"
 #include "render/layout/style_sheet.h"
 #include "render/theme/theme.h"
 
+#include <QImage>
+#include <QPainter>
 #include <QTextLayout>
 #include <gtest/gtest.h>
 
@@ -90,4 +93,49 @@ TEST(DisplayBlock, AdjacentBoxesAddTheirPaddings)
     EXPECT_DOUBLE_EQ(f.spacingAt(b, 0), code);       // before the code span
     EXPECT_DOUBLE_EQ(f.spacingAt(b, 1), code + tag); // end of code + start of tag
     EXPECT_DOUBLE_EQ(f.spacingAt(b, 3), tag);
+}
+
+// A hidden line (folded, or swallowed by a block in Reading view) may still carry inline widgets:
+// painting and hit-testing must skip them (the 5.5 MB note crashed Reading view).
+namespace {
+
+struct Dot : InlineWidget {
+    QSizeF size(const LineMetrics&) const override { return {12, 12}; }
+    void paint(QPainter* p, const QRectF& r, const LineMetrics&) const override { p->fillRect(r, Qt::red); }
+    quint64 signature() const override { return 7; }
+};
+
+struct HidingDecorator : LineDecorator {
+    LineDecoration decorate(int line) override
+    {
+        LineDecoration d;
+        d.replaces.push_back(Replace{0, 1, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<Dot>()});
+        d.hidden = line == 1;
+        return d;
+    }
+    StyleId quickLineStyle(int) override { return StyleId::Normal; }
+};
+
+} // namespace
+
+TEST(DisplayBlock, HiddenLinesWithWidgetsPaintAndHitTest)
+{
+    Fixture f;
+    HidingDecorator deco;
+    DocLayout layout;
+    layout.setDecorator(&deco);
+    layout.setStyleSheet(f.styles);
+    layout.setContentWidth(400);
+    layout.setText(Text::fromString(QStringLiteral("x one\ny two\nz three")));
+    layout.ensureLaidOut(0, 1e6);
+    QImage img(400, 300, QImage::Format_ARGB32);
+    QPainter p(&img);
+    DocLayout::PaintContext pc;
+    pc.clip = QRectF(0, 0, 400, 300);
+    pc.rightEdge = 400;
+    layout.paint(&p, pc);
+    p.end();
+    for (qreal y = 0; y < layout.totalHeight(); y += 4)
+        (void)layout.widgetAt(QPointF(5, y));
+    EXPECT_GT(layout.totalHeight(), 0);
 }
