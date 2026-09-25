@@ -5,6 +5,7 @@
 // property links written in text cards are links of the canvas. They count in resolvedLinks /
 // unresolvedLinks (graph, backlink counts) like a note's.
 
+#include "core/metadata/link_resolver.h"
 #include "core/util/match_range.h"
 #include "markdown/metadata.h"
 
@@ -50,5 +51,12 @@ struct CanvasMentions {
     bool embedded = false;
 };
 CanvasMentions canvasLinkedMentions(QByteArrayView bytes, const std::function<bool(const QString& linkpath)>& resolvesToTarget);
+
+// Obsidian's canvas link updater (renames with "Automatically update internal links"): rewrites the
+// links in the text cards of `data` (the canvas at `canvasPath` now) whose target moved, like a note's.
+// `before` resolves as before the renames, `after` as now; `moved` maps old paths to new ones. Returns
+// the number of rewritten links (the cards' text in `data` is updated).
+int updateTextCardLinks(CanvasData& data, const QString& canvasPath, const LinkResolver& before, const LinkResolver& after,
+                        const std::function<QString(const QString& oldPath)>& moved, LinkResolver::LinkFormat format);
 
 } // namespace oc::canvas

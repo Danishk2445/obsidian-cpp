@@ -1,6 +1,7 @@
 // Canvas files as link sources in the metadata cache (Obsidian's canvas index): file cards, group
 // backgrounds and text-card links count in resolvedLinks / unresolvedLinks and backlinks.
 #include "core/canvas/canvas_links.h"
+#include "core/canvas/canvas_model.h"
 #include "core/metadata/metadata_cache.h"
 
 #include <QHash>
@@ -53,6 +54,29 @@ TEST(CanvasLinks, Extraction)
     EXPECT_EQ(links.all().size(), 6);
     EXPECT_TRUE(canvas::canvasLinks("not json").all().isEmpty());
     EXPECT_TRUE(canvas::canvasLinks("").all().isEmpty());
+}
+
+TEST(CanvasLinks, TextCardLinksFollowRenames)
+{
+    // "notes/Note A.md" -> "archive/Note A.md" and "Note B.md" -> "Note C.md"; the canvas is at the root.
+    LinkResolver before, after;
+    before.setFiles({"notes/Note A.md", "Note B.md", "pic.png", "board.canvas"});
+    after.setFiles({"archive/Note A.md", "Note C.md", "pic.png", "board.canvas"});
+    const QHash<QString, QString> map{{"notes/Note A.md", "archive/Note A.md"}, {"Note B.md", "Note C.md"}};
+    const auto moved = [&](const QString& p) { return map.value(p, p); };
+    std::optional<canvas::CanvasData> data = canvas::parseCanvas(kCanvas);
+    ASSERT_TRUE(data);
+    const QString untouched = data->nodes[1].text;
+    EXPECT_EQ(canvas::updateTextCardLinks(*data, "board.canvas", before, after, moved, LinkResolver::LinkFormat::Shortest), 2);
+    // [[Note B]] is renamed; [[Missing note]] and ![[pic.png]] stay; the markdown link keeps working (unique
+    // name, shortest format: its path is not needed).
+    EXPECT_EQ(data->nodes[1].text, "See [[Note C]] and [[Missing note]], ![[pic.png]] and [md](Note%20A.md)");
+    EXPECT_NE(data->nodes[1].text, untouched);
+    // Nothing moved: nothing changes.
+    std::optional<canvas::CanvasData> same = canvas::parseCanvas(kCanvas);
+    EXPECT_EQ(canvas::updateTextCardLinks(*same, "board.canvas", before, before, [](const QString& p) { return p; },
+                                          LinkResolver::LinkFormat::Shortest),
+              0);
 }
 
 TEST_F(CanvasLinksCache, CanvasLinksCountInTheLinkGraph)

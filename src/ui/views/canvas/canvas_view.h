@@ -65,6 +65,7 @@ private:
     QTimer m_saveTimer;
     std::optional<QJsonObject> m_pendingViewState;
     QMetaObject::Connection m_vaultConn;
+    QMetaObject::Connection m_configConn;
 };
 
 } // namespace oc

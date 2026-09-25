@@ -1188,7 +1188,7 @@ void CanvasWidget::paintNode(QPainter* p, const Node& n)
             drawScaledText(p, lr.adjusted(8 * zm, 4 * zm, -8 * zm, -4 * zm), zm, uiFont(pal.uiFontPx * 1.5), fg, n.label,
                            Qt::AlignLeft | Qt::AlignVCenter);
         }
-    } else if ((n.type == NodeType::File || n.type == NodeType::Link) && !isZoomedOut() && m_options.cardLabelVisibility != u"never") {
+    } else if ((n.type == NodeType::File || n.type == NodeType::Link) && m_vp.zoom > kZoomedOutZoom && m_options.cardLabelVisibility != u"never") {
         const bool hovered = m_hover.node == n.id;
         if (m_options.cardLabelVisibility != u"hover" || hovered || (selected && m_selection.size() == 1)) {
             const QRectF lr = nodeLabelRect(n);

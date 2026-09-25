@@ -2,6 +2,7 @@
 
 #include "core/canvas/canvas_model.h"
 #include "core/metadata/link_resolver.h"
+#include "core/metadata/link_updater.h"
 #include "core/metadata/mentions.h"
 #include "markdown/syntax_tree.h"
 #include "text/text.h"
@@ -80,6 +81,36 @@ CanvasText canvasText(const CanvasData& data)
         out.text += n.text;
     }
     return out;
+}
+
+int updateTextCardLinks(CanvasData& data, const QString& canvasPath, const LinkResolver& before, const LinkResolver& after,
+                        const std::function<QString(const QString& oldPath)>& moved, LinkResolver::LinkFormat format)
+{
+    int changed = 0;
+    for (Node& n : data.nodes) {
+        if (n.type != NodeType::Text || n.text.isEmpty())
+            continue;
+        Text text = Text::fromString(n.text);
+        md::SyntaxTree tree;
+        tree.parse(text);
+        const md::CachedMetadata meta = md::extractMetadata(tree, text);
+        if (meta.links.isEmpty() && meta.embeds.isEmpty() && meta.frontmatterLinks.isEmpty())
+            continue;
+        // The card is a source at the canvas' path (links resolve from the canvas' folder).
+        const QList<LinkUpdater::Reference> refs = LinkUpdater::snapshot(before, {canvasPath}, [&](const QString&) { return &meta; });
+        const QList<LinkUpdater::Edit> edits = LinkUpdater::edits(refs, after, moved, format).value(moved(canvasPath));
+        if (edits.isEmpty())
+            continue;
+        const int applied = LinkUpdater::apply(text, edits);
+        if (applied == 0)
+            continue;
+        QString out;
+        for (int i = 0; i < text.lineCount(); ++i)
+            out += text.lineView(i) + eolString(text.lineEol(i));
+        n.text = out;
+        changed += applied;
+    }
+    return changed;
 }
 
 CanvasMentions canvasLinkedMentions(QByteArrayView bytes, const std::function<bool(const QString& linkpath)>& resolvesToTarget)

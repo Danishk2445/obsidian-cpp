@@ -113,7 +113,7 @@ QString CanvasWidget::groupLabelAt(const QPointF& cp) const
 
 QString CanvasWidget::fileLabelAt(const QPointF& cp) const
 {
-    if (isZoomedOut() || m_options.cardLabelVisibility == u"never")
+    if (m_vp.zoom <= kZoomedOutZoom || m_options.cardLabelVisibility == u"never") // .mod-zoomed-out hides the names
         return {};
     const CanvasData& d = m_doc.data();
     for (qsizetype i = d.nodes.size() - 1; i >= 0; --i) {

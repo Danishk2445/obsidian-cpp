@@ -117,8 +117,15 @@ void CanvasView::loadFile(TFile* file)
         connect(vault, &Vault::renamed, m_canvas, [this](TAbstractFile*, const QString&, bool) { m_canvas->invalidateFile(QString()); });
     }
     m_canvas->setSession(s);
-    if (s && s->config())
+    if (s && s->config()) {
         m_canvas->setOptions(CanvasWidget::Options::fromJson(s->config()->object(u"canvas"_s)));
+        if (!m_configConn) // the canvas settings tab, another canvas' snap toggles
+            m_configConn = connect(s->config(), &ConfigStore::changed, this, [this](const QString& file, const QString&) {
+                VaultSession* ss = session();
+                if (file == u"canvas" && ss && ss->config())
+                    m_canvas->setOptions(CanvasWidget::Options::fromJson(ss->config()->object(u"canvas"_s)));
+            });
+    }
     m_canvas->setFilePath(file ? file->path() : QString());
     if (!file || !vault) {
         m_canvas->setData({}, false);

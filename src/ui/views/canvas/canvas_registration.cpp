@@ -1,6 +1,9 @@
 #include "ui/views/canvas/canvas_registration.h"
 
+#include "core/canvas/canvas_links.h"
 #include "core/canvas/canvas_model.h"
+#include "core/config/vault_config.h"
+#include "core/metadata/metadata_cache.h"
 #include "core/commands/command_registry.h"
 #include "core/config/config_store.h"
 #include "core/vault/vault.h"
@@ -43,7 +46,8 @@ QString parentFolderOf(const QString& path)
 }
 
 // Obsidian's canvas plugin rename handling: file cards and group backgrounds that show a renamed file
-// follow it, in every canvas of the vault ("Canvas detected file renames affecting N canvas files").
+// follow it, in every canvas of the vault ("Canvas detected file renames affecting N canvas files"); with
+// "Automatically update internal links", the links in text cards are rewritten too (its link updater).
 class CanvasRenameUpdater : public QObject {
 public:
     explicit CanvasRenameUpdater(MainWindow* window)
@@ -73,6 +77,20 @@ private:
         QHash<QString, QString> map;
         for (const auto& [from, to] : renames)
             map.insert(from, to);
+        // Text-card links: resolved as before the renames (the new paths swapped back) and as now.
+        MetadataCache* mc = s->metadata();
+        VaultConfig* cfg = s->vaultConfig();
+        const bool updateLinks = mc && cfg && cfg->alwaysUpdateLinks();
+        LinkResolver before = mc ? mc->resolver() : LinkResolver();
+        for (auto it = renames.crbegin(); it != renames.crend(); ++it) {
+            before.removeFile(it->second);
+            before.addFile(it->first);
+        }
+        const auto moved = [map](const QString& p) { return map.value(p, p); };
+        const LinkResolver::LinkFormat format = cfg ? cfg->newLinkFormat() : LinkResolver::LinkFormat::Shortest;
+        auto updateCards = [&](CanvasData& d, const QString& path) {
+            return updateLinks ? updateTextCardLinks(d, path, before, mc->resolver(), moved, format) : 0;
+        };
         // Open canvases are updated through their view (undoable, saved like an edit).
         QHash<QString, CanvasView*> open;
         if (Workspace* ws = m_window->workspace())
@@ -92,7 +110,13 @@ private:
                     else if (n.type == NodeType::Group && map.contains(n.background))
                         changed += doc.setGroupBackground(n.id, map.value(n.background), n.backgroundStyle) ? 1 : 0;
                 }
-                if (changed) {
+                CanvasData copy = doc.data();
+                const bool links = updateCards(copy, f->path()) > 0;
+                if (links)
+                    for (const Node& n : copy.nodes)
+                        if (n.type == NodeType::Text)
+                            doc.setText(n.id, n.text);
+                if (changed || links) {
                     ++files;
                     cards += changed;
                     cv->canvas()->commit();
@@ -104,7 +128,7 @@ private:
             const std::optional<QByteArray> bytes = vault->read(f->path(), &state, nullptr);
             if (!bytes)
                 continue;
-            bool mentions = false;
+            bool mentions = updateLinks && (bytes->contains("[[") || bytes->contains("]("));
             for (auto it = map.cbegin(); it != map.cend() && !mentions; ++it)
                 mentions = bytes->contains(jsonQuote(it.key()));
             if (!mentions)
@@ -122,7 +146,8 @@ private:
                     ++changed;
                 }
             }
-            if (!changed)
+            const int links = updateCards(*data, f->path());
+            if (!changed && !links)
                 continue;
             DiskState newState;
             QString err;
@@ -131,7 +156,7 @@ private:
                 cards += changed;
             }
         }
-        if (files > 0 && m_window)
+        if (files > 0 && cards > 0 && m_window) // (text-card links alone: no notice)
             m_window->notices()->show(cards == 1 ? tr("Canvas updated %1 embed card").arg(cards) : tr("Canvas updated %1 embed cards").arg(cards));
     }
 

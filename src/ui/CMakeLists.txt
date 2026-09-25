@@ -57,6 +57,8 @@ oc_add_library(oc_ui
     views/canvas/canvas_registration.h
     views/canvas/canvas_render.cpp
     views/canvas/canvas_render.h
+    views/canvas/canvas_settings.cpp
+    views/canvas/canvas_settings.h
     views/canvas/canvas_view.cpp
     views/canvas/canvas_view.h
     views/canvas/canvas_widget.cpp

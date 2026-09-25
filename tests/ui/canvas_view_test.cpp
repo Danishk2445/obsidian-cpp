@@ -11,6 +11,9 @@
 #include "core/config/config_store.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/suggest_modal.h"
+#include "ui/settings/setting_item.h"
+#include "ui/settings/settings_modal.h"
+#include "ui/widgets/toggle_switch.h"
 #include "ui/views/canvas/canvas_controls.h"
 #include "ui/views/canvas/canvas_registration.h"
 #include "ui/views/canvas/canvas_render.h"
@@ -24,6 +27,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
@@ -928,6 +932,34 @@ TEST_F(CanvasTest, CanvasEmbedInANote)
     EXPECT_EQ(cv->file()->path(), "Mini.canvas");
 }
 
+TEST_F(CanvasTest, SettingsTab)
+{
+    CanvasView* cv = openCanvas("Plain.canvas");
+    ASSERT_TRUE(cv);
+    CanvasWidget* c = cv->canvas();
+    EXPECT_TRUE(c->options().snapToGrid);
+    SettingsModal* m = openSettings(window, "canvas");
+    ASSERT_TRUE(m);
+    QApplication::processEvents();
+    EXPECT_EQ(m->activeTab()->id(), "canvas");
+    for (const char* name : {"Default location for new canvas files", "Default mouse wheel behavior", "Default Ctrl + Drag behavior",
+                             "Show card names", "Snap to objects", "Zoom threshold for hiding card content"})
+        EXPECT_TRUE(m->findItem(QString::fromLatin1(name))) << name;
+    EXPECT_TRUE(m->findItem("Folder to create new canvas files in")->isHidden()); // only for "In the folder specified below"
+    SettingItem* snap = m->findItem("Snap to grid");
+    ASSERT_TRUE(snap);
+    ToggleSwitch* t = snap->control<ToggleSwitch>();
+    ASSERT_TRUE(t);
+    EXPECT_TRUE(t->isChecked()); // Obsidian's default
+    t->click();
+    QApplication::processEvents();
+    EXPECT_FALSE(c->options().snapToGrid); // open canvases follow
+    session->config()->flush();
+    EXPECT_FALSE(QJsonDocument::fromJson(readFile(session->config()->dir() + "/canvas.json")).object().value("snapToGrid").toBool(true));
+    m->close();
+    QApplication::processEvents();
+}
+
 TEST_F(CanvasTest, BacklinksListCanvases)
 {
     ASSERT_TRUE(meta->waitUntilClean());
@@ -968,9 +1000,15 @@ TEST_F(CanvasTest, CommandsAndRenames)
     EXPECT_TRUE(QTest::qWaitFor([&] { return show->canvas()->data().node(u"f1")->file == "Notes/Big idea.md"; }, 5000));
     EXPECT_EQ(show->canvas()->data().node(u"f2")->file, "Notes/Big idea.md");
     EXPECT_TRUE(disk("Showcase.canvas").contains("\"file\":\"Notes/Big idea.md\",\"subpath\":\"#Details\""));
+    // With "Automatically update internal links", links in text cards follow too.
+    session->vaultConfig()->set("alwaysUpdateLinks", true);
     ASSERT_TRUE(fileManager->renameFile(vault->file("Plan.md"), "Plan 2.md"));
-    QTest::qWait(700);
-    EXPECT_EQ(disk("Mini.canvas"), kMini); // mentions no renamed file: untouched
+    EXPECT_TRUE(QTest::qWaitFor([&] { return show->canvas()->data().node(u"t1")->text.contains("[[Plan 2]] links"); }, 5000));
+    EXPECT_TRUE(disk("Showcase.canvas").contains("- [[Plan 2]] links"));
+    EXPECT_EQ(disk("Mini.canvas"), kMini); // no links to renamed files: untouched
+    // Undo in the canvas restores the old link text (it was an edit of the canvas).
+    show->canvas()->undo();
+    EXPECT_TRUE(show->canvas()->data().node(u"t1")->text.contains("[[Plan]] links"));
 }
 
 TEST_F(CanvasTest, CanvasLinksInTheLinkGraph)
