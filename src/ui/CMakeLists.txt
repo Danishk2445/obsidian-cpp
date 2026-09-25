@@ -36,6 +36,16 @@ oc_add_library(oc_ui
     views/file_explorer/file_tree.cpp
     views/file_explorer/file_tree.h
     views/markdown/attachments.cpp
+    views/media/image_view.cpp
+    views/media/media_embeds.cpp
+    views/media/media_player.cpp
+    views/media/media_view.cpp
+    views/media/media_views.cpp
+    views/media/pdf_file.cpp
+    views/media/pdf_pages.cpp
+    views/media/pdf_search.cpp
+    views/media/pdf_view.cpp
+    views/media/pdf_viewer.cpp
     views/markdown/editor_search_bar.cpp
     views/markdown/inline_title.cpp
     views/markdown/markdown_commands.cpp
@@ -78,6 +88,6 @@ oc_add_library(oc_ui
     workspace/workspace.h
     workspace/workspace_p.h
     workspace/workspace_widgets.cpp
-  PUBLIC_DEPS oc_core oc_render oc_editor oc_graph Qt6::Widgets
+  PUBLIC_DEPS oc_core oc_render oc_editor oc_graph Qt6::Widgets Qt6::Pdf Qt6::Multimedia
   PRIVATE_DEPS KF6::KIOGui
 )

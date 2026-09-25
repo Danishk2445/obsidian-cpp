@@ -53,7 +53,6 @@ struct EmbedContext {
     QPointer<QWidget> view;             // the EditorView hosting the embed (null in popovers)
     bool livePreview = false;           // the note is editable: offer the "edit" (reveal source) action
     std::function<void()> revealSource; // put the cursor into the embed's markdown (Live Preview)
-    std::function<void(bool newLeaf)> open; // open the embedded file (Obsidian's openLinkText)
 };
 
 class EmbedProvider {
@@ -84,12 +83,24 @@ public:
     // views showing embeds of it re-decorate those lines.
     void notifyChanged(const QString& absPath);
 
+    // Opening an embedded file from its embed (Obsidian's link context menu): mode "" = the current
+    // tab, "tab" = a new tab, "split" = to the right. `from` is the embed's widget (its ancestors tell
+    // the workspace). The UI installs the opener.
+    using Opener = std::function<void(QWidget* from, const EmbedRequest& request, const QString& mode)>;
+    void setOpener(Opener opener) { m_opener = std::move(opener); }
+    void open(QWidget* from, const EmbedRequest& request, const QString& mode) const
+    {
+        if (m_opener)
+            m_opener(from, request, mode);
+    }
+
 signals:
     void changed(const QString& absPath);
 
 private:
     EmbedRegistry() = default;
     QHash<QString, std::shared_ptr<EmbedProvider>> m_providers;
+    Opener m_opener;
 };
 
 // The inline widget for an embed of `target` + `subpath` whose file resolves to `absPath` (the

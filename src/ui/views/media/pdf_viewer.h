@@ -45,6 +45,8 @@ class PdfViewer : public QWidget {
 public:
     enum class Mode { View, Embed, Popover };
     enum class SidebarView { None = 0, Thumbnails = 1, Outline = 2 };
+    // .pdf-toolbar: padding 4px 12px around a 30 px page input, 1px bottom border.
+    static constexpr int kToolbarHeight = 39;
 
     explicit PdfViewer(Mode mode, QWidget* parent = nullptr);
     ~PdfViewer() override;

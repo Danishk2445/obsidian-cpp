@@ -26,6 +26,7 @@ class PdfFile : public QObject {
 public:
     // Shared per absolute path while anyone holds it (loaded synchronously on first open).
     static std::shared_ptr<PdfFile> open(const QString& absPath);
+    static std::shared_ptr<PdfFile> find(const QString& absPath); // already open, or null
     ~PdfFile() override;
 
     const QString& path() const { return m_path; }
@@ -35,7 +36,7 @@ public:
     bool isLoaded() const { return m_error == QPdfDocument::Error::None && pageCount() > 0; }
     bool needsPassword() const { return m_error == QPdfDocument::Error::IncorrectPassword; }
     void setPassword(const QString& password); // reloads
-    void reload();                             // the file changed on disk
+    void reload(bool force = false);           // the file changed on disk (no-op if mtime/size didn't)
     quint64 generation() const { return m_generation; }
 
     int pageCount() const { return int(m_sizes.size()); }
@@ -94,6 +95,8 @@ private:
 
     QString m_path;
     QString m_password;
+    qint64 m_mtime = 0;
+    qint64 m_size = -1;
     std::shared_ptr<QPdfDocument> m_doc;
     QPdfDocument::Error m_error = QPdfDocument::Error::None;
     quint64 m_generation = 0;

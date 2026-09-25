@@ -3,7 +3,9 @@
 #include "core/util/busy.h"
 #include "render/theme/theme.h"
 
+#include <QApplication>
 #include <QAudioOutput>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMediaMetaData>
 #include <QMediaPlayer>

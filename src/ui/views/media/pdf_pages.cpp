@@ -19,7 +19,7 @@ namespace {
 constexpr int kScrollbar = 12;         // the app's scrollbar width (app.qss)
 constexpr double kScrollStep = 40;     // arrow keys / wheel line
 constexpr double kEmbedGap = 14;       // removePageBorders: margin-bottom 10 + next page's border-top 4
-constexpr double kEmbedTailMargin = 10;
+constexpr double kEmbedTailMargin = 0; // a one-page PDF fits its "page"-high embed exactly
 constexpr double kMaxAutoScale = 1.25; // PDF.js MAX_AUTO_SCALE
 
 bool isPreset(const QString& v)

@@ -127,12 +127,14 @@ QList<HostedEmbeds::Found> HostedEmbeds::collect(double y0, double y1) const
         if (!layout.isLaidOut(line) || layout.isInBlock(line))
             continue;
         const DocLayout::UnitLayout* ul = layout.layoutFor(line);
-        if (!ul)
+        if (!ul || ul->deco.hidden)
             continue;
         const auto& slotList = ul->block.widgets();
         for (qsizetype i = 0; i < slotList.size() && i < ul->widgetRects.size(); ++i) {
             const auto* ew = dynamic_cast<const EmbedWidget*>(slotList[i].widget.get());
             if (!ew)
+                continue;
+            if (ul->widgetRects[i].isEmpty())
                 continue;
             const QRectF docRect = ul->widgetRects[i].translated(0, top);
             const QPointF tl = v->docToViewport(docRect.topLeft());
@@ -182,12 +184,6 @@ QWidget* HostedEmbeds::create(const Found& f)
             view->setSelection(Selection::single(end, h.docFrom), true);
             break;
         }
-    };
-    QPointer<EditorView> view(v);
-    const QString linktext = ctx.request.linktext;
-    ctx.open = [view, linktext](bool newLeaf) {
-        if (view)
-            emit view->linkActivated(linktext, 1, newLeaf); // kind 1 = embed
     };
     QWidget* w = f.embed->provider()->createWidget(ctx, v->viewport());
     if (!w)

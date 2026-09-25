@@ -119,6 +119,8 @@ std::shared_ptr<PdfFile> PdfFile::open(const QString& absPath)
     return f;
 }
 
+std::shared_ptr<PdfFile> PdfFile::find(const QString& absPath) { return openFiles().value(absPath).lock(); }
+
 PdfFile::PdfFile(QString absPath)
     : m_path(std::move(absPath))
 {
@@ -141,6 +143,9 @@ void PdfFile::load()
     for (qsizetype i = 0; i < m_queue.size(); ++i)
         Busy::end();
     m_queue.clear();
+    const QFileInfo fi(m_path);
+    m_mtime = fi.lastModified().toMSecsSinceEpoch();
+    m_size = fi.exists() ? fi.size() : -1;
     std::shared_ptr<QPdfDocument> doc = newDocument();
     if (!m_password.isEmpty())
         doc->setPassword(m_password);
@@ -176,8 +181,11 @@ void PdfFile::setPassword(const QString& password)
     emit reloaded();
 }
 
-void PdfFile::reload()
+void PdfFile::reload(bool force)
 {
+    const QFileInfo fi(m_path);
+    if (!force && fi.lastModified().toMSecsSinceEpoch() == m_mtime && (fi.exists() ? fi.size() : -1) == m_size)
+        return; // every viewer of the file asks; the first one reloads
     load();
     emit reloaded();
 }

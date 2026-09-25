@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QClipboard>
+#include <QFileInfo>
 #include <QGraphicsDropShadowEffect>
 #include <QHeaderView>
 #include <QJsonDocument>
@@ -342,6 +343,7 @@ void PdfViewer::buildToolbar()
     auto* bar = new Panel(QStringLiteral("--background-primary"), QStringLiteral("--background-modifier-border"), Qt::BottomEdge, this);
     bar->setObjectName(QStringLiteral("ocPdfToolbar"));
     m_toolbar = bar;
+    bar->setFixedHeight(kToolbarHeight);
     auto* h = new QHBoxLayout(bar);
     h->setContentsMargins(12, 4, 12, 5); // padding --size-4-1 --size-4-3 (+1px border)
     h->setSpacing(4);
@@ -824,7 +826,7 @@ void PdfViewer::layoutContent()
     const int w = width(), h = height();
     int y = 0;
     if (m_toolbarVisible && m_toolbar) {
-        const int th = m_toolbar->sizeHint().height();
+        const int th = kToolbarHeight;
         m_toolbar->setGeometry(0, 0, w, th);
         y = th;
     }
