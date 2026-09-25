@@ -1731,6 +1731,33 @@ QList<SettingDef> commandPaletteDefs(PluginSettingsTab& tab)
     return {list};
 }
 
+QList<SettingDef> noteComposerDefs(PluginSettingsTab& tab)
+{
+    QPointer<PluginSettingsTab> self = &tab;
+    QList<SettingDef> t;
+    SettingDef rep = SettingDef::dropdown(tr("Text after extraction"), tr("What to show in place of the selected text after extracting it."),
+                                          u"replacementText"_s,
+                                          {{u"link"_s, tr("Link to new file")}, {u"embed"_s, tr("Embed new file")}, {u"none"_s, tr("None")}});
+    rep.control.defaultValue = u"link"_s;
+    t << rep;
+    SettingDef tmpl = SettingDef::file(tr("Template file location"),
+                                       tr("Template file to use when merging or extracting. Available variables: {{content}}, {{fromTitle}}, "
+                                          "{{newTitle}}, {{date:FORMAT}}, e.g. {{date:YYYY-MM-DD}}."),
+                                       u"template"_s, tr("Example: folder/note"));
+    tmpl.control.filter = [](const QString& path) { return path.endsWith(u".md"_s, Qt::CaseInsensitive); };
+    tmpl.control.validate = [self](const QJsonValue& v) {
+        const QString p = v.toString();
+        if (p.isEmpty() || !self || !self->session() || !self->session()->vault())
+            return QString();
+        return self->session()->vault()->file(p) ? QString() : tr("File not found.");
+    };
+    t << tmpl;
+    SettingDef ask = SettingDef::toggle(tr("Confirm file merge"), tr("Prompt before merge two files."), u"askBeforeMerging"_s);
+    ask.control.defaultValue = true;
+    t << ask;
+    return t;
+}
+
 QList<SettingDef> greentextDefs(PluginSettingsTab& tab)
 {
     QPointer<PluginSettingsTab> self = &tab;
@@ -1789,6 +1816,7 @@ void addSettingsTabs(SettingsModal& m)
     m.addTab(pluginTab(m, u"command-palette"_s, u"command-palette"_s, tr("Command palette"), u"terminal"_s, commandPaletteDefs));
     m.addTab(pluginTab(m, u"daily-notes"_s, u"daily-notes"_s, tr("Daily notes"), u"calendar"_s, dailyNotesDefs));
     m.addTab(pluginTab(m, u"file-recovery"_s, u"file-recovery"_s, tr("File recovery"), u"history"_s, fileRecoveryDefs));
+    m.addTab(pluginTab(m, u"note-composer"_s, u"note-composer"_s, tr("Note composer"), u"merge"_s, noteComposerDefs));
     m.addTab(pluginTab(m, u"page-preview"_s, u"page-preview"_s, tr("Page preview"), u"scan-eye"_s, pagePreviewDefs));
     m.addTab(pluginTab(m, u"switcher"_s, u"switcher"_s, tr("Quick switcher"), u"file-search"_s, switcherDefs));
     m.addTab(pluginTab(m, u"templates"_s, u"templates"_s, tr("Templates"), u"files"_s, templatesDefs));

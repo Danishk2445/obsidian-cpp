@@ -14,7 +14,7 @@ class ThemeManager;
 //   Options: General, Appearance, Interface, Editor, Files and links, Hotkeys, Keychain, Core plugins,
 //            Community plugins;
 //   Core plugins (listed while the plugin is enabled): Backlinks, Command palette, Daily notes, File
-//            recovery, Page preview, Quick switcher, Templates, Unique note creator;
+//            recovery, Note composer, Page preview, Quick switcher, Templates, Unique note creator;
 //   Community plugins: Greentext Guard (the user's plugin, built in).
 void addSettingsTabs(SettingsModal& modal);
 
