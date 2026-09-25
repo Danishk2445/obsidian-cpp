@@ -38,10 +38,13 @@ public:
     struct Box {
         int dispFrom = 0, dispTo = 0;
         BoxStyle style;
+        bool reserved = false; // padX is laid out (letter spacing) around the run, not painted over neighbours
     };
     const QList<Box>& boxes() const { return m_boxes; }
 
 private:
+    void reserveBoxPadding(const LineMetrics& lm);
+
     QString m_display;
     QList<QTextLayout::FormatRange> m_formats;
     QList<WidgetSlot> m_widgets;

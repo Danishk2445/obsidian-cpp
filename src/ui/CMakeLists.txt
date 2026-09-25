@@ -21,6 +21,7 @@ oc_add_library(oc_ui
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
     plugins/file_recovery_ui.cpp
+    plugins/note_composer_ui.cpp
     plugins/note_plugins_ui.cpp
     shell/app_commands.cpp
     shell/empty_view.cpp
@@ -41,10 +42,30 @@ oc_add_library(oc_ui
     views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
     views/markdown/page_preview.cpp
+    views/sidebar/all_properties_view.cpp
+    views/sidebar/all_properties_view.h
+    views/sidebar/backlink_view.cpp
+    views/sidebar/backlink_view.h
+    views/sidebar/bookmarks_view.cpp
+    views/sidebar/bookmarks_view.h
+    views/sidebar/outgoing_link_view.cpp
+    views/sidebar/outgoing_link_view.h
+    views/sidebar/outline_view.cpp
+    views/sidebar/outline_view.h
+    views/sidebar/sidebar_common.cpp
+    views/sidebar/sidebar_common.h
+    views/sidebar/sidebar_registration.cpp
+    views/sidebar/sidebar_registration.h
+    views/sidebar/tag_view.cpp
+    views/sidebar/tag_view.h
     widgets/icon_button.cpp
     widgets/search_input.cpp
+    widgets/tree_list.cpp
+    widgets/tree_list.h
     widgets/toggle_switch.cpp
     widgets/value_slider.cpp
+    workspace/file_menu.cpp
+    workspace/file_menu.h
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp

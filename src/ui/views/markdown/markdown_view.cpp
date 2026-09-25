@@ -21,6 +21,7 @@
 #include "ui/views/markdown/editor_search_bar.h"
 #include "ui/views/markdown/inline_title.h"
 #include "ui/widgets/icon_button.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -139,6 +140,12 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
         }
     });
     connect(m_editor, &EditorView::contextMenuAboutToShow, this, &MarkdownView::addSpellingActions);
+    connect(m_editor, &EditorView::contextMenuAboutToShow, this, [this](QMenu* menu, qsizetype pos) {
+        QList<MenuEntry> items; // Obsidian's "editor-menu" event
+        EditorMenuHooks::collect(items, this, pos);
+        if (!items.isEmpty())
+            buildSectionedMenu(menu, items);
+    });
     attachments::installHooks(); // paste/drop: HTML -> Markdown, URL over selection, attachments
 }
 

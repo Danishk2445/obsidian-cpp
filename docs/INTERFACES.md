@@ -77,3 +77,14 @@ Interfaces other modules/agents build against. Change deliberately and update al
   that shows links; sources: "editor", "preview", "file-explorer", "search", "backlink", "outline", "graph", …).
 - Headless driving: `--script <file>` (src/app/scenario_runner.h: open/cursor/type/key/command/wait/screenshot/
   expect-line).
+- `src/ui/widgets/tree_list.h` — `TreeList`: Obsidian's generic `.tree-item` list (painted, virtualized, file
+  explorer metrics): items (chevron / icon, prefix, title with highlights, sub-text, flair), pane section headers,
+  search-result match snippets (matches box, more-context / action buttons, destination chips) and messages;
+  states, keyboard navigation, selection, inline rename, drag & drop reordering; clients build `Node`s and call
+  `setRoots()` (state carries over by node id), behaviour via `handlers()`.
+- `src/ui/views/sidebar/*` — the core plugins' sidebar views ("backlink", "outgoing-link", "tag", "outline",
+  "bookmarks", "all-properties"), `registerSidebarViews` / `registerSidebarCommands` (sidebar_registration.h);
+  `sidebar_common.h`: `NavHeader` (nav buttons + search filter), `LinkedFileView` (follows the active file unless
+  pinned/linked), `readNoteText` / `replaceNoteText`, `searchFor` (tag/property clicks → search view). Pure models:
+  `core/metadata/{mentions,tag_tree,outline,property_index}.h`, `core/bookmarks/bookmarks.h` (bookmarks.json,
+  `sessionBookmarks(session)`).

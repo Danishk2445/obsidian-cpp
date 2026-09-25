@@ -335,6 +335,7 @@ void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
         vl.height = 0;
         ul.lines = {vl};
         ul.height = 0;
+        ul.widgetRects = QList<QRectF>(ul.block.widgets().size()); // (empty: nothing of a hidden line shows)
         return;
     }
     ul.text = std::make_unique<QTextLayout>(ul.block.display(), lm.font);
@@ -618,6 +619,12 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
                     const qreal pad = b.style.padX;
                     const qreal hh = lm.ascent + lm.descent;
                     QRectF r(std::min(x1, x2) - pad, unitTop + vl.baseline - lm.ascent, std::abs(x2 - x1) + 2 * pad, hh);
+                    if (b.reserved) {
+                        // The padding is part of the layout: the left one sits before x1 (only where the
+                        // box starts), the right one is already inside x2 (the last glyph's spacing).
+                        const qreal left = std::min(x1, x2) - (s == b.dispFrom ? pad : 0);
+                        r = QRectF(left, r.top(), std::max(x1, x2) - left, hh);
+                    }
                     const qreal rad = std::min(b.style.radius, r.height() / 2);
                     QPainterPath path;
                     path.addRoundedRect(r, rad, rad);
@@ -664,7 +671,7 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             if (right > x)
                 p->fillRect(QRectF(x, unitTop + last.y, right - x, last.height), selColor);
         }
-        for (int w = 0; w < ul->block.widgets().size(); ++w) {
+        for (int w = 0; !deco.hidden && w < ul->block.widgets().size() && w < ul->widgetRects.size(); ++w) {
             const auto& slot = ul->block.widgets()[w];
             if (slot.widget)
                 slot.widget->paint(p, ul->widgetRects[w].translated(0, unitTop), ss.line(deco.lineStyle));
@@ -862,11 +869,11 @@ std::optional<DocLayout::WidgetHit> DocLayout::widgetAt(const QPointF& pt)
     const int ui = m_heights.indexAt(pt.y());
     measure(ui);
     const Unit& u = m_units[size_t(ui)];
-    if (u.block || !u.layout)
+    if (u.block || !u.layout || u.layout->deco.hidden)
         return std::nullopt;
     const UnitLayout* ul = u.layout.get();
     const double top = m_heights.top(ui);
-    for (int i = 0; i < ul->block.widgets().size(); ++i) {
+    for (int i = 0; i < ul->block.widgets().size() && i < ul->widgetRects.size(); ++i) {
         const QRectF r = ul->widgetRects[i].translated(0, top);
         if (r.adjusted(-2, -2, 2, 2).contains(pt)) {
             WidgetHit h;

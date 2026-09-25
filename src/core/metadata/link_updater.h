@@ -40,6 +40,11 @@ public:
     // Edits per current source path, given the resolver state after the rename.
     static QHash<QString, QList<Edit>> edits(const QList<Reference>& refs, const LinkResolver& after, const PathMap& moved,
                                              LinkResolver::LinkFormat format);
+    // Where a snapshotted reference should point now: a file path, or "" to leave it alone. Used when
+    // content moves between notes (note composer), where resolution alone can't tell what moved.
+    using Retarget = std::function<QString(const Reference& ref)>;
+    static QHash<QString, QList<Edit>> retarget(const QList<Reference>& refs, const LinkResolver& after, const Retarget& target,
+                                                LinkResolver::LinkFormat format);
     // The link's source text with its target replaced by `newLink` (Obsidian's rules for aliases,
     // display text, escaped pipes in tables, angle brackets and URL encoding).
     static QString rewrite(const md::LinkCache& link, const QString& newLink);
