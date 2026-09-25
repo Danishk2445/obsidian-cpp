@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {
+      "id": "a",
+      "type": "text",
+      "text": "caf\u00e9 \/ slash",
+      "x": 10.6,
+      "y": -20,
+      "width": 250,
+      "height": 60
+    },
+    { "id": "b", "type": "file", "file": "Pic.png", "x": 300, "y": 0, "width": 400, "height": 300 }
+  ],
+  "edges": [
+    { "id": "e", "fromNode": "a", "toNode": "b" }
+  ]
+}

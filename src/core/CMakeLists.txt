@@ -1,6 +1,11 @@
 oc_add_library(oc_core
   SOURCES
     bookmarks/bookmarks.cpp
+    canvas/canvas_document.cpp
+    canvas/canvas_geometry.cpp
+    canvas/canvas_json.cpp
+    canvas/canvas_links.cpp
+    canvas/canvas_model.cpp
     commands/command_registry.cpp
     commands/hotkey.cpp
     config/clone_paths.cpp
