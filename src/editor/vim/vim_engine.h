@@ -10,6 +10,7 @@
 #include "text/text.h"
 
 #include <QElapsedTimer>
+#include <QPointer>
 #include <QHash>
 #include <QList>
 #include <QRegularExpression>
@@ -574,6 +575,10 @@ private:
     QString m_status;
     std::optional<Query> m_highlight;
     bool m_insertEditGroup = false; // an undo group spans the insert session
+    QPointer<Document> m_insertGroupDoc; // ... in this document's History
+    void beginInsertGroup();
+    void endInsertGroup();
+    void splitInsertGroup(); // the cursor moved (or focus left): the next typing is a new undo step
     bool m_recordingInsert = false; // insert-mode edits are recorded for "." (vim.js onChange attached)
 
     // bookmarks
@@ -595,6 +600,7 @@ private:
     bool m_trackChangeStart = false;
     int m_busy = 0;          // > 0 while vim itself changes the editor
     int m_editDepth = 0;
+    QPointer<Document> m_editDoc; // the document whose History the command's group is open on
     qsizetype m_lastChangeEnd = 0;
     bool m_hasLastChangeEnd = false;
     int m_keyToKeyDepth = 0;

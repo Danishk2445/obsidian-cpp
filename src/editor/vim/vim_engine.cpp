@@ -125,9 +125,7 @@ void VimEngine::enterVimMode()
 
 void VimEngine::leaveVimMode()
 {
-    if (m_insertEditGroup && doc())
-        doc()->history().endGroup();
-    m_insertEditGroup = false;
+    endInsertGroup();
     m_insertMode = false;
     m_visualMode = m_visualLine = m_visualBlock = false;
     m_overwrite = false;
@@ -487,10 +485,7 @@ void VimEngine::onSelectionChanged(bool causedByEdit)
             clearBookmark(m_insertEnd);
         m_insertEnd = setBookmark(getCursor(), true);
         // vim: moving the cursor in insert mode starts a new undo step
-        if (m_insertEditGroup && doc()) {
-            doc()->history().endGroup();
-            doc()->history().beginGroup();
-        }
+        splitInsertGroup();
         return;
     }
     handleExternalSelection();
@@ -500,10 +495,8 @@ void VimEngine::onFocusChanged(bool focused)
 {
     Q_UNUSED(focused);
     // another view may edit the document meanwhile: don't let its edits join the insert session
-    if (m_insertEditGroup && doc() && m_busy == 0) {
-        doc()->history().endGroup();
-        doc()->history().beginGroup();
-    }
+    if (m_busy == 0)
+        splitInsertGroup();
 }
 
 void VimEngine::handleExternalSelection()
@@ -559,14 +552,44 @@ QString VimEngine::pendingKeys() const { return m_inputState->keyBuffer.join(QSt
 // ---------------------------------------------------------------------------------------------
 void VimEngine::beginEdit()
 {
-    if (m_editDepth++ == 0 && doc())
-        doc()->history().beginGroup();
+    if (m_editDepth++ == 0) {
+        m_editDoc = doc();
+        if (m_editDoc)
+            m_editDoc->history().beginGroup();
+    }
+}
+
+void VimEngine::beginInsertGroup()
+{
+    if (m_insertEditGroup || !doc())
+        return;
+    m_insertGroupDoc = doc();
+    m_insertGroupDoc->history().beginGroup();
+    m_insertEditGroup = true;
+}
+
+void VimEngine::endInsertGroup()
+{
+    if (!m_insertEditGroup)
+        return;
+    m_insertEditGroup = false;
+    if (m_insertGroupDoc)
+        m_insertGroupDoc->history().endGroup();
+    m_insertGroupDoc.clear();
+}
+
+void VimEngine::splitInsertGroup()
+{
+    if (!m_insertEditGroup || !m_insertGroupDoc)
+        return;
+    m_insertGroupDoc->history().endGroup();
+    m_insertGroupDoc->history().beginGroup();
 }
 
 void VimEngine::endEdit()
 {
-    if (--m_editDepth == 0 && doc())
-        doc()->history().endGroup();
+    if (--m_editDepth == 0 && m_editDoc)
+        m_editDoc->history().endGroup();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1582,11 +1605,7 @@ void VimEngine::exitInsertMode(bool keepCursor)
     }
     m_overwrite = false;
     G().registerController.get(QStringLiteral(".")).setText(lastChange.text());
-    if (m_insertEditGroup) {
-        m_insertEditGroup = false;
-        if (doc())
-            doc()->history().endGroup();
-    }
+    endInsertGroup();
     signalModeChange();
     if (mm.isRecording)
         logInsertModeChange();

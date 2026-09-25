@@ -749,10 +749,13 @@ bool EditorView::viewportEvent(QEvent* e)
 
 bool EditorView::event(QEvent* e)
 {
-    // Key hooks (vim) see keys before anything else the editor does with them.
+    // Key hooks (vim) see keys before anything else the editor does with them — not keys typed into
+    // a child widget (the inline title, a bottom panel) that it let through.
     if ((e->type() == QEvent::ShortcutOverride || e->type() == QEvent::KeyPress) && m_doc) {
         auto* ke = static_cast<QKeyEvent*>(e);
-        if (EditorHooks::global().runKey(*this, ke)) {
+        QWidget* focus = QApplication::focusWidget();
+        const bool fromChild = focus && focus != this && isAncestorOf(focus);
+        if (!fromChild && EditorHooks::global().runKey(*this, ke)) {
             ke->accept();
             return true;
         }

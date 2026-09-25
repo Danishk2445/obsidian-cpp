@@ -94,6 +94,23 @@ TEST_F(VimBehavior, EditorUndoSharesTheHistory)
     EXPECT_FALSE(h->doc->history().inGroup());
 }
 
+TEST_F(VimBehavior, SwitchingDocumentsInInsertModeClosesItsUndoGroup)
+{
+    h->open(QStringLiteral("|abc"));
+    std::shared_ptr<Document> first = h->doc;
+    h->keys(QStringLiteral("ix"));
+    EXPECT_TRUE(first->history().inGroup());
+    h->open(QStringLiteral("|def"));
+    EXPECT_FALSE(first->history().inGroup());
+    EXPECT_EQ(h->vim->mode(), VimController::Mode::Normal);
+    // switching vim off in insert mode closes it too
+    h->keys(QStringLiteral("iy"));
+    EXPECT_TRUE(h->doc->history().inGroup());
+    h->vim.reset();
+    EXPECT_FALSE(h->doc->history().inGroup());
+    h->vim = std::make_unique<VimController>(h->view.get());
+}
+
 TEST_F(VimBehavior, DotRepeatAndMacrosAreSingleSteps)
 {
     h->open(QStringLiteral("|a b c d"));

@@ -562,10 +562,7 @@ void VimEngine::actEnterInsertMode(Args& args)
         m_insertEnd = setBookmark(head, true);
     }
     // one undo step for the whole insert session (together with the command that started it)
-    if (!m_insertEditGroup && doc()) {
-        doc()->history().beginGroup();
-        m_insertEditGroup = true;
-    }
+    beginInsertGroup();
     if (m_visualMode)
         exitVisualMode();
     selectForInsert(head, height);
