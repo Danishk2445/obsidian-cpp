@@ -26,6 +26,7 @@
 #include "jkqtcommon/jkqtpstringtools.h"
 #include "jkqtcommon/jkqtpdebuggingtools.h"
 #include <cmath>
+#include <algorithm>
 #include <QFontMetricsF>
 #include <QDebug>
 #include <QFontDatabase>
@@ -1218,7 +1219,11 @@ QPair<QFont, JKQTMathTextSymbolNode::SymbolProps> JKQTMathTextSymbolNode::Symbol
 
     outFont=currentEv.getFont(parent);
     outFont.setStyleStrategy(QFont::PreferDefault);
-    if (outProps.fontScalingFactor!=1) outFont.setPointSizeF(outFont.pointSizeF()*outProps.fontScalingFactor);
+    if (outProps.fontScalingFactor!=1) {
+        // obsidian-cpp patch: pixel-sized fonts have no point size
+        if (outFont.pointSizeF()>0) outFont.setPointSizeF(outFont.pointSizeF()*outProps.fontScalingFactor);
+        else if (outFont.pixelSize()>0) outFont.setPixelSize(std::max(1, qRound(outFont.pixelSize()*outProps.fontScalingFactor)));
+    }
     if (has(outProps.flags, ItalicOn)) outFont.setItalic(true);
     if (has(outProps.flags, ItalicOff)) outFont.setItalic(false);
     if (has(outProps.flags, BoldOn)) outFont.setBold(true);

@@ -418,6 +418,12 @@ void EditorView::updateBottomPanel()
     }
 }
 
+void EditorView::setBackgroundColor(const QColor& color)
+{
+    m_background = color;
+    viewport()->update();
+}
+
 int EditorView::addDecorationLayer(DecorationLayer layer)
 {
     const int id = m_nextLayerId++;
@@ -680,7 +686,7 @@ void EditorView::paintEvent(QPaintEvent*)
 {
     QPainter p(viewport());
     const ThemePtr t = currentTheme();
-    p.fillRect(viewport()->rect(), t->color(QStringLiteral("--background-primary")));
+    p.fillRect(viewport()->rect(), m_background.isValid() ? m_background : t->color(QStringLiteral("--background-primary")));
     if (!m_doc || !m_styles)
         return;
     const double docTop = scrollTop();

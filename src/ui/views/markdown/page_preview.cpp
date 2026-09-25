@@ -65,7 +65,7 @@ HoverPopover::HoverPopover(OverlayLayer* layer, VaultSession* session, TFile* fi
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(1, 1, 1, 1);
     v->setSpacing(0);
-    if (std::shared_ptr<EmbedProvider> provider = EmbedRegistry::instance().provider(file->extension())) {
+    if (std::shared_ptr<EmbedProvider> provider = file->isMarkdown() ? nullptr : EmbedRegistry::instance().provider(file->extension())) {
         // Obsidian's popover embeds: .pdf-embed 450x400 (no toolbar), .video-embed, .audio-embed
         EmbedContext ctx;
         ctx.request = EmbedRequest::fromLink(session->vault()->absolutePath(file->path()), file->path(), subpath);

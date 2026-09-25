@@ -98,7 +98,7 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     {
         StyleSpec& sp = s->m_specs[size_t(StyleId::InlineCode)];
         sp.format.setFontFamilies({t.monospaceFamily()});
-        sp.format.setFontPointSize(-1);
+        sp.format.clearProperty(QTextFormat::FontPointSize);
         sp.format.setProperty(QTextFormat::FontPixelSize, int(std::lround(codePx)));
         sp.format.setForeground(codeNormal);
         sp.box.enabled = true;

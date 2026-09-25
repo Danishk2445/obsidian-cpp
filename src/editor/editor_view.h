@@ -44,6 +44,8 @@ public:
     bool readableLineLength() const { return m_readable; }
     void setMargins(qreal horizontal, qreal top, qreal bottom);
     void setLineWrapping(bool on);
+    // The viewport's fill (default: --background-primary), e.g. a tinted canvas card.
+    void setBackgroundColor(const QColor& color);
     // Obsidian's "Show line number": a gutter of line numbers left of the text in the editing modes, inside
     // the text column (like .cm-gutters in .cm-contentContainer); the inline title keeps the full column.
     void setShowLineNumbers(bool on);
@@ -235,6 +237,7 @@ private:
     Mode m_mode = Mode::Source;
     bool m_readOnly = false;
     bool m_readable = true;
+    QColor m_background; // invalid = theme
     qreal m_marginX = 32, m_marginTop = 32, m_marginBottom = 32;
     qreal m_topBase = 32;       // top margin without the top widget
     QPointer<QWidget> m_topWidget;

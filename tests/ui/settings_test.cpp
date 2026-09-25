@@ -113,7 +113,7 @@ TEST_F(SettingsTest, OpensFromCommandAndHotkey)
     EXPECT_EQ(m->dialogGeometry().size(), QSize(1080, 680));
     // Obsidian 1.13's order; core plugin tabs of enabled plugins by name; the built-in community port.
     EXPECT_EQ(navTitles(), (QStringList{"General", "Appearance", "Interface", "Editor", "Files and links", "Hotkeys", "Keychain", "Core plugins",
-                                        "Community plugins", "Backlinks", "Command palette", "Daily notes", "File recovery", "Note composer",
+                                        "Community plugins", "Backlinks", "Canvas", "Command palette", "Daily notes", "File recovery", "Note composer",
                                         "Page preview",
                                         "Quick switcher", "Templates", "Greentext Guard"}));
     EXPECT_TRUE(m->searchInput()->hasFocus() || !QApplication::focusWidget());

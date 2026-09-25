@@ -57,4 +57,24 @@ QString NestedRenderer::linkAt(const QPointF& local) const
     return hit ? hit->target : QString();
 }
 
+std::optional<std::pair<QString, int>> NestedRenderer::linkHitAt(const QPointF& local) const
+{
+    if (local.x() < 0 || local.y() < 0 || local.x() > m_width || local.y() > m_height)
+        return std::nullopt;
+    const qsizetype pos = m_layout.hitTest(local);
+    const auto hit = m_decorator->linkAt(pos);
+    if (!hit)
+        return std::nullopt;
+    using K = LivePreviewDecorator::LinkHit::Kind;
+    int kind = 0;
+    switch (hit->kind) {
+    case K::WikiLink: kind = 0; break;
+    case K::Embed: kind = 1; break;
+    case K::Link: kind = 2; break;
+    case K::Url: kind = 3; break;
+    case K::Tag: kind = 4; break;
+    }
+    return std::make_pair(hit->target, kind);
+}
+
 } // namespace oc

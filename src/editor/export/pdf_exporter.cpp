@@ -1,5 +1,6 @@
 #include "editor/export/pdf_exporter.h"
 
+#include "editor/embeds/embed_registry.h"
 #include "editor/live_preview_decorator.h"
 #include "markdown/doc_source.h"
 #include "render/layout/doc_layout.h"
@@ -52,6 +53,8 @@ bool exportPdf(const Text& body, const QString& title, const QString& outPath, c
     ThemeManager* tm = ThemeManager::instance();
     const ThemePtr theme = tm ? tm->themeFor(Theme::Scheme::Light) : currentTheme();
     const StyleSheetPtr styles = StyleSheet::build(*theme);
+    // embeds (notes, PDFs...) lay out and paint for print, in the export's colours
+    const EmbedPrintScope printScope(theme, styles);
 
     QPdfWriter writer(outPath);
     writer.setCreator(QStringLiteral("Obsidian C++"));
