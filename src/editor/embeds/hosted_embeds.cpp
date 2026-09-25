@@ -225,12 +225,14 @@ void HostedEmbeds::sync()
     QList<bool> claimed(m_hosted.size(), false);
     for (const Found& f : found) {
         const QString key = f.embed->request().key();
+        // the widget of the same content that was nearest (identical embeds keep their own widgets;
+        // one whose embed left the range serves the next identical embed)
         qsizetype idx = -1;
         for (qsizetype i = 0; i < m_hosted.size(); ++i) {
-            if (!claimed[i] && m_hosted[i].widget && m_hosted[i].key == key) {
+            if (claimed[i] || !m_hosted[i].widget || m_hosted[i].key != key)
+                continue;
+            if (idx < 0 || std::abs(m_hosted[i].docFrom - f.docFrom) < std::abs(m_hosted[idx].docFrom - f.docFrom))
                 idx = i;
-                break;
-            }
         }
         if (idx < 0) {
             QWidget* w = create(f);
@@ -273,7 +275,7 @@ void HostedEmbeds::sync()
             continue;
         }
         if (!h.pooled) {
-            h.pooled = true;
+            h.pooled = true; // (docFrom kept: the nearest identical embed gets it back)
             h.line = -1;
             h.pooledSince.start();
             h.widget->hide();

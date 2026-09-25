@@ -7,9 +7,10 @@
 // HostedEmbeds (one per EditorView, created by the view) keeps the providers' live QWidgets over
 // those placeholders: widgets are created only for embeds laid out within one screen of the
 // viewport, follow scrolling and relayout synchronously, are matched to embeds by content
-// (file + subpath, in document order) so edits and mode switches keep them (a playing video keeps
-// playing), stay pooled hidden for a moment when their embed disappears, and are destroyed once
-// they are more than a screen away (unless busy, e.g. playing media).
+// (file + subpath, the nearest previous position first) so edits, reveals and mode switches keep
+// them (a playing video keeps playing), stay pooled hidden for a moment when their embed
+// disappears (serving the next identical embed that comes into range), and are destroyed once
+// pooled for kPoolMs (unless busy, e.g. playing media).
 
 #include "editor/embeds/embed_registry.h"
 #include "render/layout/decoration.h"
