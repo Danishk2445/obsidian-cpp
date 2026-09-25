@@ -79,7 +79,8 @@ protected:
         QPainter p(this);
         QTextLayout tl;
         layoutLines(&tl, width());
-        p.setPen(m_warning ? tok("--text-warning") : tok("--text-normal"));
+        // p.mod-warning / p.u-muted (property "ocMuted") / plain
+        p.setPen(m_warning ? tok("--text-warning") : property("ocMuted").toBool() ? tok("--text-muted") : tok("--text-normal"));
         tl.draw(&p, QPointF(0, 0));
     }
 

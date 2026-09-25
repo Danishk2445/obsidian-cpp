@@ -66,7 +66,23 @@ void StatusBar::setItemText(const QString& id, const QString& text)
 void StatusBar::setItemVisible(const QString& id, bool visible)
 {
     if (QLabel* l = item(id)) {
-        l->setVisible(visible);
+        if (visible)
+            m_wanted.insert(id);
+        else
+            m_wanted.remove(id);
+        l->setVisible(visible && !m_disabled.contains(id));
+        anchor();
+    }
+}
+
+void StatusBar::setItemEnabled(const QString& id, bool enabled)
+{
+    if (enabled)
+        m_disabled.remove(id);
+    else
+        m_disabled.insert(id);
+    if (QLabel* l = item(id)) {
+        l->setVisible(enabled && m_wanted.contains(id));
         anchor();
     }
 }

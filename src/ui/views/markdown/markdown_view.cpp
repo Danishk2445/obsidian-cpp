@@ -7,6 +7,7 @@
 #include "editor/live_preview_decorator.h"
 #include "editor/spell/spell_checker.h"
 
+#include "core/commands/command_registry.h"
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
@@ -17,6 +18,7 @@
 #include "core/vault_session.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
+#include "ui/plugins/pdf_export_ui.h"
 #include "ui/shell/main_window.h"
 #include "ui/views/markdown/editor_search_bar.h"
 #include "ui/views/markdown/inline_title.h"
@@ -445,20 +447,51 @@ QList<QWidget*> MarkdownView::headerActions()
     return {b};
 }
 
-void MarkdownView::populatePaneMenu(QMenu* menu)
+void MarkdownView::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
 {
-    menu->addAction(tr("Find..."), this, [this] { showSearch(false); })->setShortcut(QKeySequence(QStringLiteral("Ctrl+F")));
-    if (mode() != EditorView::Mode::Reading)
-        menu->addAction(tr("Replace..."), this, [this] { showSearch(true); })->setShortcut(QKeySequence(QStringLiteral("Ctrl+H")));
-    menu->addSeparator();
-    QAction* reading = menu->addAction(tr("Reading view"), this, &MarkdownView::toggleReading);
-    reading->setCheckable(true);
-    reading->setChecked(mode() == EditorView::Mode::Reading);
-    if (mode() != EditorView::Mode::Reading) {
-        QAction* source = menu->addAction(tr("Source mode"), this, &MarkdownView::toggleSource);
-        source->setCheckable(true);
-        source->setChecked(mode() == EditorView::Mode::Source);
+    // Obsidian's MarkdownView.onPaneMenu, after FileView's items.
+    FileView::paneMenuEntries(items, source);
+    QPointer<MarkdownView> self = this;
+    const bool reading = mode() == EditorView::Mode::Reading;
+    MenuEntry readingView{QStringLiteral("pane"), tr("Reading view"), QStringLiteral("book-open"), [self] {
+                              if (self)
+                                  self->toggleReading();
+                          }};
+    readingView.checkable = true;
+    readingView.checked = reading;
+    items << readingView;
+    CommandRegistry* commands = session() ? session()->commands() : nullptr;
+    MenuEntry addProperty{QStringLiteral("action"), tr("Add file property"), QStringLiteral("plus-circle"), [self, commands] {
+                              if (self && self->leaf() && self->workspace())
+                                  self->workspace()->setActiveLeaf(self->leaf(), true);
+                              if (commands)
+                                  commands->execute(QStringLiteral("markdown:add-metadata-property"));
+                          }};
+    addProperty.enabled = commands && commands->find(QStringLiteral("markdown:add-metadata-property"));
+    items << addProperty;
+    if (!reading) {
+        MenuEntry sourceMode{QStringLiteral("pane"), tr("Source mode"), QStringLiteral("code-2"), [self] {
+                                 if (self)
+                                     self->toggleSource();
+                             }};
+        sourceMode.checkable = true;
+        sourceMode.checked = mode() == EditorView::Mode::Source;
+        items << sourceMode;
     }
+    items << MenuEntry{QStringLiteral("find"), tr("Find..."), QStringLiteral("file-search"), [self] {
+                           if (self)
+                               self->showSearch(false);
+                       }};
+    MenuEntry replace{QStringLiteral("find"), tr("Replace..."), QStringLiteral("file-search"), [self] {
+                          if (self)
+                              self->showSearch(true);
+                      }};
+    replace.enabled = !reading;
+    items << replace;
+    items << MenuEntry{QStringLiteral("action"), tr("Export to PDF..."), QStringLiteral("file-down"), [self] {
+                           if (self)
+                               openExportPdfModal(qobject_cast<MainWindow*>(self->window()), self);
+                       }};
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -103,9 +103,10 @@ TEST(CommandPalette, ListsAvailableCommandsWithPrefixesAndHotkeys)
     ASSERT_NE(m, nullptr);
     EXPECT_EQ(m->input()->placeholderText(), "Select a command...");
     EXPECT_EQ(openCommandPalette(env.session, env.layer()), m);
-    // no markdown view: editor commands are unavailable
+    // no markdown view: editor commands are unavailable, except Obsidian's app.json toggles (plain callbacks)
+    const QStringList global{"editor:toggle-readable-line-length", "editor:toggle-line-numbers", "editor:toggle-spellcheck"};
     for (const Suggestion& s : m->suggestions())
-        EXPECT_FALSE(s.data.toString().startsWith("editor:")) << qPrintable(s.data.toString());
+        EXPECT_TRUE(!s.data.toString().startsWith("editor:") || global.contains(s.data.toString())) << qPrintable(s.data.toString());
     QTest::keyClicks(m->input(), "open quick switcher");
     ASSERT_FALSE(m->suggestions().isEmpty());
     const Suggestion& s = m->suggestions()[0];

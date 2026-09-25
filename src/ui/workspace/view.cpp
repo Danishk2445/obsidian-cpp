@@ -2,9 +2,12 @@
 
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/vault_access.h"
 #include "ui/workspace/workspace.h"
 #include "ui/workspace/workspace_p.h"
+
+#include <QPointer>
 
 namespace oc {
 
@@ -30,9 +33,36 @@ VaultSession* View::session() const
     return ws ? ws->session() : nullptr;
 }
 
+void View::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
+{
+    Q_UNUSED(source);
+    // ItemView.onPaneMenu: split the leaf (not from a sidebar: "Split right" is disabled there).
+    QPointer<WorkspaceLeaf> leaf = m_leaf;
+    Workspace* ws = workspace();
+    if (!leaf || !ws)
+        return;
+    MenuEntry right{QStringLiteral("open"), tr("Split right"), QStringLiteral("separator-vertical"), [ws = QPointer<Workspace>(ws), leaf] {
+                        if (ws && leaf)
+                            ws->duplicateLeaf(leaf, Workspace::NewLeaf::SplitRight);
+                    }};
+    right.enabled = !leaf->isInSidedock();
+    items << right;
+    items << MenuEntry{QStringLiteral("open"), tr("Split down"), QStringLiteral("separator-horizontal"), [ws = QPointer<Workspace>(ws), leaf] {
+                           if (ws && leaf)
+                               ws->duplicateLeaf(leaf, Workspace::NewLeaf::SplitDown);
+                       }};
+}
+
 // ---------------------------------------------------------------------------------------------
 // FileView
 // ---------------------------------------------------------------------------------------------
+
+void FileView::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
+{
+    View::paneMenuEntries(items, source);
+    if (m_file)
+        FileMenuHooks::collect(items, m_file, source, leaf(), this); // "Rename...", "Delete file", ... come from the hooks
+}
 
 QString FileView::displayText() const
 {
