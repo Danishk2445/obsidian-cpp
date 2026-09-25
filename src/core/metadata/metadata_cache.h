@@ -17,6 +17,9 @@ namespace oc {
 // Obsidian's app.metadataCache: per-file CachedMetadata for markdown files, link resolution, and the
 // vault-wide link graph (resolvedLinks / unresolvedLinks: source -> {target -> count}) with a
 // backlink index, tag and alias indexes. Parsing happens on a thread pool; resolution on the GUI thread.
+// Canvas files (.canvas) are link sources too, like Obsidian's canvas index: their file cards, group
+// backgrounds and text-card links count in the link graph (fileLinks()), but they have no
+// CachedMetadata (fileCache() is null, markdownFiles() does not list them).
 class MetadataCache : public QObject {
     Q_OBJECT
 public:
@@ -45,6 +48,10 @@ public:
 
     const md::CachedMetadata* fileCache(const QString& path) const;
     QStringList markdownFiles() const { return m_cache.keys(); }
+    // Every link of a file as counted in the link graph (Obsidian's iterateRefsForFile): a note's
+    // links, embeds and property links; a canvas file's text-card links and file embeds.
+    QList<md::LinkCache> fileLinks(const QString& path) const;
+    QStringList canvasFiles() const { return m_canvas.keys(); }
     const LinkResolver& resolver() const { return m_resolver; }
     QString firstLinkpathDest(const QString& link, const QString& sourcePath) const; // accepts "x#sub"
     bool isResolved(const QString& link, const QString& sourcePath) const { return !firstLinkpathDest(link, sourcePath).isEmpty(); }
@@ -67,9 +74,12 @@ private:
     struct Result {
         QString path;
         md::CachedMetadata meta;
+        bool canvas = false;
+        QList<md::LinkCache> canvasLinks;
     };
     void parseAsync(const QStringList& paths);
     void applyResult(const QString& path, md::CachedMetadata meta);
+    void applyCanvasResult(const QString& path, QList<md::LinkCache> links);
     void resolveSource(const QString& source);
     void unresolveSource(const QString& source);
     static md::CachedMetadata parseBytes(const QByteArray& bytes);
@@ -77,6 +87,7 @@ private:
     ContentProvider m_provider;
     LinkResolver m_resolver;
     QHash<QString, md::CachedMetadata> m_cache;
+    QHash<QString, QList<md::LinkCache>> m_canvas; // canvas file -> its links
     QHash<QString, QHash<QString, int>> m_resolved;
     QHash<QString, QHash<QString, int>> m_unresolved;
     QHash<QString, QSet<QString>> m_backlinks;          // target -> sources

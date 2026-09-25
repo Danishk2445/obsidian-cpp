@@ -129,3 +129,15 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `settings_pages.h`: the tabs, `corePluginInfos()`, `css_snippets::*`, `resolveFontList`. `path_suggest.h`:
   `FolderSuggest` (text input + folder popup), `FilePicker` (file combobox). `hotkeys_tab.h`: `HotkeysTab`,
   `HotkeyChip`. Widgets: `ui/widgets/{dropdown,button,color_swatch}.h`.
+- Canvas (M9). `src/core/canvas/*`: `canvas_json.h` (ordered JSON keeping source lexemes, `stringifyCanvas` =
+  Obsidian's canvas file layout), `canvas_model.h` (`CanvasData`/`Node`/`Edge`, `parseCanvas`, byte-stable
+  `serializeCanvas`), `canvas_geometry.h` (viewport, bezier edge routing, hit testing, snapping, resizing, zoom-to-fit),
+  `canvas_document.h` (edits + snapshot undo history), `canvas_links.h` (canvas files as link sources, text-card
+  link rewrites on rename). UI: `src/ui/views/canvas/canvas_registration.h` — `registerCanvasView(ViewRegistry&)`
+  (view "canvas" for .canvas, plus the "canvas" EmbedProvider: `![[x.canvas]]` minimaps) and
+  `registerCanvasCommands(CommandRegistry&, MainWindow*)` (canvas:new-file / export-as-image / jump-to-group /
+  convert-to-file, "New canvas" folder menu item, card updates on renames); `canvas_settings.h` (settings tab).
+- Additive for the canvas: `MetadataCache::fileLinks(path)` / `canvasFiles()` (.canvas files count in resolvedLinks /
+  unresolvedLinks / backlinks but have no `fileCache`); `EditorView::setBackgroundColor`; `NestedRenderer::linkHitAt`;
+  file drags from the file explorer are offered to any widget under the pointer that has the invokable
+  `bool ocFileDrag(QStringList paths, QPoint globalPos, bool drop)` (the canvas) before the workspace's split targets.

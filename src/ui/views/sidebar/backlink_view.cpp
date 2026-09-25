@@ -1,5 +1,6 @@
 #include "ui/views/sidebar/backlink_view.h"
 
+#include "core/canvas/canvas_links.h"
 #include "core/documents/document.h"
 #include "core/documents/document_manager.h"
 #include "core/files/file_manager.h"
@@ -310,11 +311,21 @@ std::optional<BacklinkPane::Result> BacklinkPane::linkedResult(const QString& so
     if (!mc || source == m_path)
         return std::nullopt;
     const md::CachedMetadata* meta = mc->fileCache(source);
+    const auto resolvesHere = [&](const QString& linkpath) { return !linkpath.isEmpty() && mc->firstLinkpathDest(linkpath, source) == m_path; };
+    if (!meta && source.endsWith(QLatin1String(".canvas"), Qt::CaseInsensitive)) {
+        // Canvas files (Obsidian lists them too): the links in text cards, as one text of the cards; a
+        // file card or group background alone shows the file without snippets.
+        const std::optional<QByteArray> bytes = s->vault() ? s->vault()->read(source, nullptr, nullptr) : std::nullopt;
+        if (!bytes)
+            return std::nullopt;
+        const canvas::CanvasMentions m = canvas::canvasLinkedMentions(*bytes, resolvesHere);
+        if ((m.ranges.isEmpty() && !m.embedded) || !passesFilter(source, m.text.text))
+            return std::nullopt;
+        return Result{source, std::make_shared<const QString>(m.text.text), m.ranges};
+    }
     if (!meta)
         return std::nullopt;
-    const QList<MatchRange> ranges = linkedMentionRanges(*meta, [&](const QString& linkpath) {
-        return !linkpath.isEmpty() && mc->firstLinkpathDest(linkpath, source) == m_path;
-    });
+    const QList<MatchRange> ranges = linkedMentionRanges(*meta, resolvesHere);
     if (ranges.isEmpty())
         return std::nullopt;
     const std::optional<QString> content = readNoteText(s, source);
@@ -599,7 +610,7 @@ void BacklinkPane::addSection(std::vector<TreeList::NodePtr>& roots, bool unlink
             if (title.endsWith(QLatin1String(".md"), Qt::CaseInsensitive))
                 title.chop(3);
             item->title = title;
-            item->flair = QString::number(r->matches.size());
+            item->flair = r->matches.isEmpty() ? QString() : QString::number(r->matches.size()); // canvas file cards: no count
             item->collapsible = true;
             item->collapsed = m_collapseAll;
             item->selectable = false;

@@ -19,6 +19,7 @@
 #include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
 #include "ui/plugins/file_recovery_ui.h"
+#include "ui/views/canvas/canvas_settings.h"
 #include "ui/settings/hotkeys_tab.h"
 #include "ui/settings/path_suggest.h"
 #include "ui/settings/setting_item.h"
@@ -1813,6 +1814,7 @@ void addSettingsTabs(SettingsModal& m)
     m.addTab(new CommunityPluginsTab(&m));
 
     m.addTab(pluginTab(m, u"backlink"_s, u"backlink"_s, tr("Backlinks"), u"links-coming-in"_s, backlinkDefs));
+    m.addTab(createCanvasSettingsTab(m)); // ui/views/canvas
     m.addTab(pluginTab(m, u"command-palette"_s, u"command-palette"_s, tr("Command palette"), u"terminal"_s, commandPaletteDefs));
     m.addTab(pluginTab(m, u"daily-notes"_s, u"daily-notes"_s, tr("Daily notes"), u"calendar"_s, dailyNotesDefs));
     m.addTab(pluginTab(m, u"file-recovery"_s, u"file-recovery"_s, tr("File recovery"), u"history"_s, fileRecoveryDefs));

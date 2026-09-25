@@ -33,6 +33,31 @@ namespace oc {
 
 namespace {
 
+// Views that accept dragged vault files themselves expose "bool ocFileDrag(QStringList paths, QPoint
+// globalPos, bool drop)" (e.g. the canvas: files become cards). The explorer's drags are not QDrags, so
+// they are offered through this invokable instead of drop events.
+constexpr const char* kFileDragSignature = "ocFileDrag(QStringList,QPoint,bool)";
+
+QObject* fileDropTargetAt(const QPoint& globalPos)
+{
+    QWidget* top = QApplication::topLevelAt(globalPos);
+    QWidget* w = top ? top->childAt(top->mapFromGlobal(globalPos)) : nullptr;
+    for (; w; w = w->parentWidget())
+        if (w->metaObject()->indexOfMethod(kFileDragSignature) >= 0)
+            return w;
+    return nullptr;
+}
+
+bool offerFileDrop(QObject* target, const QList<TAbstractFile*>& items, const QPoint& globalPos, bool drop)
+{
+    QStringList paths;
+    for (const TAbstractFile* i : items)
+        paths << i->path();
+    bool accepted = false;
+    QMetaObject::invokeMethod(target, "ocFileDrag", Qt::DirectConnection, qReturnArg(accepted), paths, globalPos, drop);
+    return accepted;
+}
+
 QColor tok(const ThemePtr& t, const char* name, const QColor& fallback = {})
 {
     return t->color(QString::fromLatin1(name), fallback);
@@ -262,10 +287,20 @@ FileExplorerView::FileExplorerView(WorkspaceLeaf* leaf, QWidget* parent)
     hd.remove = [this](const QList<TAbstractFile*>& items) { deleteItems(items); };
     hd.move = [this](const QList<TAbstractFile*>& items, TFolder* target) { moveItems(items, target); };
     hd.dragOutsideMove = [this](const QList<TAbstractFile*>& items, const QPoint& g) {
+        // A view that takes file drops itself (a canvas: new file cards) comes before the workspace's
+        // "open in a split" targets.
+        if (QObject* target = fileDropTargetAt(g); target && offerFileDrop(target, items, g, false)) {
+            dropOnWorkspace({}, {}, false);
+            return true;
+        }
         dropOnWorkspace(items, g, false);
         return !m_workspaceTarget.isNull();
     };
     hd.dragOutsideDrop = [this](const QList<TAbstractFile*>& items, const QPoint& g) {
+        if (QObject* target = fileDropTargetAt(g); target && offerFileDrop(target, items, g, true)) {
+            dropOnWorkspace({}, {}, false);
+            return true;
+        }
         dropOnWorkspace(items, g, true);
         return true;
     };

@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 
+#include "core/canvas/canvas_links.h"
 #include "core/util/busy.h"
 #include "text/codec.h"
 
@@ -17,6 +18,8 @@ namespace oc {
 
 namespace {
 bool isMarkdownPath(const QString& p) { return p.endsWith(QLatin1String(".md"), Qt::CaseInsensitive); }
+bool isCanvasPath(const QString& p) { return p.endsWith(QLatin1String(".canvas"), Qt::CaseInsensitive); }
+bool isIndexedPath(const QString& p) { return isMarkdownPath(p) || isCanvasPath(p); }
 
 QString linkNameKey(const QString& linkpath)
 {
@@ -65,7 +68,7 @@ void MetadataCache::indexAll(const QStringList& files)
     m_resolver.setFiles(files);
     QStringList md;
     for (const QString& f : files)
-        if (isMarkdownPath(f))
+        if (isIndexedPath(f))
             md << f;
     if (md.isEmpty()) {
         m_ready = true;
@@ -109,7 +112,10 @@ void MetadataCache::parseAsync(const QStringList& paths)
                 const std::optional<QByteArray> bytes = provider(p);
                 if (!bytes)
                     continue;
-                results.push_back({p, parseBytes(*bytes)});
+                if (isCanvasPath(p))
+                    results.push_back({p, {}, true, canvas::canvasLinks(*bytes).all()});
+                else
+                    results.push_back({p, parseBytes(*bytes)});
             }
             if (workers->alive) {
                 // a queued call on `self`: dropped if it is destroyed before the call runs
@@ -117,8 +123,12 @@ void MetadataCache::parseAsync(const QStringList& paths)
                     self,
                     [self, results = std::move(results)]() mutable {
                         Busy::end();
-                        for (Result& r : results)
-                            self->applyResult(r.path, std::move(r.meta));
+                        for (Result& r : results) {
+                            if (r.canvas)
+                                self->applyCanvasResult(r.path, std::move(r.canvasLinks));
+                            else
+                                self->applyResult(r.path, std::move(r.meta));
+                        }
                         if (--self->m_pending == 0) {
                             self->m_ready = true;
                             emit self->resolved();
@@ -160,7 +170,8 @@ void MetadataCache::resolveSource(const QString& source)
 {
     unresolveSource(source);
     const auto it = m_cache.constFind(source);
-    if (it == m_cache.cend())
+    const auto canvasIt = m_canvas.constFind(source);
+    if (it == m_cache.cend() && canvasIt == m_canvas.cend())
         return;
     QHash<QString, int> res, unres;
     auto consider = [&](const md::LinkCache& l) {
@@ -174,12 +185,17 @@ void MetadataCache::resolveSource(const QString& source)
         else
             res[dest] += 1;
     };
-    for (const md::LinkCache& l : it->links)
-        consider(l);
-    for (const md::LinkCache& l : it->embeds)
-        consider(l);
-    for (const md::LinkCache& l : it->frontmatterLinks)
-        consider(l);
+    if (it != m_cache.cend()) {
+        for (const md::LinkCache& l : it->links)
+            consider(l);
+        for (const md::LinkCache& l : it->embeds)
+            consider(l);
+        for (const md::LinkCache& l : it->frontmatterLinks)
+            consider(l);
+    } else {
+        for (const md::LinkCache& l : *canvasIt)
+            consider(l);
+    }
     if (!res.isEmpty())
         m_resolved.insert(source, res);
     if (!unres.isEmpty())
@@ -197,6 +213,21 @@ void MetadataCache::applyResult(const QString& path, md::CachedMetadata meta)
     emit changed(path);
 }
 
+void MetadataCache::applyCanvasResult(const QString& path, QList<md::LinkCache> links)
+{
+    // No changed(path): listeners expect markdown metadata; the link graph change is announced by
+    // resolved() when the batch ends.
+    m_canvas.insert(path, std::move(links));
+    resolveSource(path);
+}
+
+QList<md::LinkCache> MetadataCache::fileLinks(const QString& path) const
+{
+    if (const auto it = m_cache.constFind(path); it != m_cache.cend())
+        return it->links + it->embeds + it->frontmatterLinks;
+    return m_canvas.value(path);
+}
+
 void MetadataCache::fileCreated(const QString& path)
 {
     m_resolver.addFile(path);
@@ -204,7 +235,7 @@ void MetadataCache::fileCreated(const QString& path)
     const QSet<QString> sources = m_unresolvedByName.value(linkNameKey(path));
     for (const QString& s : sources)
         resolveSource(s);
-    if (isMarkdownPath(path))
+    if (isIndexedPath(path))
         parseAsync({path});
     if (!sources.isEmpty())
         emit resolved();
@@ -212,7 +243,7 @@ void MetadataCache::fileCreated(const QString& path)
 
 void MetadataCache::fileModified(const QString& path)
 {
-    if (isMarkdownPath(path))
+    if (isIndexedPath(path))
         parseAsync({path});
 }
 
@@ -230,6 +261,7 @@ void MetadataCache::fileDeleted(const QString& path)
     m_resolver.removeFile(path);
     unresolveSource(path);
     m_cache.remove(path);
+    m_canvas.remove(path);
     for (const QString& s : sources)
         resolveSource(s); // their links to `path` become unresolved (or resolve elsewhere)
     emit deleted(path);
@@ -245,6 +277,10 @@ void MetadataCache::fileRenamed(const QString& oldPath, const QString& newPath)
         unresolveSource(oldPath);
         m_cache.insert(newPath, m_cache.take(oldPath));
         resolveSource(newPath); // relative links may resolve differently now
+    } else if (m_canvas.contains(oldPath)) {
+        unresolveSource(oldPath);
+        m_canvas.insert(newPath, m_canvas.take(oldPath));
+        resolveSource(newPath);
     }
     QSet<QString> affected = sources;
     affected.unite(m_unresolvedByName.value(linkNameKey(newPath)));

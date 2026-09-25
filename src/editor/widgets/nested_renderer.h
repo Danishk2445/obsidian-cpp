@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace oc {
 
@@ -22,6 +23,9 @@ public:
     void paint(QPainter* p, const QPointF& origin, const QRectF& clip);
     qsizetype hitTest(const QPointF& local) const;      // nested document offset
     QString linkAt(const QPointF& local) const;
+    // The link under `local`: its target and kind (as EditorView::linkActivated: 0 wikilink, 1 embed,
+    // 2 markdown link, 3 url, 4 tag).
+    std::optional<std::pair<QString, int>> linkHitAt(const QPointF& local) const;
     const Text& text() const { return m_source->text(); }
 
 private:
