@@ -48,6 +48,7 @@
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
 #include "ui/workspace/file_menu.h"
@@ -418,6 +419,7 @@ void Application::populateWindow(MainWindow* w)
     registerFileExplorerView(*registry); // replaces the placeholder
     registerNavigationViews(*registry);  // replaces the "search" placeholder
     registerGraphViews(*registry);       // "graph" + "localgraph"
+    registerMediaViews(*registry);       // image, audio, video, pdf views + their embeds
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
@@ -520,7 +522,11 @@ void Application::populateWindow(MainWindow* w)
 
     // --open <note> [--mode ...]: open a note in the active tab (headless screenshots, CLI).
     if (!m_opts.open.isEmpty() && session->vault()) {
-        if (TFile* f = session->vault()->file(m_opts.open)) {
+        TFile* f = session->vault()->file(m_opts.open);
+        if (f && !f->isMarkdown()) {
+            // images, PDFs, media, canvases, ...: the view registered for the extension
+            workspace->openFile(f, Workspace::NewLeaf::No);
+        } else if (f) {
             QJsonObject state{{QStringLiteral("file"), f->path()}};
             if (m_opts.mode == u"reading")
                 state.insert(QStringLiteral("mode"), QStringLiteral("preview"));

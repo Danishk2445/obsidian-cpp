@@ -234,8 +234,9 @@ TEST_F(MediaPlayerTest, VideoSurfaceFramesAndFullscreen)
     EXPECT_EQ(bar->barStyle(), MediaControlBar::Style::Video);
     EXPECT_FALSE(bar->partRect(MediaControlBar::Part::Fullscreen).isEmpty());
     EXPECT_EQ(bar->geometry().bottom(), surface->height() - 1);
-    if (playsHere(c))
+    if (playsHere(c)) {
         EXPECT_TRUE(QTest::qWaitFor([&] { return !c->currentFrame().isNull(); }, 5000));
+    }
     c->pause();
     // fullscreen: a second surface in its own window on the same player
     QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, bar->partRect(MediaControlBar::Part::Fullscreen).center());
