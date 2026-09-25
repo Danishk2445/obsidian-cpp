@@ -6,6 +6,7 @@
 
 #include "core/search/search_query.h"
 #include "core/util/match_range.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view.h"
 
 #include <QPointer>
@@ -145,9 +146,10 @@ GlobalSearchHooks& globalSearchHooks();
 // Obsidian's getGlobalSearchQuery() (empty without a search view).
 QString currentGlobalSearchQuery(MainWindow* window);
 
-// Obsidian's link context menu (Open in new tab / Open to the right) for a vault path, followed by
-// `extra` items.
-void populateLinkMenu(QMenu* menu, Workspace* ws, const QString& linktext, const QString& sourcePath);
+// Obsidian's handleLinkContextMenu(): for a resolved link Open in new tab / Open to the right plus the
+// file-menu hooks' items (source "link-context-menu"); for an unresolved one "Create this file".
+// Render with buildSectionedMenu() (ui/workspace/file_menu.h).
+QList<MenuEntry> linkMenuEntries(Workspace* ws, const QString& linktext, const QString& sourcePath, QWidget* origin);
 
 // Obsidian's file sort orders for results (ExplorerSortOrder ids), with the file explorer's labels.
 QList<QList<QPair<QString, QString>>> fileSortGroups();

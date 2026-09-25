@@ -20,6 +20,7 @@
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/views/markdown/page_preview.h"
 #include "ui/widgets/search_input.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -475,32 +476,41 @@ void searchFor(MainWindow* window, const QString& term, bool modifier)
     }
 }
 
-void populateLinkMenu(QMenu* menu, Workspace* ws, const QString& linktext, const QString& sourcePath)
+QList<MenuEntry> linkMenuEntries(Workspace* ws, const QString& linktext, const QString& sourcePath, QWidget* origin)
 {
+    QList<MenuEntry> items;
+    VaultSession* s = ws ? ws->session() : nullptr;
+    if (!s || !s->vault() || linktext.isEmpty())
+        return items;
     QPointer<Workspace> w = ws;
-    const IconProvider& icons = IconProvider::instance();
-    QAction* tab = menu->addAction(icons.icon(QStringLiteral("file-plus"), 16, 2.0), QObject::tr("Open in new tab"));
-    QObject::connect(tab, &QAction::triggered, menu, [w, linktext, sourcePath] {
-        if (w)
-            MarkdownView::openLinkText(w, linktext, 0, sourcePath, true);
-    });
-    QAction* right = menu->addAction(icons.icon(QStringLiteral("separator-vertical"), 16, 2.0), QObject::tr("Open to the right"));
-    QObject::connect(right, &QAction::triggered, menu, [w, linktext, sourcePath] {
-        if (!w)
-            return;
-        VaultSession* s = w->session();
-        const QString dest = s && s->vault() ? LinkResolver::splitSubpath(linktext).first : QString();
-        TFile* f = nullptr;
-        if (s && s->metadata() && s->vault())
-            f = s->vault()->file(s->metadata()->resolver().resolve(dest, sourcePath));
-        if (f) {
-            QJsonObject eState;
-            const QString sub = LinkResolver::splitSubpath(linktext).second;
-            if (!sub.isEmpty())
-                eState.insert(QStringLiteral("subpath"), sub);
-            w->openFile(f, Workspace::NewLeaf::SplitRight, eState);
-        }
-    });
+    const auto [path, subpath] = LinkResolver::splitSubpath(linktext);
+    const QString dest = s->metadata() ? s->metadata()->resolver().resolve(path, sourcePath) : path;
+    TFile* file = dest.isEmpty() ? nullptr : s->vault()->file(dest);
+    if (!file) {
+        items << MenuEntry{QStringLiteral("open"), QObject::tr("Create this file"), QStringLiteral("file"), [w, linktext, sourcePath] {
+                               if (w)
+                                   MarkdownView::openLinkText(w, linktext, 0, sourcePath, false);
+                           }};
+        return items;
+    }
+    items << MenuEntry{QStringLiteral("open"), QObject::tr("Open in new tab"), QStringLiteral("file-plus"), [w, linktext, sourcePath] {
+                           if (w)
+                               MarkdownView::openLinkText(w, linktext, 0, sourcePath, true);
+                       }};
+    const QString filePath = file->path();
+    const QString sub = subpath;
+    items << MenuEntry{QStringLiteral("open"), QObject::tr("Open to the right"), QStringLiteral("separator-vertical"), [w, filePath, sub] {
+                           VaultSession* ss = w ? w->session() : nullptr;
+                           TFile* f = ss && ss->vault() ? ss->vault()->file(filePath) : nullptr;
+                           if (!f)
+                               return;
+                           QJsonObject eState;
+                           if (!sub.isEmpty())
+                               eState.insert(QStringLiteral("subpath"), sub);
+                           w->openFile(f, Workspace::NewLeaf::SplitRight, eState);
+                       }};
+    FileMenuHooks::collect(items, file, QStringLiteral("link-context-menu"), nullptr, origin);
+    return items;
 }
 
 QList<QList<QPair<QString, QString>>> countSortGroups(const QString& nameAToZ, const QString& nameZToA)

@@ -704,19 +704,22 @@ void BacklinkPane::showContextMenu(TreeList::Node* n, const QPoint& globalPos)
     if (!s || !ws)
         return;
     const QString path = n->data.toString();
-    QMenu menu(this);
-    populateLinkMenu(&menu, ws, path, QString());
+    // Obsidian's search result menu: the link menu (+ file-menu hooks), and on the title "Delete file".
+    QList<MenuEntry> items = linkMenuEntries(ws, path, QString(), this);
     if (n->type == kResult) {
-        menu.addSeparator();
-        QAction* del = menu.addAction(IconProvider::instance().icon(QStringLiteral("trash-2"), 16, 2.0), tr("Delete file"));
-        del->setProperty("ocWarning", true);
         QPointer<VaultSession> ps = s;
-        connect(del, &QAction::triggered, this, [ps, path] {
-            if (ps && ps->vault())
-                if (TFile* f = ps->vault()->file(path))
-                    promptForDeletion(ps, f);
-        });
+        items << MenuEntry{QStringLiteral("danger"), tr("Delete file"), QStringLiteral("trash-2"),
+                           [ps, path] {
+                               if (ps && ps->vault())
+                                   if (TFile* f = ps->vault()->file(path))
+                                       promptForDeletion(ps, f);
+                           },
+                           true};
     }
+    QMenu menu(this);
+    buildSectionedMenu(&menu, items);
+    if (menu.isEmpty())
+        return;
     m_tree->setMenuNode(n);
     QPointer<BacklinkPane> self(this);
     menu.exec(globalPos);

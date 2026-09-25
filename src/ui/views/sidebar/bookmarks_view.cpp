@@ -640,113 +640,99 @@ void BookmarksView::dropItems(const QList<TreeList::Node*>& nodes, TreeList::Nod
 
 void BookmarksView::populateContextMenu(QMenu* menu, TreeList::Node* node)
 {
-    const IconProvider& icons = IconProvider::instance();
     QPointer<BookmarksView> self(this);
+    QList<MenuEntry> items;
+    auto alive = [self](Bookmark* x) { return self && self->m_model && self->m_model->contains(x); };
     if (!node) {
-        QAction* a = menu->addAction(icons.icon(QStringLiteral("folder-plus"), 16, 2.0), tr("New group"));
-        connect(a, &QAction::triggered, this, [self] {
-            if (self)
-                self->createNewGroup();
-        });
+        items << MenuEntry{QString(), tr("New group"), QStringLiteral("folder-plus"), [self] {
+                               if (self)
+                                   self->createNewGroup();
+                           }};
+        buildSectionedMenu(menu, items);
         return;
     }
     Bookmark* b = bookmarkOf(node);
     if (!b)
         return;
-    const QList<TreeList::Node*> selection = m_tree->selectedNodes();
-    auto openAll = [self](QList<Bookmark*> items, Workspace::NewLeaf mode) {
-        if (!self)
-            return;
-        for (Bookmark* x : items)
-            if (self->m_model && self->m_model->contains(x) && (x->type == u"file" || x->type == u"graph"))
+    auto openAll = [self, alive](QList<Bookmark*> list, Workspace::NewLeaf mode) {
+        for (Bookmark* x : list)
+            if (alive(x) && (x->type == u"file" || x->type == u"graph"))
                 self->open(x, mode);
     };
+    auto openItems = [&](const QList<Bookmark*>& list) {
+        items << MenuEntry{QStringLiteral("open"), tr("Open in new tab"), QStringLiteral("file-plus"),
+                           [openAll, list] { openAll(list, Workspace::NewLeaf::Tab); }};
+        items << MenuEntry{QStringLiteral("open"), tr("Open to the right"), QStringLiteral("separator-vertical"),
+                           [openAll, list] { openAll(list, Workspace::NewLeaf::SplitRight); }};
+    };
+    const QList<TreeList::Node*> selection = m_tree->selectedNodes();
     if (selection.size() > 1 && selection.contains(node)) {
-        QList<Bookmark*> items;
+        // Obsidian's menu for a multi-selection
+        QList<Bookmark*> list;
         for (TreeList::Node* n : selection)
             if (Bookmark* x = bookmarkOf(n))
-                items << x;
-        connect(menu->addAction(icons.icon(QStringLiteral("file-plus"), 16, 2.0), tr("Open in new tab")), &QAction::triggered, this,
-                [openAll, items] { openAll(items, Workspace::NewLeaf::Tab); });
-        connect(menu->addAction(icons.icon(QStringLiteral("separator-vertical"), 16, 2.0), tr("Open to the right")), &QAction::triggered, this,
-                [openAll, items] { openAll(items, Workspace::NewLeaf::SplitRight); });
-        menu->addSeparator();
-        QAction* rm = menu->addAction(icons.icon(QStringLiteral("trash-2"), 16, 2.0), tr("Remove"));
-        connect(rm, &QAction::triggered, this, [self, items] {
-            for (Bookmark* x : items)
-                if (self && self->m_model && self->m_model->contains(x))
-                    self->m_model->remove(x);
-        });
+                list << x;
+        openItems(list);
+        items << MenuEntry{QStringLiteral("danger"), tr("Remove"), QStringLiteral("trash-2"), [self, alive, list] {
+                               for (Bookmark* x : list)
+                                   if (alive(x))
+                                       self->m_model->remove(x);
+                           }};
+        buildSectionedMenu(menu, items);
         return;
     }
-    // open
-    QList<Bookmark*> targets;
+    items << MenuEntry{QStringLiteral("action"), tr("Rename"), QStringLiteral("pencil"), [self, alive, b] {
+                           if (alive(b))
+                               QTimer::singleShot(0, self, [self, alive, b] {
+                                   if (alive(b))
+                                       self->startRename(b);
+                               });
+                       }};
+    items << MenuEntry{QStringLiteral("danger"), tr("Remove"), QStringLiteral("trash-2"), [self, alive, b] {
+                           if (alive(b))
+                               self->m_model->remove(b);
+                       }};
     if (b->isGroup()) {
+        items << MenuEntry{QStringLiteral("action"), tr("Bookmark the active tab..."), QStringLiteral("bookmark-plus"), [self, alive, b] {
+                               if (!alive(b))
+                                   return;
+                               Workspace* ws = self->workspace();
+                               if (std::unique_ptr<Bookmark> item = bookmarkForLeaf(ws ? ws->activeRootLeaf() : nullptr))
+                                   BookmarkModal::add(sessionWindow(self->session()), self->m_model, std::move(item), b);
+                           }};
+        items << MenuEntry{QStringLiteral("action"), tr("New group"), QStringLiteral("folder-plus"), [self, alive, b] {
+                               if (alive(b))
+                                   self->createNewGroup(b);
+                           }};
+        QList<Bookmark*> children;
         for (const auto& c : b->items)
-            targets << c.get();
-    } else if (b->type == u"file" || b->type == u"graph") {
-        targets << b;
-    }
-    if (!targets.isEmpty()) {
-        connect(menu->addAction(icons.icon(QStringLiteral("file-plus"), 16, 2.0), tr("Open in new tab")), &QAction::triggered, this,
-                [openAll, targets] { openAll(targets, Workspace::NewLeaf::Tab); });
-        connect(menu->addAction(icons.icon(QStringLiteral("separator-vertical"), 16, 2.0), tr("Open to the right")), &QAction::triggered, this,
-                [openAll, targets] { openAll(targets, Workspace::NewLeaf::SplitRight); });
-        menu->addSeparator();
-    }
-    // action
-    connect(menu->addAction(icons.icon(QStringLiteral("pencil"), 16, 2.0), tr("Rename")), &QAction::triggered, this, [self, b] {
-        if (self && self->m_model && self->m_model->contains(b))
-            QTimer::singleShot(0, self, [self, b] {
-                if (self && self->m_model && self->m_model->contains(b))
-                    self->startRename(b);
-            });
-    });
-    if (b->isGroup()) {
-        connect(menu->addAction(icons.icon(QStringLiteral("bookmark-plus"), 16, 2.0), tr("Bookmark the active tab...")), &QAction::triggered, this,
-                [self, b] {
-                    if (!self || !self->m_model || !self->m_model->contains(b))
-                        return;
-                    Workspace* ws = self->workspace();
-                    if (std::unique_ptr<Bookmark> item = bookmarkForLeaf(ws ? ws->activeRootLeaf() : nullptr))
-                        BookmarkModal::add(sessionWindow(self->session()), self->m_model, std::move(item), b);
-                });
-        connect(menu->addAction(icons.icon(QStringLiteral("folder-plus"), 16, 2.0), tr("New group")), &QAction::triggered, this, [self, b] {
-            if (self && self->m_model && self->m_model->contains(b))
-                self->createNewGroup(b);
-        });
+            children << c.get();
+        openItems(children);
     } else {
-        connect(menu->addAction(icons.icon(QStringLiteral("wrench"), 16, 2.0), tr("Edit...")), &QAction::triggered, this, [self, b] {
-            if (self && self->m_model && self->m_model->contains(b))
-                BookmarkModal::edit(sessionWindow(self->session()), self->m_model, b);
-        });
+        if (b->type == u"file" || b->type == u"graph")
+            openItems({b});
+        items << MenuEntry{QStringLiteral("action"), tr("Edit..."), QStringLiteral("wrench"), [self, alive, b] {
+                               if (alive(b))
+                                   BookmarkModal::edit(sessionWindow(self->session()), self->m_model, b);
+                           }};
     }
-    // view
     if (b->type == u"file" || b->type == u"folder") {
         VaultSession* s = session();
         if (s && s->vault() && s->vault()->item(b->path)) {
-            menu->addSeparator();
             const QString path = b->path;
-            connect(menu->addAction(icons.icon(QStringLiteral("folder-open"), 16, 2.0), tr("Reveal file in navigation")), &QAction::triggered, this,
-                    [self, path] {
-                        if (!self)
-                            return;
-                        Workspace* ws = self->workspace();
-                        VaultSession* ss = self->session();
-                        TAbstractFile* f = ss && ss->vault() ? ss->vault()->item(path) : nullptr;
-                        WorkspaceLeaf* l = ws ? ws->leavesOfType(QStringLiteral("file-explorer")).value(0) : nullptr;
-                        if (auto* fe = l ? qobject_cast<FileExplorerView*>(l->view()) : nullptr; fe && f)
-                            fe->revealInFolder(f);
-                    });
+            items << MenuEntry{QStringLiteral("view"), tr("Reveal file in navigation"), QStringLiteral("folder-open"), [self, path] {
+                                   if (!self)
+                                       return;
+                                   Workspace* ws = self->workspace();
+                                   VaultSession* ss = self->session();
+                                   TAbstractFile* f = ss && ss->vault() ? ss->vault()->item(path) : nullptr;
+                                   WorkspaceLeaf* l = ws ? ws->leavesOfType(QStringLiteral("file-explorer")).value(0) : nullptr;
+                                   if (auto* fe = l ? qobject_cast<FileExplorerView*>(l->view()) : nullptr; fe && f)
+                                       fe->revealInFolder(f);
+                               }};
         }
     }
-    // danger
-    menu->addSeparator();
-    QAction* rm = menu->addAction(icons.icon(QStringLiteral("trash-2"), 16, 2.0), tr("Remove"));
-    connect(rm, &QAction::triggered, this, [self, b] {
-        if (self && self->m_model && self->m_model->contains(b))
-            self->m_model->remove(b);
-    });
+    buildSectionedMenu(menu, items);
 }
 
 void BookmarksView::showContextMenu(TreeList::Node* node, const QPoint& globalPos)

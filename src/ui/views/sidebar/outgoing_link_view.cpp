@@ -324,7 +324,9 @@ void OutgoingLinkView::showContextMenu(TreeList::Node* n, const QPoint& globalPo
     if (!n || n->type != kLink)
         return;
     QMenu menu(this);
-    populateLinkMenu(&menu, workspace(), n->data.toString(), filePath());
+    buildSectionedMenu(&menu, linkMenuEntries(workspace(), n->data.toString(), filePath(), this));
+    if (menu.isEmpty())
+        return;
     m_tree->setMenuNode(n);
     QPointer<OutgoingLinkView> self(this);
     menu.exec(globalPos);

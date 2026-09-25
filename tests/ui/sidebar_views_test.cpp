@@ -18,6 +18,7 @@
 #include "ui/views/sidebar/tag_view.h"
 #include "ui/widgets/search_input.h"
 #include "ui/widgets/tree_list.h"
+#include "ui/workspace/file_menu.h"
 
 #include <QApplication>
 #include <QJsonArray>
@@ -687,6 +688,65 @@ TEST_F(SidebarTest, Commands)
     EXPECT_FALSE(bound->leaf()->isInSidedock());
     EXPECT_EQ(bound->displayText(), "Backlinks for Target");
     EXPECT_FALSE(commands->isAvailable("backlink:toggle-backlinks-in-document"));
+}
+
+TEST_F(SidebarTest, FileAndEditorMenus)
+{
+    MarkdownView* mv = open("Target.md");
+    WorkspaceLeaf* leaf = mv->leaf();
+    QList<MenuEntry> items;
+    FileMenuHooks::collect(items, vault->file("Target.md"), "tab-header", leaf, window);
+    QStringList titles;
+    for (const MenuEntry& e : items)
+        titles << e.section + "/" + e.title;
+    for (const QString& t : {QString("action/Bookmark..."), QString("view.linked/Open backlinks"), QString("view.linked/Open outgoing links"),
+                             QString("view.linked/Open outline")})
+        EXPECT_TRUE(titles.contains(t)) << qPrintable(t) << qPrintable(titles.join(", "));
+    // the explorer (no leaf) only gets the bookmark item; the vault root none of ours
+    QList<MenuEntry> explorer;
+    FileMenuHooks::collect(explorer, vault->folder("Folder"), "file-explorer-context-menu", nullptr, window);
+    int ours = 0;
+    for (const MenuEntry& e : explorer)
+        ours += e.title == u"Bookmark..." || e.section == u"view.linked";
+    EXPECT_EQ(ours, 1);
+    // "Open outline": a linked outline next to the note
+    for (const MenuEntry& e : items)
+        if (e.title == u"Open outline")
+            e.run();
+    settle();
+    auto* outline = qobject_cast<OutlineView*>(window->workspace()->activeLeaf()->view());
+    ASSERT_TRUE(outline);
+    EXPECT_EQ(outline->displayText(), "Outline of Target");
+    EXPECT_EQ(outline->linkedLeaf(), leaf);
+    // editor menu on a heading line
+    mv->editor()->setCursorPosition(mv->document()->text().lineStart(8)); // "## Section A"
+    QList<MenuEntry> editor;
+    EditorMenuHooks::collect(editor, mv, mv->editor()->cursorPosition());
+    bool found = false;
+    for (const MenuEntry& e : editor)
+        if (e.title == u"Bookmark this heading...") {
+            found = true;
+            e.run();
+        }
+    ASSERT_TRUE(found);
+    settle();
+    Modal* modal = nullptr;
+    for (Modal* m : window->overlay()->findChildren<Modal*>())
+        if (m->isOpen())
+            modal = m;
+    ASSERT_TRUE(modal);
+    modal->button(modal->defaultButton())->click();
+    BookmarkModel* model = sessionBookmarks(session.get());
+    ASSERT_EQ(model->items().size(), 1u);
+    EXPECT_EQ(model->items()[0]->subpath, "#Section A");
+    // with a bookmark the file menu offers to edit it
+    model->add(Bookmark::file("Target.md"));
+    QList<MenuEntry> again;
+    FileMenuHooks::collect(again, vault->file("Target.md"), "more-options", leaf, window);
+    bool edit = false;
+    for (const MenuEntry& e : again)
+        edit = edit || e.title == u"Edit bookmark";
+    EXPECT_TRUE(edit);
 }
 
 // ---- screenshots (OC_SHOT_DIR) ----------------------------------------------------------------------

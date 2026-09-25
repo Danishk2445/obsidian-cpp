@@ -31,4 +31,10 @@ void registerSidebarViews(ViewRegistry& registry);
 // the plugin name) and icons; none has a default hotkey.
 void registerSidebarCommands(CommandRegistry& commands, MainWindow* window);
 
+// The plugins' file-menu / editor-menu items (FileMenuHooks / EditorMenuHooks, once per process;
+// registerSidebarCommands() installs them): "Bookmark..." / "Edit bookmark" for files and folders,
+// "Open backlinks" / "Open outgoing links" / "Open outline" for a leaf's note (section "view.linked"),
+// "Bookmark this heading..." on a heading line in the editor.
+void installSidebarMenus();
+
 } // namespace oc

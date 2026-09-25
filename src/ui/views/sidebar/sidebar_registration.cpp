@@ -20,12 +20,14 @@
 #include "ui/views/sidebar/outgoing_link_view.h"
 #include "ui/views/sidebar/outline_view.h"
 #include "ui/views/sidebar/tag_view.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
 #include <QCoreApplication>
 #include <QJsonObject>
 #include <QPointer>
+#include <QRegularExpression>
 
 namespace oc {
 
@@ -168,10 +170,101 @@ bool bookmarkCurrentSection(MainWindow* w, EditorContext& ec, bool checking)
     return true;
 }
 
+MainWindow* windowOf(QWidget* origin) { return origin ? qobject_cast<MainWindow*>(origin->window()) : nullptr; }
+
+// A linked view (backlinks, outgoing links, outline) of `leaf`'s note in a split of it (Obsidian's
+// splitLeafOrActive + setViewState({group: leaf})).
+void openLinkedView(WorkspaceLeaf* leaf, const QString& type, Qt::Orientation orientation)
+{
+    Workspace* ws = leaf ? leaf->workspace() : nullptr;
+    auto* fv = leaf ? qobject_cast<FileView*>(leaf->view()) : nullptr;
+    if (!ws || !fv || !fv->file())
+        return;
+    const QString path = fv->file()->path();
+    WorkspaceLeaf* target = ws->splitLeaf(leaf, orientation);
+    if (!target)
+        return;
+    target->setViewState(QJsonObject{{QStringLiteral("type"), type}, {QStringLiteral("state"), QJsonObject{{QStringLiteral("file"), path}}}}, {}, false);
+    if (auto* v = qobject_cast<LinkedFileView*>(target->view()))
+        v->linkTo(leaf);
+    ws->setActiveLeaf(target, true);
+}
+
+// ATX heading text of a line (Obsidian's XE()), empty when the line isn't one.
+QString atxHeadingText(const QString& line)
+{
+    static const QRegularExpression re(QStringLiteral("^ {0,3}#{1,6}[ \\t]+(.*?)(?:[ \\t]+#+)?[ \\t]*$"));
+    const QRegularExpressionMatch m = re.match(line);
+    return m.hasMatch() ? m.captured(1).trimmed() : QString();
+}
+
 } // namespace
+
+void installSidebarMenus()
+{
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    // Obsidian's file-menu handlers of the bookmarks, backlink, outgoing-link and outline plugins.
+    FileMenuHooks::add([](QList<MenuEntry>& items, TAbstractFile* item, const QString& source, WorkspaceLeaf* leaf, QWidget* origin) {
+        MainWindow* w = windowOf(origin);
+        if (!w && leaf && leaf->workspace())
+            w = leaf->workspace()->window();
+        if (!w || !item)
+            return;
+        QPointer<MainWindow> pw = w;
+        const QString path = item->path();
+        const bool folder = item->isFolder();
+        if (!(folder && static_cast<TFolder*>(item)->isRoot())) {
+            BookmarkModel* model = sessionBookmarks(w->session());
+            const bool existing = model && model->findByPath(path);
+            items << MenuEntry{QStringLiteral("action"), existing ? tr("Edit bookmark") : tr("Bookmark..."), QStringLiteral("bookmark"), [pw, path, folder] {
+                                   BookmarkModel* m = pw ? sessionBookmarks(pw->session()) : nullptr;
+                                   if (!m)
+                                       return;
+                                   if (Bookmark* b = m->findByPath(path))
+                                       BookmarkModal::edit(pw, m, b);
+                                   else
+                                       BookmarkModal::add(pw, m, folder ? Bookmark::folder(path) : Bookmark::file(path));
+                               }};
+        }
+        if (folder || !leaf || source == u"sidebar-context-menu")
+            return;
+        QPointer<WorkspaceLeaf> pl = leaf;
+        const bool markdown = static_cast<TFile*>(item)->isMarkdown();
+        items << MenuEntry{QStringLiteral("view.linked"), tr("Open backlinks"), QStringLiteral("links-coming-in"),
+                           [pl] { openLinkedView(pl, QStringLiteral("backlink"), Qt::Vertical); }};
+        if (!markdown)
+            return;
+        items << MenuEntry{QStringLiteral("view.linked"), tr("Open outgoing links"), QStringLiteral("links-going-out"),
+                           [pl] { openLinkedView(pl, QStringLiteral("outgoing-link"), Qt::Vertical); }};
+        items << MenuEntry{QStringLiteral("view.linked"), tr("Open outline"), QStringLiteral("list"),
+                           [pl] { openLinkedView(pl, QStringLiteral("outline"), Qt::Horizontal); }};
+    });
+    // Obsidian's bookmarks editor-menu handler: "Bookmark this heading..." on a heading line.
+    EditorMenuHooks::add([](QList<MenuEntry>& items, MarkdownView* view, qsizetype) {
+        MainWindow* w = windowOf(view);
+        Document* doc = view ? view->document() : nullptr;
+        if (!w || !doc || !view->file())
+            return;
+        const Text& t = doc->text();
+        const QString heading = atxHeadingText(t.line(t.lineAt(view->editor()->cursorPosition())));
+        if (heading.isEmpty())
+            return;
+        QPointer<MainWindow> pw = w;
+        const QString path = view->file()->path();
+        const QString subpath = QLatin1Char('#') + headingSubpathText(heading);
+        items << MenuEntry{QStringLiteral("action"), tr("Bookmark this heading..."), QStringLiteral("bookmark"), [pw, path, subpath] {
+                               if (pw)
+                                   BookmarkModal::add(pw, sessionBookmarks(pw->session()), Bookmark::file(path, subpath));
+                           }};
+    });
+}
 
 void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
 {
+    installSidebarMenus();
     QPointer<MainWindow> w = window;
 
     // ---- backlink ----
