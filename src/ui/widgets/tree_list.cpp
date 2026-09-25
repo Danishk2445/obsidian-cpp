@@ -1263,6 +1263,11 @@ bool TreeList::viewportEvent(QEvent* e)
                 text = n->chipTooltips.value(chip);
             else
                 text = n->tooltip;
+            // an elided one-line title shows in full
+            if (text.isEmpty() && (n->kind == Kind::Item || n->kind == Kind::Header) && n->layout && !n->layout->wrapped
+                && QFontMetricsF(n->kind == Kind::Header ? m_m->headerFont : m_m->font).horizontalAdvance(n->prefix + n->title)
+                    > textWidth(n, rowRect(row).width()))
+                text = n->prefix + n->title;
         }
         if (text.isEmpty() || m_drag.active) {
             QToolTip::hideText();
