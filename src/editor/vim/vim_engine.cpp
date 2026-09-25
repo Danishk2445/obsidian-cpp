@@ -115,12 +115,9 @@ VimEngine::~VimEngine() = default;
 
 void VimEngine::enterVimMode()
 {
-    // vim.js enterVimMode: normal mode, cursor off the line break
+    // vim.js enterVimMode: normal mode (the cursor stays where it is); a selection is visual mode
     m_busy++;
-    const Pos cur = getCursor();
-    if (!somethingSelected())
-        setCursor(clipCursorToContent(cur));
-    else
+    if (somethingSelected())
         handleExternalSelection();
     m_busy--;
     signalModeChange();
@@ -669,6 +666,16 @@ VimEngine::Match VimEngine::matchCommand(const QString& keys, const QString& con
 void VimEngine::clearInputState()
 {
     m_inputState = std::make_shared<InputState>();
+    // "vim-command-done": after <C-o> in insert mode, the next completed (or cancelled) command
+    // returns to insert mode — when its input state clears, before it runs, like vim.js
+    if (m_insertModeReturnArmed && m_insertModeReturn && !m_visualMode) {
+        m_insertModeReturnArmed = false;
+        m_insertModeReturn = false;
+        if (!m_insertMode) {
+            Args a;
+            actEnterInsertMode(a);
+        }
+    }
 }
 
 void VimEngine::logKey(const QString& key)
@@ -845,7 +852,6 @@ bool VimEngine::handleKey(const QString& key, const QString& origin)
     const KeyCommand* command = nullptr;
     bool consumed = false;
     const bool wasInsert = m_insertMode;
-    const bool returnPending = m_insertModeReturn; // <C-o>: back to insert mode after one command
     bool result = false;
     if (m_insertMode)
         handleKeyInsertMode(key, &command, &consumed);
@@ -858,18 +864,6 @@ bool VimEngine::handleKey(const QString& key, const QString& origin)
         const KeyCommand cmd = *command; // the keymap may change while it runs (:map)
         runCommand_(cmd);
         result = true;
-    }
-    // "vim-command-done": oneNormalCommand returns to insert mode once the command is complete
-    if (returnPending && m_insertModeReturn && !m_visualMode && !hasPendingInput()) {
-        m_insertModeReturn = false;
-        if (!m_insertMode) {
-            Args a;
-            m_busy++;
-            beginEdit();
-            actEnterInsertMode(a);
-            endEdit();
-            m_busy--;
-        }
     }
     return result;
 }
@@ -1121,7 +1115,10 @@ void VimEngine::processOperator(const KeyCommand& command)
             evalInput();
             return;
         }
-        clearInputState(); // two different operators in a row
+        // two different operators in a row: both are dropped (vim.js sets the new operator on the
+        // discarded input state)
+        clearInputState();
+        return;
     }
     InputState& s = *m_inputState;
     s.op = command.op;

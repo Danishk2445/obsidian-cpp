@@ -878,6 +878,7 @@ void VimEngine::actOneNormalCommand()
 {
     exitInsertMode(true);
     m_insertModeReturn = true;
+    m_insertModeReturnArmed = true;
 }
 
 void VimEngine::actReplace(Args& args)

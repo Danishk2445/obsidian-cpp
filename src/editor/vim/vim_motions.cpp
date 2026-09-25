@@ -314,6 +314,14 @@ VimEngine::MotionResult VimEngine::runMotion(Motion m, Pos head, Args& args, con
             return MotionResult::pos(head);
         return MotionResult::pos(Pos(curEnd->line, curEnd->ch + increment));
     }
+    case Motion::MoveToLastNonBlank: {
+        const int line = std::min(head.line + args.repeat - 1, lastLine());
+        const QString text = getLine(line);
+        int ch = int(text.size()) - 1;
+        while (ch > 0 && text.at(ch).isSpace())
+            --ch;
+        return MotionResult::pos(Pos(line, std::max(0, ch)));
+    }
     case Motion::None:
         break;
     }

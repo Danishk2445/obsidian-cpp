@@ -84,6 +84,7 @@ enum class Motion {
     MoveToEndOfDisplayLine,
     TextObjectManipulation,
     RepeatLastCharacterSearch,
+    MoveToLastNonBlank, // g_ (not in Obsidian's keymap)
 };
 
 enum class Operator { None, Change, Delete, Indent, IndentAuto, HardWrap, ChangeCase, Yank };
@@ -557,6 +558,7 @@ private:
     QHash<QString, int> m_marks; // name -> bookmark id
     bool m_insertMode = false;
     bool m_insertModeReturn = false;
+    bool m_insertModeReturnArmed = false; // <C-o> ran: the next clearInputState re-enters insert mode
     int m_insertModeRepeat = 0;
     bool m_visualMode = false;
     bool m_visualLine = false;
