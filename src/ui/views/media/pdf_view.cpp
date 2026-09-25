@@ -3,12 +3,12 @@
 #include "core/files/file_manager.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
-#include "render/theme/icons.h"
 #include "ui/views/media/media_views.h"
 #include "ui/views/media/pdf_viewer.h"
+#include "ui/workspace/file_menu.h"
 
 #include <QJsonObject>
-#include <QMenu>
+#include <QPointer>
 #include <QVBoxLayout>
 
 namespace oc::media {
@@ -110,10 +110,14 @@ void PdfView::setEphemeralState(const QJsonObject& e)
         m_viewer->pages()->setFocus();
 }
 
-void PdfView::populatePaneMenu(QMenu* menu)
+void PdfView::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
 {
-    menu->addAction(IconProvider::instance().icon(QStringLiteral("search"), 16, 2.0), tr("Find..."), this, &PdfView::showSearch)
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+F")));
+    FileView::paneMenuEntries(items, source);
+    QPointer<PdfView> self = this;
+    items << MenuEntry{QStringLiteral("find"), tr("Find..."), QStringLiteral("file-search"), [self] {
+                           if (self)
+                               self->showSearch();
+                       }};
 }
 
 void PdfView::focusContent() { m_viewer->pages()->setFocus(); }

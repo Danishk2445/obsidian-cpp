@@ -2,6 +2,7 @@
 
 #include "editor/editor_view.h"
 #include "ui/workspace/view.h"
+#include "ui/workspace/workspace.h"
 
 #include <QPointer>
 #include <QTimer>
@@ -41,7 +42,7 @@ public:
     QJsonObject ephemeralState() const override;
     void setEphemeralState(const QJsonObject& eState) override;
     QList<QWidget*> headerActions() override;
-    void populatePaneMenu(QMenu* menu) override;
+    void paneMenuEntries(QList<MenuEntry>& items, const QString& source) override;
     void onClose() override;
     void focusContent() override;
 
@@ -64,6 +65,7 @@ public:
     // Obsidian's openLinkText: follow a link written in `sourcePath` (kind as EditorView::linkActivated;
     // URLs go to the desktop, unresolved notes are created, "#sub" alone targets the source note).
     static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, bool newLeaf);
+    static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, Workspace::NewLeaf mode);
 
 signals:
     void modeChanged(oc::EditorView::Mode mode);

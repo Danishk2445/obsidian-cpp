@@ -93,3 +93,14 @@ Interfaces other modules/agents build against. Change deliberately and update al
   pinned/linked), `readNoteText` / `replaceNoteText`, `searchFor` (tag/property clicks → search view). Pure models:
   `core/metadata/{mentions,tag_tree,outline,property_index}.h`, `core/bookmarks/bookmarks.h` (bookmarks.json,
   `sessionBookmarks(session)`).
+- `src/ui/settings/*` — Settings (M7). `settings_modal.h`: `registerSettingsCommands` (app:open-settings, Mod+,),
+  `openSettings(window, tabId)`, `SettingsController::of(window)` (vault registry hook, core / community plugin
+  switches, live `applyAppearance()` / `applyOptions()`, signals `manageVaultsRequested`, `openHelpRequested`,
+  `corePluginToggled`, `communityPluginToggled`, `frameStyleChanged`, `relaunchRequested`), `SettingsModal`
+  (sidebar-layout Modal with tabs, sub-pages, search). `settings_tab.h`: declarative `SettingDef` /
+  `SettingControl`, `SettingsTab`, `PluginSettingsTab`, `renderSettings`. `setting_item.h`: `SettingItem`
+  (Obsidian's Setting: addToggle / addDropdown / addText / addSlider / addButton / addExtraButton /
+  addColorPicker / addControl) and `SettingGroup` (cards, lists, search; `setPlain(true)` for ordinary modals).
+  `settings_pages.h`: the tabs, `corePluginInfos()`, `css_snippets::*`, `resolveFontList`. `path_suggest.h`:
+  `FolderSuggest` (text input + folder popup), `FilePicker` (file combobox). `hotkeys_tab.h`: `HotkeysTab`,
+  `HotkeyChip`. Widgets: `ui/widgets/{dropdown,button,color_swatch}.h`.

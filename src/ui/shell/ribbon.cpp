@@ -72,9 +72,24 @@ IconButton* Ribbon::addBottomAction(const QString& id, const QString& icon, cons
 
 void Ribbon::setActionHidden(const QString& id, bool hidden)
 {
+    if (hidden)
+        m_hidden.insert(id);
+    else
+        m_hidden.remove(id);
     for (auto& [aid, b] : m_actions)
         if (aid == id)
-            b->setHidden(hidden);
+            b->setHidden(hidden || m_unavailable.contains(id));
+}
+
+void Ribbon::setActionAvailable(const QString& id, bool available)
+{
+    if (available)
+        m_unavailable.remove(id);
+    else
+        m_unavailable.insert(id);
+    for (auto& [aid, b] : m_actions)
+        if (aid == id)
+            b->setHidden(!available || m_hidden.contains(id));
 }
 
 void Ribbon::setCollapsed(bool collapsed)

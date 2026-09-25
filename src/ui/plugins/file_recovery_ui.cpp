@@ -1144,8 +1144,7 @@ Modal* openFileRecoveryModal(MainWindow* window, const QString& path)
 
 void registerFileRecoveryCommands(CommandRegistry& registry, MainWindow* window)
 {
-    if (!isCorePluginEnabled(window, "file-recovery"))
-        return;
+    // Unavailable while the core plugin is off (installCorePluginSwitches' command filter).
     QPointer<MainWindow> w = window;
     Command c;
     c.id = u"file-recovery:open"_s;

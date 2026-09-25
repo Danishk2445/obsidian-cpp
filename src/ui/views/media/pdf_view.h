@@ -28,7 +28,7 @@ public:
     void setState(const QJsonObject& state) override;
     QJsonObject ephemeralState() const override;
     void setEphemeralState(const QJsonObject& eState) override;
-    void populatePaneMenu(QMenu* menu) override;
+    void paneMenuEntries(QList<MenuEntry>& items, const QString& source) override;
     void focusContent() override;
 
     PdfViewer* viewer() const { return m_viewer; }

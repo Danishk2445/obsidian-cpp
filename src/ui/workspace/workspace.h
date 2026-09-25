@@ -143,6 +143,9 @@ public:
     void closeActiveLeaf();      // workspace:close — like Obsidian, a pinned leaf is unpinned instead
     void togglePinActiveLeaf();  // workspace:toggle-pin
     bool canUndoCloseLeaf() const;
+    // The leaves of `leaf`'s tab group, in tab order; closeLeaves() detaches several in one layout pass.
+    QList<WorkspaceLeaf*> groupLeaves(WorkspaceLeaf* leaf) const;
+    void closeLeaves(const QList<WorkspaceLeaf*>& leaves);
     int sideWidth(Side side) const;
     void setSideWidth(Side side, int px);
 

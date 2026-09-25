@@ -1,9 +1,13 @@
 #include "ui/shell/app_commands.h"
 
 #include "core/commands/command_registry.h"
+#include "core/config/vault_config.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
+#include "render/theme/theme.h"
+#include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
+#include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/markdown/inline_title.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/view.h"
@@ -94,6 +98,42 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             ws()->closeActiveLeaf();
         return true;
     }, keys({"Mod+W"})));
+    // Obsidian closes the other unpinned leaves of the active leaf's container (here: the root split).
+    r.add(cmd("workspace:close-others", QObject::tr("Close all other tabs"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock())
+            return false;
+        QList<WorkspaceLeaf*> others;
+        ws()->iterateRootLeaves([&](WorkspaceLeaf* l) {
+            if (l != a && !l->isPinned())
+                others.push_back(l);
+        });
+        if (!checking)
+            ws()->closeLeaves(others);
+        return !others.isEmpty();
+    }));
+    r.add(cmd("workspace:close-tab-group", QObject::tr("Close this tab group"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock())
+            return false;
+        if (!checking) {
+            QList<WorkspaceLeaf*> group = ws()->groupLeaves(a);
+            group.removeIf([](WorkspaceLeaf* l) { return l->isPinned(); });
+            ws()->closeLeaves(group);
+        }
+        return true;
+    }));
+    r.add(cmd("workspace:close-others-tab-group", QObject::tr("Close others in tab group"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock() || ws()->groupLeaves(a).size() < 2)
+            return false;
+        if (!checking) {
+            QList<WorkspaceLeaf*> group = ws()->groupLeaves(a);
+            group.removeIf([a](WorkspaceLeaf* l) { return l == a || l->isPinned(); });
+            ws()->closeLeaves(group);
+        }
+        return true;
+    }));
     r.add(cmd("workspace:undo-close-pane", QObject::tr("Undo close tab"), "undo-2", [ws](bool checking) {
         if (!ws() || !ws()->canUndoCloseLeaf())
             return false;
@@ -178,6 +218,79 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             return false;
         if (!checking)
             QGuiApplication::clipboard()->setText(f->path());
+        return true;
+    }));
+    r.add(cmd("workspace:copy-url", QObject::tr("Copy Obsidian URL for current file"), "vault", [ws, w](bool checking) {
+        TFile* f = activeFile(ws());
+        Vault* v = w && w->session() ? w->session()->vault() : nullptr;
+        if (!f || !v)
+            return false;
+        if (!checking) {
+            QGuiApplication::clipboard()->setText(obsidianUrl(v, f));
+            if (w->notices())
+                w->notices()->show(QObject::tr("%1 copied to your clipboard").arg(QStringLiteral("URL")));
+        }
+        return true;
+    }));
+    r.add(cmd("app:delete-file", QObject::tr("Delete current file"), "trash-2", [ws, w](bool checking) {
+        TFile* f = activeFile(ws());
+        if (!f || !w || !w->session())
+            return false;
+        if (!checking)
+            promptForDeletion(w->session(), f);
+        return true;
+    }));
+    r.add(cmd("workspace:show-trash", QObject::tr("Show trash"), "", [w](bool checking) {
+        VaultSession* s = w ? w->session() : nullptr;
+        if (!s || !s->vaultConfig() || !s->vault() || s->vaultConfig()->string(QStringLiteral("trashOption")) != u"local")
+            return false;
+        if (!checking && desktopHandlers().showInFolder)
+            desktopHandlers().showInFolder(s->vault()->absolutePath(QStringLiteral(".trash")));
+        return true;
+    }));
+    auto configFlip = [w](const char* id, const QString& name, const char* key) {
+        return cmd(id, name, "", [w, k = QString::fromLatin1(key)](bool checking) {
+            VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+            if (!cfg)
+                return false;
+            if (!checking)
+                cfg->set(k, !cfg->flag(k));
+            return true;
+        });
+    };
+    r.add(configFlip("app:toggle-ribbon", QObject::tr("Toggle ribbon"), "showRibbon"));
+    r.add(cmd("app:toggle-default-new-pane-mode", QObject::tr("Toggle default mode for new tabs"), "", [w](bool checking) {
+        VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+        if (!cfg)
+            return false;
+        if (!checking) {
+            const QString mode = cfg->string(QStringLiteral("defaultViewMode"));
+            const bool toReading = mode == u"source";
+            if (mode == u"source" || mode == u"preview") {
+                cfg->set(QStringLiteral("defaultViewMode"), toReading ? QStringLiteral("preview") : QStringLiteral("source"));
+                if (w->notices())
+                    w->notices()->show(toReading ? QObject::tr("Switched default view mode to reading view.")
+                                                 : QObject::tr("Switched default view mode to editing view."));
+            }
+        }
+        return true;
+    }));
+    // "system": flip this session's scheme only (Obsidian toggles the body class); otherwise switch
+    // between the stored "obsidian" (dark) and "moonstone" (light) themes.
+    r.add(cmd("theme:toggle-light-dark", QObject::tr("Toggle light/dark mode"), "", [w](bool checking) {
+        VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+        ThemeManager* tm = ThemeManager::instance();
+        if (!cfg || !tm)
+            return false;
+        if (!checking) {
+            const bool dark = tm->effectiveScheme() == Theme::Scheme::Dark;
+            if (cfg->string(QStringLiteral("theme")) == u"system") {
+                tm->setMode(dark ? ThemeManager::Mode::Light : ThemeManager::Mode::Dark);
+                tm->apply();
+            } else {
+                cfg->set(QStringLiteral("theme"), dark ? QStringLiteral("moonstone") : QStringLiteral("obsidian"));
+            }
+        }
         return true;
     }));
     r.add(cmd("workspace:copy-full-path", QObject::tr("Copy current file path from system root"), "hard-drive", [ws, w](bool checking) {

@@ -1,14 +1,25 @@
 #include "ui/views/markdown/markdown_commands.h"
 
 #include "core/commands/command_registry.h"
+#include "core/config/vault_config.h"
 #include "core/documents/document.h"
+#include "core/vault/vault.h"
+#include "core/vault_session.h"
 #include "editor/editor_view.h"
 #include "editor/live_preview_decorator.h"
 #include "editor/markdown_commands.h"
+#include "render/theme/icons.h"
+#include "ui/views/markdown/attachments.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/workspace.h"
 
+#include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QFileDialog>
+#include <QMenu>
 #include <QPointer>
+
+using namespace Qt::StringLiterals;
 
 namespace oc {
 
@@ -65,6 +76,60 @@ Command viewing(const char* id, const QString& name, const char* icon, std::func
         return true;
     };
     return c;
+}
+
+// A command that flips a boolean app.json key (Obsidian's toggles work without an open note too).
+Command configToggle(const char* id, const QString& name, const char* icon, const char* key, QPointer<Workspace> ws)
+{
+    Command c;
+    c.id = QString::fromLatin1(id);
+    c.name = name;
+    c.icon = QString::fromLatin1(icon);
+    c.checkCallback = [ws, k = QString::fromLatin1(key)](bool checking) {
+        VaultConfig* cfg = ws && ws->session() ? ws->session()->vaultConfig() : nullptr;
+        if (!cfg)
+            return false;
+        if (!checking)
+            cfg->set(k, !cfg->flag(k));
+        return true;
+    };
+    return c;
+}
+
+// Obsidian's "Open link under cursor to the right": the link opens in a split next to the note.
+bool openLinkAtCursorInSplit(EditorView& e, MarkdownView& v)
+{
+    LivePreviewDecorator* lp = e.livePreview();
+    if (!lp || !e.document())
+        return false;
+    const auto hit = lp->linkAt(e.cursorPosition());
+    if (!hit)
+        return false;
+    if (int(hit->kind) == 4) { // tags go to the search as usual
+        emit e.linkActivated(hit->target, int(hit->kind), false);
+        return true;
+    }
+    MarkdownView::openLinkText(v.workspace(), hit->target, int(hit->kind), v.file() ? v.file()->path() : QString(),
+                               Workspace::NewLeaf::SplitRight);
+    return true;
+}
+
+// The markdown view Obsidian's editor:focus targets: the active one, else the most recent root one.
+MarkdownView* lastMarkdownView(Workspace* ws)
+{
+    if (!ws)
+        return nullptr;
+    if (auto* mv = ws->activeViewOfType<MarkdownView>())
+        return mv;
+    if (WorkspaceLeaf* l = ws->activeRootLeaf())
+        if (auto* mv = qobject_cast<MarkdownView*>(l->view()))
+            return mv;
+    MarkdownView* found = nullptr;
+    ws->iterateRootLeaves([&found](WorkspaceLeaf* l) {
+        if (!found)
+            found = qobject_cast<MarkdownView*>(l->view());
+    });
+    return found;
 }
 
 // Follow the link under the (main) cursor.
@@ -170,9 +235,55 @@ void registerMarkdownCommands(CommandRegistry& r, Workspace* workspace)
     r.add(viewing("editor:save-file", QObject::tr("Save current file"), "save", [](V& v) { v.save(); }, keys({"Mod+S"})));
     r.add(editing("editor:toggle-source", QObject::tr("Toggle Live Preview/Source mode"), "code-2", [](E&, V& v) { v.toggleSource(); }));
     r.add(viewing("markdown:toggle-preview", QObject::tr("Toggle reading view"), "book-open", [](V& v) { v.toggleReading(); }, keys({"Mod+E"})));
-    r.add(viewing("editor:toggle-readable-line-length", QObject::tr("Toggle readable line length"), "ruler", [](V& v) {
-        v.editor()->setReadableLineLength(!v.editor()->readableLineLength());
+    r.add(editing("editor:open-link-in-new-split", QObject::tr("Open link under cursor to the right"), "link",
+                  [](E& e, V& v) { openLinkAtCursorInSplit(e, v); }, keys({"Mod+Alt+Enter"})));
+    r.add(editing("editor:cycle-list-checklist", QObject::tr("Cycle bullet/checkbox"), "check-square",
+                  [](E& e, V&) { mdcmd::toggleChecklist(e, true); }));
+    r.add(editing("editor:insert-footnote", QObject::tr("Insert footnote"), "file-signature", [](E& e, V& v) {
+        mdcmd::insertFootnote(e);
+        v.save(); // Obsidian saves at once so the new definition is indexed
     }));
+    r.add(editing("editor:insert-tag", QObject::tr("Add tag"), "tag", [](E& e, V&) { mdcmd::insertTag(e); }));
+    r.add(editing("editor:set-heading", QObject::tr("Set heading"), "heading-glyph", [](E& e, V&) {
+        QMenu menu(&e);
+        for (int level = 0; level <= 6; ++level) {
+            const QString title = level == 0 ? QObject::tr("No heading") : QObject::tr("Heading %1").arg(level);
+            menu.addAction(IconProvider::instance().icon(level == 0 ? u"type"_s : u"heading-"_s + QString::number(level), 16), title, &e,
+                           [&e, level] { mdcmd::setHeading(e, level); });
+        }
+        const QRectF c = e.caretRectInViewport();
+        menu.exec(e.viewport()->mapToGlobal(QPoint(int(c.left()), int(c.bottom()))));
+    }));
+    r.add(editing("editor:context-menu", QObject::tr("Show context menu under cursor"), "menu", [](E& e, V&) {
+        const QRectF c = e.caretRectInViewport();
+        const QPoint local = e.viewport()->mapTo(&e, QPoint(int(c.left()), int(c.center().y())));
+        QContextMenuEvent ev(QContextMenuEvent::Keyboard, local, e.mapToGlobal(local));
+        QCoreApplication::sendEvent(&e, &ev);
+    }));
+    r.add(editing("editor:attach-file", QObject::tr("Insert attachment"), "paperclip", [](E&, V& v) {
+        const QStringList files = QFileDialog::getOpenFileNames(&v, QObject::tr("Insert attachment"));
+        if (!files.isEmpty())
+            attachments::attachFiles(v, files);
+    }));
+    Command focus;
+    focus.id = u"editor:focus"_s;
+    focus.name = QObject::tr("Focus on last note");
+    focus.checkCallback = [ws](bool checking) {
+        MarkdownView* mv = lastMarkdownView(ws);
+        if (!mv)
+            return false;
+        if (!checking) {
+            if (WorkspaceLeaf* l = mv->leaf())
+                ws->setActiveLeaf(l, true);
+            mv->editor()->setFocus(Qt::OtherFocusReason);
+        }
+        return true;
+    };
+    r.add(focus);
+    // app.json toggles (the views follow "config-changed")
+    r.add(configToggle("editor:toggle-readable-line-length", QObject::tr("Toggle readable line length"), "ruler", "readableLineLength", ws));
+    r.add(configToggle("editor:toggle-line-numbers", QObject::tr("Toggle line numbers"), "list-ordered", "showLineNumber", ws));
+    r.add(configToggle("editor:toggle-spellcheck", QObject::tr("Toggle spellcheck"), "", "spellcheck", ws));
 }
 
 } // namespace oc

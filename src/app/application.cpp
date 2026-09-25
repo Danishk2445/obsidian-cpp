@@ -28,9 +28,14 @@
 #include "ui/graph/graph_view.h"
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
+#include "ui/plugins/core_file_menu.h"
+#include "ui/plugins/core_plugins.h"
 #include "ui/plugins/file_recovery_ui.h"
 #include "ui/plugins/note_composer_ui.h"
+#include "ui/plugins/pdf_export_ui.h"
 #include "ui/picker/vault_picker.h"
+#include "ui/settings/settings_modal.h"
+#include "ui/settings/settings_pages.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
 #include "ui/plugins/note_plugins_ui.h"
@@ -58,7 +63,10 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QTimer>
+
+using namespace Qt::StringLiterals;
 
 namespace oc {
 
@@ -84,6 +92,18 @@ int Application::start()
     // sidebar toggle. Park it outside before any window is shown so nothing renders hovered.
     if ((!m_opts.screenshot.isEmpty() || !m_opts.script.isEmpty()) && QGuiApplication::platformName() == u"offscreen")
         QCursor::setPos(-10000, -10000);
+    // Headless runs never hand files to other applications (PDF viewer, file manager).
+    if (!m_opts.screenshot.isEmpty() || !m_opts.script.isEmpty() || QGuiApplication::platformName() == u"offscreen") {
+        desktopHandlers().openUrl = [](const QUrl& url) { qInfo("oc: headless: not opening %s", qPrintable(url.toString())); };
+        desktopHandlers().showInFolder = [](const QString& path) { qInfo("oc: headless: not showing %s", qPrintable(path)); };
+        // No save dialogs either: exports go to the (isolated) cache dir.
+        pdfSavePathProvider() = [](MainWindow*, const QString& suggested) {
+            const QString dir = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + u"/obsidian-cpp/exports"_s;
+            QDir().mkpath(dir);
+            qInfo("oc: headless: exporting to %s/%s", qPrintable(dir), qPrintable(suggested));
+            return dir + u'/' + suggested;
+        };
+    }
     m_registry->load();
     if (!m_opts.theme.isEmpty())
         m_themes->setMode(ThemeManager::modeFromObsidianName(m_opts.theme));
@@ -171,9 +191,10 @@ void Application::applyAppearance(VaultSession* session)
 {
     const QJsonObject a = session->config()->object(QStringLiteral("appearance"));
     FontSettings fonts;
-    fonts.interfaceFamily = a.value(QStringLiteral("interfaceFontFamily")).toString();
-    fonts.textFamily = a.value(QStringLiteral("textFontFamily")).toString();
-    fonts.monospaceFamily = a.value(QStringLiteral("monospaceFontFamily")).toString();
+    // Obsidian stores comma-separated lists ("Inter, Arial"): the first installed family applies.
+    fonts.interfaceFamily = resolveFontList(a.value(QStringLiteral("interfaceFontFamily")).toString());
+    fonts.textFamily = resolveFontList(a.value(QStringLiteral("textFontFamily")).toString());
+    fonts.monospaceFamily = resolveFontList(a.value(QStringLiteral("monospaceFontFamily")).toString());
     fonts.baseFontSize = a.value(QStringLiteral("baseFontSize")).toDouble(16);
     if (m_opts.deterministic) {
         fonts.interfaceFamily = Theme::firstInstalled({QStringLiteral("Inter")}, fonts.interfaceFamily);
@@ -187,6 +208,8 @@ void Application::applyAppearance(VaultSession* session)
         const QString accent = a.value(QStringLiteral("accentColor")).toString();
         m_themes->setAccent(accent.isEmpty() ? QColor() : QColor(accent));
     }
+    const css_snippets::Overrides snippets = css_snippets::collect(session->config()); // enabled CSS snippets' --vars
+    m_themes->setOverrides(snippets.body, snippets.light, snippets.dark);
     m_themes->blockSignals(false);
     m_themes->apply();
 }
@@ -305,8 +328,10 @@ void Application::createServices(VaultSession* s)
     commands->loadHotkeys(s->config()->object(QStringLiteral("hotkeys")));
 
     // Greentext Guard (the user's plugin, built in): settings live in the clone's config.
+    // Built-in ports of community plugins are on unless turned off in Settings → Community plugins.
     GreentextGuard::instance().setSettings(GreentextGuard::Settings::fromJson(s->config()->object(QStringLiteral("plugins/greentext-guard"))));
-    GreentextGuard::instance().install();
+    if (s->config()->object(QStringLiteral("community-plugins")).value(QStringLiteral("greentext-guard")).toBool(true))
+        GreentextGuard::instance().install();
 
     vault->load(); // synchronous scan; the metadata index runs in the background
 }
@@ -359,6 +384,13 @@ void Application::populateWindow(MainWindow* w)
     registerFileRecoveryCommands(*commands, w);
     registerNoteComposerCommands(*commands, w);
     registerSidebarCommands(*commands, w);
+    registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
+    registerExportPdfCommand(*commands, w);  // workspace:export-pdf
+    installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
+    SettingsController* settings = SettingsController::of(w);
+    settings->setVaultRegistry(m_registry); // "Window frame style" is a registry option
+    settings->applyOptions();               // ribbon visibility, editing behaviours, spellchecker
+    connect(settings, &SettingsController::manageVaultsRequested, this, &Application::showPicker);
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
@@ -404,6 +436,7 @@ void Application::populateWindow(MainWindow* w)
 
     workspace->loadLayout(); // after the ribbon actions exist (left-ribbon.hiddenItems)
     wireStatusBar(w);
+    installCorePluginSwitches(w); // disabled core plugins: no commands, ribbon actions, status items, views
 
     // --open <note> [--mode ...]: open a note in the active tab (headless screenshots, CLI).
     if (!m_opts.open.isEmpty() && session->vault()) {

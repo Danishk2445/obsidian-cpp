@@ -4,6 +4,7 @@
 #include "editor/embeds/embed_registry.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
+#include "ui/views/file_explorer/file_actions.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/widgets/search_input.h"
 #include "ui/widgets/toggle_switch.h"
@@ -205,6 +206,10 @@ PdfViewer::PdfViewer(Mode mode, QWidget* parent)
     setObjectName(QStringLiteral("ocPdfViewer"));
     setFocusPolicy(Qt::ClickFocus);
     m_pages->setEmbedded(mode != Mode::View);
+    m_pages->openExternal = [](const QUrl& url) {
+        if (desktopHandlers().openUrl)
+            desktopHandlers().openUrl(url); // (headless runs don't launch apps)
+    };
     m_pages->setArrowPaging(mode == Mode::View);
     buildToolbar();
     buildSidebar();
