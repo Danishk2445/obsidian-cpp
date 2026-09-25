@@ -8,6 +8,7 @@
 //   sidedock tabs                     icon only (18px), 25px tall, padding 0 8px, gap 3px
 //   .view-header                      40px, padding 0 12px, gap 8px, title 13px centered
 
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
@@ -922,7 +923,7 @@ void TabHeaderBar::showTabMenu(int index, const QPoint& globalPos)
     }
     if (View* v = leaf->view())
         v->paneMenuEntries(items, QStringLiteral("tab-header"));
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this); // Close / Delete file may destroy this tab bar
     buildSectionedMenu(&menu, items, paneMenuLayout());
     if (View* v = leaf->view())
         appendLegacyPaneMenu(&menu, v);
@@ -1232,7 +1233,7 @@ void ViewHeader::showMoreMenu()
     // Obsidian's onMoreOptions: the view's onPaneMenu(menu, "more-options") in the pane menu's sections
     // (desktop: no Close / Pin here, those are on the tab header).
     QPointer<WorkspaceLeaf> leaf = m_leaf;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this); // Delete file / Move file may close this leaf
     if (View* v = leaf ? leaf->view() : nullptr) {
         QList<MenuEntry> items;
         v->paneMenuEntries(items, QStringLiteral("more-options"));
@@ -1241,6 +1242,8 @@ void ViewHeader::showMoreMenu()
     }
     if (!menu.isEmpty())
         execMenuBelow(menu, m_more, true);
+    else
+        menu.deleteLater();
 }
 
 void ViewHeader::showHistoryMenu(bool back)

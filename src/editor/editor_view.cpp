@@ -1,5 +1,6 @@
 #include "editor/editor_view.h"
 
+#include "core/util/owned_menu.h"
 #include "editor/editor_hooks.h"
 #include "editor/embeds/hosted_embeds.h"
 #include "editor/live_preview_decorator.h"
@@ -1959,7 +1960,7 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
         inside |= pos >= r.from() && pos <= r.to() && !r.empty();
     if (!inside)
         setSelection(Selection::cursor(pos), false);
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this); // an item may close this editor's tab
     QAction* cutA = menu.addAction(tr("Cut"), this, &EditorView::cut);
     QAction* copyA = menu.addAction(tr("Copy"), this, &EditorView::copy);
     QAction* pasteA = menu.addAction(tr("Paste"), this, &EditorView::paste);
@@ -1972,6 +1973,8 @@ void EditorView::contextMenuEvent(QContextMenuEvent* e)
     emit contextMenuAboutToShow(&menu, pos); // owners add their entries (spelling suggestions first)
     if (!menu.isEmpty())
         menu.exec(e->globalPos());
+    else
+        menu.deleteLater();
 }
 
 } // namespace oc

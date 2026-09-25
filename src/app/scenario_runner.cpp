@@ -17,6 +17,8 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 
+#include <cstdio>
+
 namespace oc {
 
 namespace {
@@ -82,11 +84,16 @@ void ScenarioRunner::step()
             finish(0);
             return;
         }
-        if (!run(line)) {
-            qCritical("oc: script line %d failed: %s", m_next, qPrintable(line));
-            finish(3);
-            return;
-        }
+        static const bool trace = qEnvironmentVariableIsSet("OC_SCRIPT_TRACE");
+        if (trace)
+            fprintf(stderr, "oc-script %d: %s\n", m_next, qPrintable(line));
+        // Queued: a command that opens a nested event loop (QMenu::exec) must not block this timer.
+        QTimer::singleShot(0, this, [this, line, n = m_next] {
+            if (!m_done && !run(line)) {
+                qCritical("oc: script line %d failed: %s", n, qPrintable(line));
+                finish(3);
+            }
+        });
         m_quietSince = -1; // wait for the effects of this command
         return;
     }
@@ -95,12 +102,15 @@ void ScenarioRunner::step()
 
 void ScenarioRunner::finish(int code)
 {
+    m_done = true;
     m_timer.stop();
     QApplication::exit(code);
 }
 
 QWidget* ScenarioRunner::keyTarget() const
 {
+    if (QWidget* popup = QApplication::activePopupWidget()) // like the window system: an open menu gets the keys
+        return popup;
     if (QWidget* f = QApplication::focusWidget())
         return f;
     if (m_window && m_window->focusWidget())

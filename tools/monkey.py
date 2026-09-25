@@ -87,7 +87,7 @@ def main():
         shutil.rmtree(d, ignore_errors=True)
         shutil.copytree(FIXTURE, d / "vault")
         (d / "script.txt").write_text(script(rng, notes, cmds, a.steps))
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1",
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1", OC_SCRIPT_TRACE="1",
                    XDG_CONFIG_HOME=str(d / "xdg/config"), XDG_DATA_HOME=str(d / "xdg/data"),
                    XDG_CACHE_HOME=str(d / "xdg/cache"),
                    ASAN_OPTIONS="detect_leaks=0:abort_on_error=0", UBSAN_OPTIONS="print_stacktrace=1")
@@ -98,6 +98,8 @@ def main():
             log, code = p.stdout + p.stderr, p.returncode
         except subprocess.TimeoutExpired as e:
             log, code = (e.stdout or b"").decode(errors="replace") + (e.stderr or b"").decode(errors="replace"), "hang"
+            last = [l for l in log.splitlines() if l.startswith("oc-script ")][-1:]
+            print(f"   hung after: {last[0] if last else '?'}")
         (d / "log.txt").write_text(log)
         bad = code != 0 or SAN.search(log)
         print(f"seed {seed}: exit {code}" + ("  <-- FAIL" if bad else ""), flush=True)
