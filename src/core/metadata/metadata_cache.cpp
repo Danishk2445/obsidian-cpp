@@ -93,8 +93,10 @@ void MetadataCache::parseAsync(const QStringList& paths)
                 else
                     results.push_back({p, parseBytes(*bytes)});
             }
+            // Posted to the application object: the cache may be destroyed meanwhile (self is only
+            // dereferenced on the GUI thread, where it is destroyed).
             QMetaObject::invokeMethod(
-                self.data(),
+                QCoreApplication::instance(),
                 [self, results = std::move(results)]() mutable {
                     Busy::end();
                     if (!self)
