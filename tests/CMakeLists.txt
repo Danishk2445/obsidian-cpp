@@ -63,3 +63,5 @@ oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_pal
 oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_metadata_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
+oc_add_test(core_properties_yaml_test SOURCES core/properties_yaml_test.cpp core/properties_yaml_vectors.h DEPS oc_core)
+oc_add_test(core_properties_patch_test SOURCES core/properties_patch_test.cpp DEPS oc_core)
