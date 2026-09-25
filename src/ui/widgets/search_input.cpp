@@ -63,6 +63,13 @@ void SearchInput::setShowIcon(bool on)
     update();
 }
 
+void SearchInput::setRightReserve(int px)
+{
+    m_rightReserve = std::max(0, px);
+    updateMargins();
+    update();
+}
+
 void SearchInput::updateStyle()
 {
     // .document-search-input.mod-no-match: color-mix(--background-modifier-error 20%, transparent)
@@ -80,7 +87,7 @@ void SearchInput::updateMargins()
 {
     // padding-inline-start: icon*2 - 2px; end: 28px with the clear button (text present)
     const int left = m_icon ? kIcon * 2 - 2 - 8 : 0; // QSS already pads 8px
-    int right = 0;
+    int right = m_rightReserve;
     if (m_clear && !text().isEmpty())
         right += kClearWidth - 8;
     if (!m_decorator.isEmpty()) {
@@ -90,7 +97,7 @@ void SearchInput::updateMargins()
     setTextMargins(left, 0, std::max(0, right), 0);
 }
 
-QRect SearchInput::clearRect() const { return QRect(width() - 2 - kClearWidth, 0, kClearWidth, height()); }
+QRect SearchInput::clearRect() const { return QRect(width() - 2 - kClearWidth - m_rightReserve, 0, kClearWidth, height()); }
 
 void SearchInput::resizeEvent(QResizeEvent* e)
 {
@@ -109,7 +116,7 @@ void SearchInput::paintEvent(QPaintEvent* e)
         const QPixmap pm = IconProvider::instance().pixmap(QStringLiteral("search"), kIcon, c, 2.0, devicePixelRatioF());
         p.drawPixmap(QPointF(8, (height() - kIcon) / 2.0), pm);
     }
-    int right = width();
+    int right = width() - m_rightReserve;
     if (m_clear && !text().isEmpty()) {
         const QRect r = clearRect();
         right = r.left();

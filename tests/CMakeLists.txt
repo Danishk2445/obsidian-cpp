@@ -67,3 +67,6 @@ oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markd
 oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
 oc_add_test(ui_settings_test SOURCES ui/settings_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_media_pdf_test SOURCES ui/media_pdf_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_media_player_test SOURCES ui/media_player_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_media_embeds_test SOURCES ui/media_embeds_test.cpp ui/media_shots_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
