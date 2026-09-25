@@ -44,6 +44,10 @@ public:
     bool readableLineLength() const { return m_readable; }
     void setMargins(qreal horizontal, qreal top, qreal bottom);
     void setLineWrapping(bool on);
+    // Obsidian's "Show line number": a gutter of line numbers left of the text in the editing modes, inside
+    // the text column (like .cm-gutters in .cm-contentContainer); the inline title keeps the full column.
+    void setShowLineNumbers(bool on);
+    bool showLineNumbers() const { return m_lineNumbers; }
 
     // Selection
     const Selection& selection() const { return m_sel; }
@@ -268,6 +272,10 @@ private:
     Selection skipFolds(const Selection& sel, const Selection& old) const;
     bool addFold(const FoldRange& r);
     void paintFoldIndicators(QPainter& p);
+    void paintLineNumbers(QPainter& p);
+    double gutterWidth() const;
+    bool m_lineNumbers = false;
+    double m_columnLeft = 0, m_columnWidth = 0; // the text column including the gutter
     int foldLineAtIndicator(const QPoint& vp);          // line whose indicator is under vp, or -1
     void setHoverLine(int line);
     void applyFoldPlaceholder(int line, LineDecoration& d) const;

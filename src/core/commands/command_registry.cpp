@@ -247,6 +247,9 @@ bool HotkeyDispatcher::eventFilter(QObject* obj, QEvent* ev)
 {
     if (!m_enabled)
         return false;
+    // An open menu owns the keyboard: no hotkeys until it closes (they could close the tab it's for).
+    if ((ev->type() == QEvent::ShortcutOverride || ev->type() == QEvent::KeyPress) && QApplication::activePopupWidget())
+        return false;
     if (ev->type() == QEvent::ShortcutOverride) {
         auto* ke = static_cast<QKeyEvent*>(ev);
         if (tryDispatch(obj, ke, false)) {

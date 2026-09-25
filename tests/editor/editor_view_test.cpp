@@ -225,6 +225,38 @@ private slots:
         QCOMPARE(fx.view->selection().main().from(), fx.doc->text().lineStart(1) + 3);
         QCOMPARE(fx.view->selection().main().to(), fx.doc->text().lineStart(2) + 5);
     }
+
+    void lineNumberGutter()
+    {
+        QByteArray content;
+        for (int i = 0; i < 8; ++i)
+            content += "line\n"; // 9 lines: one digit
+        auto fx = open(content, QStringLiteral("gutter.md"));
+        EditorView& v = *fx.view;
+        v.setReadableLineLength(false);
+        const double left = v.contentLeft(), width = v.contentWidth();
+        v.setShowLineNumbers(true);
+        const double g = v.contentLeft() - left;
+        QVERIFY(g >= 20 + 24); // min-width 20 + --file-folding-offset
+        QCOMPARE(v.contentWidth(), width - g);
+        // the gutter grows with the widest line number
+        v.setCursorPosition(v.document()->text().length());
+        for (int i = 0; i < 3; ++i)
+            QTest::keyClick(&v, Qt::Key_Return);
+        QVERIFY(v.contentLeft() - left > g);
+        // hit-testing follows the shifted text
+        v.setCursorPosition(0);
+        const QPointF p = v.docToViewport(QPointF(1, 5));
+        QTest::mouseClick(v.viewport(), Qt::LeftButton, {}, p.toPoint());
+        QCOMPARE(v.cursorPosition(), 0);
+        // no gutter in reading view
+        v.setMode(EditorView::Mode::Reading);
+        QCOMPARE(v.contentLeft(), left);
+        v.setMode(EditorView::Mode::Source);
+        v.setShowLineNumbers(false);
+        QCOMPARE(v.contentLeft(), left);
+        QCOMPARE(v.contentWidth(), width);
+    }
 };
 
 QTEST_MAIN(EditorViewTest)

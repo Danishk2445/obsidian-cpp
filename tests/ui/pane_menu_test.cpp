@@ -12,10 +12,14 @@
 #include "ui/widgets/toggle_switch.h"
 #include "ui/workspace/file_menu.h"
 
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QTimer>
 
 using namespace oc;
 using namespace oc::test;
@@ -178,4 +182,31 @@ TEST_F(PaneMenuTest, ExportPdfModalSavesSettingsAndWritesThePdf)
     // Nothing was written into the vault.
     EXPECT_FALSE(QFile::exists(root + "/Note.pdf"));
     pdfSavePathProvider() = nullptr;
+}
+
+TEST_F(PaneMenuTest, ClosingTheTabWhileItsMenuIsOpen)
+{
+    // A tab can close while its editor / tab header menu runs its nested event loop (an item, a command,
+    // the file being deleted): the menu closes instead of being destroyed with the editor.
+    MarkdownView* mv = open("Note.md");
+    ASSERT_TRUE(mv);
+    QPointer<EditorView> editor = mv->editor();
+    QPointer<WorkspaceLeaf> leaf = mv->leaf();
+    bool fired = false;
+    QTimer::singleShot(50, [&] {
+        fired = true;
+        EXPECT_TRUE(QApplication::activePopupWidget());
+        // hotkeys don't reach the app while a menu owns the keyboard
+        QKeyEvent ctrlW(QEvent::KeyPress, Qt::Key_W, Qt::ControlModifier);
+        QApplication::sendEvent(QApplication::activePopupWidget(), &ctrlW);
+        EXPECT_TRUE(leaf);
+        leaf->detach();
+    });
+    QContextMenuEvent e(QContextMenuEvent::Keyboard, QPoint(40, 40), editor->mapToGlobal(QPoint(40, 40)));
+    QApplication::sendEvent(editor, &e); // returns when the menu closed
+    EXPECT_TRUE(fired);
+    flushDeletes();
+    EXPECT_FALSE(editor);
+    EXPECT_FALSE(leaf);
+    EXPECT_FALSE(QApplication::activePopupWidget());
 }
