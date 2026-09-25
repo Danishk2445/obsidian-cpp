@@ -70,6 +70,11 @@ oc_add_library(oc_ui
     views/markdown/markdown_view.cpp
     views/markdown/note_embed_view.cpp
     views/markdown/page_preview.cpp
+    views/markdown/properties/properties_commands.cpp
+    views/markdown/properties/properties_style.cpp
+    views/markdown/properties/properties_widget.cpp
+    views/markdown/properties/property_editors.cpp
+    views/markdown/properties/property_suggest.cpp
     views/sidebar/all_properties_view.cpp
     views/sidebar/all_properties_view.h
     views/sidebar/backlink_view.cpp

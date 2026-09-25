@@ -17,8 +17,13 @@ class EditorSearchBar;
 class EditorSuggest;
 class FoldStore;
 class InlineTitle;
+class PropertiesWidget;
 class ViewRegistry;
 class VimController;
+
+namespace props {
+class FrontmatterEditor;
+}
 
 // Obsidian's MarkdownView: a note in Live Preview, Source mode or Reading view, sharing its Document
 // with every other pane showing the same file. View state is Obsidian's
@@ -61,6 +66,16 @@ public:
     bool save();                 // editor:save-file
     void applySettings();        // re-read the vault config (readable line length, folding, ...)
 
+    // Properties (the metadata editor above the text). In Live Preview and Reading view the widget
+    // replaces the frontmatter lines ("propertiesInDocument": "visible"; "hidden" hides both, "source"
+    // shows the YAML); frontmatter that isn't valid YAML stays visible as source with an error box.
+    PropertiesWidget* properties() const { return m_properties; }
+    bool canShowProperties() const;       // the widget can take edits here (Obsidian's canShowProperties)
+    void addProperty(const QString& key = {}); // markdown:add-metadata-property / markdown:add-alias
+    bool isFrontmatterHidden() const { return m_frontmatterEnd >= 0; }
+    // One undoable transaction editing the frontmatter (false: read-only or invalid YAML).
+    bool editFrontmatter(const std::function<void(props::FrontmatterEditor&)>& edit);
+
     // What a click on a #tag does (Obsidian opens the global search with "tag:#tag"). Folds are
     // remembered in the session's FoldStore (a child object of the VaultSession).
     static void setTagHandler(std::function<void(const QString& tag, MarkdownView* from)> handler);
@@ -72,6 +87,9 @@ public:
 signals:
     void modeChanged(oc::EditorView::Mode mode);
 
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override;
+
 private:
     void openLink(const QString& target, int kind, bool newLeaf);
     void addSpellingActions(QMenu* menu, qsizetype pos);
@@ -82,11 +100,22 @@ private:
     void restoreFolds();
     void updateTitle();
     void setModeFromState(const QJsonObject& state);
+    void refreshProperties(bool force = false);
+    void clampSelectionToBody();
     void setVimMode(bool on);
 
     EditorView* m_editor;
     EditorSearchBar* m_searchBar;
     InlineTitle* m_title;
+    PropertiesWidget* m_properties;
+    QWidget* m_header; // inline title + properties: the editor's top widget
+    int m_frontmatterEnd = -1;   // last line of the frontmatter hidden behind the widget (-1: none)
+    int m_frontmatterClose = -1; // the frontmatter's closing line (-1: no frontmatter)
+    bool m_frontmatterValid = false;
+    QString m_frontmatterRaw;    // the frontmatter text the widget shows
+    bool m_frontmatterSynced = false;
+    bool m_clamping = false;
+    QMetaObject::Connection m_propsConn;
     EditorSuggest* m_suggest;
     VimController* m_vim = nullptr;
     std::shared_ptr<Document> m_doc;

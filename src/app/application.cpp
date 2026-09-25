@@ -49,6 +49,7 @@
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/views/markdown/properties/properties_commands.h"
 #include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
@@ -532,6 +533,7 @@ void Application::populateWindow(MainWindow* w)
     CommandRegistry* commands = session->commands();
     registerAppCommands(*commands, w);
     registerMarkdownCommands(*commands, workspace);
+    registerPropertyCommands(*commands);
     registerFileExplorerCommands(*commands, session);
     registerNotePluginCommands(*commands, w);
     registerNavigationCommands(*commands, session, w->overlay());

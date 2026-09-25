@@ -123,6 +123,9 @@ public:
     void setTopWidget(QWidget* widget, int bottomMargin = 0);
     QWidget* topWidget() const { return m_topWidget; }
     void updateTopWidget(); // re-measure after its content changed
+    // Let the top widget extend `px` to the left of the text column (into the fold gutter, e.g. for
+    // the properties' collapse indicator); it is then measured and laid out at that larger width.
+    void setTopWidgetOverhang(int px);
 
     DocLayout& layout() { return m_layout; }
     double contentLeft() const { return m_contentLeft; }
@@ -237,7 +240,9 @@ private:
     QPointer<QWidget> m_topWidget;
     int m_topWidgetMargin = 0;
     qreal m_topWidgetH = 0;     // reserved height (widget + margin)
+    int m_topOverhang = 0;      // setTopWidgetOverhang()
     void positionTopWidget();
+    qreal measureTopWidget() const; // height + margin at the current width (0 when hidden)
     QPointer<QWidget> m_bottomPanel;
     CursorShape m_cursorShape = CursorShape::Bar;
     bool m_cursorMainOnly = false;

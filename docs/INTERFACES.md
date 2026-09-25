@@ -63,9 +63,17 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `HotkeyDispatcher` (app-wide; skips widgets inside `ocCapturesKeys` overlays and the navigation keys of an editor
   whose `ocSuggestActive` property is set).
 
+## Properties (src/core/properties, additive)
+- `FrontmatterEditor(const Text&)`: minimal byte-exact frontmatter patches (`set/add/rename/remove/reorder/merge/clear`
+  → `changes()`), `property_yaml.h` (Obsidian's YAML output for a changed value), `PropertyTypeManager::of(session)`
+  (types.json in the clone config), `vault_properties.h` (`renameProperty` / `deleteProperty` vault-wide via
+  FileManager::editFile). `src/core/util/owned_menu.h`: `ownedMenu(owner)` for context menus whose items may destroy
+  their owner (never a stack `QMenu m(owner)` there).
+
 ## Editor & UI building blocks (stable; additive changes only)
 - `EditorView` (src/editor/editor_view.h): decoration layers (`addDecorationLayer`), folding API (`foldLine`,
-  `setFolds`, `foldsChanged`), top widget (inline title), `setVisibleLineRange` (embed a section),
+  `setFolds`, `foldsChanged`), top widget (MarkdownView's DocumentHeader: inline title + properties; spans the text
+  column, `setTopWidgetOverhang(px)` reaches into the left margin), `setShowLineNumbers`, `setVisibleLineRange` (embed a section),
   `caretRectAt`, `documentHeight`, signals `linkActivated(target, kind, newLeaf)` / `linkHovered(target, kind,
   rect)` (kind 0 wikilink, 1 embed, 2 markdown link, 3 url, 4 tag). `editor/search/*` = find/replace logic.
 - `EditorHooks` (src/editor/editor_hooks.h), additive: `KeyHandler` / `addKeyHandler` / `runKey` — a key hook run
