@@ -291,7 +291,8 @@ void PdfPagesView::updateScrollBars()
 {
     const QSize vp = viewport()->size();
     m_settingScroll = true;
-    horizontalScrollBar()->setRange(0, std::max(0, int(std::ceil(m_contentWidth - vp.width()))));
+    // (sub-pixel overflow from fitted scales must not show a scrollbar)
+    horizontalScrollBar()->setRange(0, std::max(0, int(std::ceil(m_contentWidth - vp.width() - 0.5))));
     horizontalScrollBar()->setPageStep(vp.width());
     horizontalScrollBar()->setSingleStep(int(kScrollStep));
     verticalScrollBar()->setRange(0, std::max(0, int(std::ceil(m_contentHeight - vp.height()))));

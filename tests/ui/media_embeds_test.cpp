@@ -59,7 +59,7 @@ protected:
     {
         QList<QPair<QString, QByteArray>> f{{"doc.pdf", makePdf(3)},
                                             {"one.pdf", makePdf(1)},
-                                            {"media/a.wav", makeWav(1.5)},
+                                            {"media/a.wav", makeWav(8.0)}, // outlasts the pool delay while playing
                                             {"img.png", makePng(QSize(1600, 900), QColor(40, 90, 160))},
                                             {"small.png", makePng(QSize(200, 120), QColor(160, 60, 40))},
                                             {"Embeds.md", kEmbeds},

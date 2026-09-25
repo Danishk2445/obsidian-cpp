@@ -209,6 +209,7 @@ PdfEmbedWidget::PdfEmbedWidget(const EmbedContext& context, QWidget* parent)
         m_edit = new IconButton(QStringLiteral("code-2"), tr("Edit this block"), this);
         m_edit->setObjectName(QStringLiteral("ocEmbedEdit"));
         m_edit->setButtonSize(QSize(30, 26));
+        m_edit->resize(m_edit->sizeHint()); // (not in a layout)
         connect(m_edit, &QAbstractButton::clicked, this, [this] {
             if (m_ctx.revealSource)
                 m_ctx.revealSource();
