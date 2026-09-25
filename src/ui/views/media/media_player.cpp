@@ -76,6 +76,11 @@ MediaController::~MediaController()
 {
     if (m_state == State::Loading)
         Busy::end();
+    // stopping emits state changes: nobody listening may be alive any more
+    m_player->disconnect(this);
+    if (m_sink)
+        m_sink->disconnect(this);
+    blockSignals(true);
     m_player->stop();
 }
 
@@ -534,7 +539,7 @@ QString MediaControlBar::timeText() const
     return formatTime(m_controller->position()) + QStringLiteral(" / ") + formatTime(m_controller->duration());
 }
 
-MediaControlBar::Geometry MediaControlBar::geometry() const
+MediaControlBar::Geometry MediaControlBar::layoutParts() const
 {
     BarModel m;
     m.style = m_style;
@@ -556,7 +561,7 @@ MediaControlBar::Geometry MediaControlBar::geometry() const
 
 QRect MediaControlBar::partRect(Part part) const
 {
-    const Geometry g = geometry();
+    const Geometry g = layoutParts();
     switch (part) {
     case Part::Play: return g.play.toAlignedRect();
     case Part::Time: return g.time.toAlignedRect();
@@ -572,7 +577,7 @@ QRect MediaControlBar::partRect(Part part) const
 
 MediaControlBar::Part MediaControlBar::partAt(const QPoint& pos) const
 {
-    const Geometry g = geometry();
+    const Geometry g = layoutParts();
     const QPointF pt(pos);
     if (g.play.contains(pt))
         return Part::Play;
@@ -594,7 +599,7 @@ MediaControlBar::Part MediaControlBar::partAt(const QPoint& pos) const
 void MediaControlBar::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    const Geometry g = geometry();
+    const Geometry g = layoutParts();
     paintBar(&p, g.model, g);
 }
 
@@ -609,7 +614,7 @@ void MediaControlBar::paintStatic(QPainter* p, const QRectF& rect, Style style, 
 
 void MediaControlBar::seekTo(int x)
 {
-    const QRectF tl = geometry().timeline;
+    const QRectF tl = layoutParts().timeline;
     if (tl.width() <= 0 || m_controller->duration() <= 0)
         return;
     const double frac = std::clamp((x - tl.left()) / tl.width(), 0.0, 1.0);
@@ -618,7 +623,7 @@ void MediaControlBar::seekTo(int x)
 
 void MediaControlBar::setVolumeAt(int x)
 {
-    const QRectF vr = geometry().volume;
+    const QRectF vr = layoutParts().volume;
     if (vr.width() <= 0)
         return;
     m_controller->setVolume(float(std::clamp((x - vr.left()) / vr.width(), 0.0, 1.0)));

@@ -128,7 +128,7 @@ protected:
 
 private:
     struct Geometry;
-    Geometry geometry() const;
+    Geometry layoutParts() const;
     void seekTo(int x);
     void setVolumeAt(int x);
     void showMenu();
