@@ -262,3 +262,22 @@ Open parity questions:
   mode, settings tab, `![[x.canvas]]` embeds, canvases as link sources (graph, backlinks), rename follow-ups.
 - Differences: link cards show the URL (no web view); "Export as image" without tiling / logo options; global search
   doesn't search canvases; cards are sized to media only on creation.
+
+## Raw HTML
+- ✅ Inline HTML in Live Preview, Reading view, table cells, callouts and PDF export (`src/editor/html`): tags paired
+  per paragraph and hidden, content formatted — `b strong i em cite dfn var u ins s strike del mark code kbd tt samp
+  sub sup small big`, `a href` (follows like a link), `span`/`font`/any element with `style` colour, background,
+  weight, style, decoration, size and `<font color size>`; `<br>` breaks the line; `<img src>` of a vault file
+  renders as an image. Obsidian's never-rendered tags (script style link meta object embed webview) stay source in
+  Live Preview; Reading view drops script/style with their content and stray / unknown tags like a browser.
+- ✅ Live Preview reveal like Obsidian's HTML widget: the outermost element shows its source while the selection
+  touches it (whole lines when it is alone on them); an element that is never closed stays source.
+- ✅ Top-level HTML blocks (`<p align=center>`, `<div>`, `<table>`, `<details>`, `<img>` alone on a line...) render
+  as a block (QTextDocument, sanitized, theme styles for tables / kbd / code / mark / headings / links), revealed in
+  Live Preview while the selection is inside; `<details>` opens / closes on its summary; `<a href>` inside follows.
+  Blocks rendering nothing (`<div align=center>` alone, comments, script) keep their source in Live Preview and take
+  no room in Reading view.
+- Differences: markdown inside inline HTML renders (Obsidian's Live Preview widget shows it raw; its Reading view
+  renders it); a block element opened in one HTML block and closed in another (`<div>` … blank line … `</div>`) is
+  rendered per block in both modes (Obsidian's Live Preview makes it one widget); remote images show their alt text;
+  no hover "</>" edit button (click the block to edit); iframes, audio/video tags and inline SVG aren't rendered.
