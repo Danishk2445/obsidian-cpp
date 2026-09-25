@@ -50,6 +50,7 @@
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/views/markdown/properties/properties_commands.h"
+#include "ui/views/canvas/canvas_registration.h"
 #include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
@@ -516,6 +517,7 @@ void Application::populateWindow(MainWindow* w)
     registerNavigationViews(*registry);  // replaces the "search" placeholder
     registerGraphViews(*registry);       // "graph" + "localgraph"
     registerMediaViews(*registry);       // image, audio, video, pdf views + their embeds
+    registerCanvasView(*registry);       // .canvas view + canvas embeds
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
@@ -543,6 +545,7 @@ void Application::populateWindow(MainWindow* w)
     registerSidebarCommands(*commands, w);
     registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
     registerExportPdfCommand(*commands, w);  // workspace:export-pdf
+    registerCanvasCommands(*commands, w);    // canvas:new-file, export-as-image, ...
     rename_subpath::registerCommands(*commands, w); // editor:rename-heading + editor menu "Rename this heading/block ID..."
     installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
     SettingsController* settings = SettingsController::of(w);
