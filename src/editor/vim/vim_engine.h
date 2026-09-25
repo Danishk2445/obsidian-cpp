@@ -370,7 +370,6 @@ private:
     void applyChanges(const QList<ChangeSpec>& changes, std::optional<Selection> selection = std::nullopt,
                       const QString& userEvent = QStringLiteral("vim"));
     bool readOnly() const;
-    Pos mapPosThroughOp(Pos p, int assoc) const; // cm.mapPos: through the current operation's edits
 
     // bookmarks
     int setBookmark(Pos p, bool insertLeft = false);
@@ -483,7 +482,6 @@ private:
     void actRepeatLastEdit(Args& args);
     void actIndentLine(Args& args);
     void actFold(Args& args);
-    void indentLines(int fromLine, int toLine, bool more); // CodeMirror's indentMore / indentLess
     void newlineAndIndent();
     void newlineAndIndentBefore();
     int hardWrap(int from, int to, int column);
@@ -530,10 +528,10 @@ private:
     std::optional<Pos> findNext(bool prev, const Query& query, int repeat = 1);
     std::optional<QPair<Pos, Pos>> findNextFromAndToInclusive(bool prev, const Query& query, int repeat);
     void showConfirm(const QString& text, bool isLong = false);
-    void showPrompt(const QString& prefix, const QString& desc, const QString& value, std::function<void(const QString&)> onClose,
-                    std::function<bool(const QString& key, const QString& value, const std::function<void(const std::optional<QString>&)>& close)> onKeyDown,
-                    std::function<void(const QString& key, const QString& value, const std::function<void(const std::optional<QString>&)>& close)> onKeyUp,
-                    bool selectValue = true);
+    using PromptClose = std::function<void(const std::optional<QString>&)>;
+    using PromptKeyFn = std::function<bool(const QString& key, const QString& value, const PromptClose& close)>;
+    void showPrompt(const QString& prefix, const QString& desc, const QString& value, bool selectValue, std::function<void(const QString&)> onClose,
+                    PromptKeyFn onKeyDown, PromptKeyFn onKeyUp, bool richPrefix = false);
     void processExCommand(const QString& input, std::function<void()> callback = {});
     bool exCommand(const QString& name, ExParams& params);
     void doReplace(bool confirm, bool global, int lineStart, int lineEnd, Pos startPos, const Query& query, const QString& replaceWith,
@@ -545,6 +543,7 @@ private:
     // undo grouping
     void beginEdit();
     void endEdit();
+    void ensureCursorVisible();
 
     // state -----------------------------------------------------------------------------------
     EditorView* m_view;
@@ -590,20 +589,25 @@ private:
     std::optional<Pos> jumpListFind(int offset);
 
     // operation bookkeeping
+    std::optional<qsizetype> m_changeStart; // start of the changed text (undo/redo put the cursor there)
+    bool m_trackChangeStart = false;
     int m_busy = 0;          // > 0 while vim itself changes the editor
     int m_editDepth = 0;
-    std::optional<ChangeDesc> m_opChanges; // edits of the current operation (cm.mapPos)
     qsizetype m_lastChangeEnd = 0;
     bool m_hasLastChangeEnd = false;
     int m_keyToKeyDepth = 0;
-    QList<const KeyCommand*> m_keyToKeyStack;
+    QList<KeyCommand> m_keyToKeyStack; // mappings being expanded (recursion guard)
     bool m_noremap = false;
-    QList<std::function<void()>> m_commandDoneHandlers; // "vim-command-done" (oneNormalCommand)
     bool m_closeNotificationOnKey = false;
     QElapsedTimer m_insertKeyTimer;
-    std::optional<QString> m_virtualPromptValue; // prompts opened while replaying keys (:normal /x)
-    std::function<void(const QString&)> m_virtualPromptClose;
-    bool m_virtualPrompt = false;
+    // a prompt opened while replaying keys (":normal /foo<CR>", mappings) takes the following keys
+    struct VirtualPrompt {
+        QString prefix, desc, value;
+        std::function<void(const QString&)> onClose;
+        PromptKeyFn onKeyDown, onKeyUp;
+    };
+    std::optional<VirtualPrompt> m_virtualPrompt;
+    void sendKeyToPrompt(const QString& key);
 };
 
 } // namespace oc::vim

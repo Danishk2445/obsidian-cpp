@@ -18,6 +18,7 @@ struct InsertOp {
     int delAfter = 0;
     QString text;
     int cursorBack = 0;
+    bool overwrite = false; // replace mode: delAfter never reaches past the line end
     bool operator==(const InsertOp&) const = default;
 };
 

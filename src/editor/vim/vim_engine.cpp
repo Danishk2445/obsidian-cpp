@@ -279,8 +279,6 @@ void VimEngine::applyChanges(const QList<ChangeSpec>& changes, std::optional<Sel
     tr.selection = selection;
     tr.userEvent = userEvent;
     tr.scrollIntoView = false;
-    const ChangeDesc desc = tr.changes.desc();
-    m_opChanges = m_opChanges ? m_opChanges->composeDesc(desc) : desc;
     m_busy++;
     d->dispatch(tr, m_view, m_view->selection());
     m_busy--;
@@ -315,17 +313,6 @@ void VimEngine::replaceSelections(const QStringList& texts)
     for (int i = 0; i < sel.size(); ++i)
         specs.push_back({sel.ranges()[i].from(), sel.ranges()[i].to(), texts.value(i)});
     applyChanges(specs);
-}
-
-Pos VimEngine::mapPosThroughOp(Pos p, int assoc) const
-{
-    // vim.js cm.mapPos: the index in the current document mapped through this operation's edits
-    if (!m_opChanges)
-        return p;
-    const qsizetype i = indexFromPos(p);
-    if (i > m_opChanges->length())
-        return p;
-    return posFromIndex(m_opChanges->mapPos(i, assoc));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -459,10 +446,12 @@ void VimEngine::onDocumentChanged(const ChangeDesc& changes, const ChangeSet& se
         const auto mapped = changes.mapPosOpt(std::min(it->offset, changes.length()), it->assoc, MapMode::TrackDel);
         it->offset = mapped ? *mapped : -1;
     }
-    // getLastEditEnd: the end of the last changed range
-    changes.iterChangedRanges([&](qsizetype, qsizetype, qsizetype, qsizetype toB) {
+    // getLastEditEnd: the end of the last changed range; undo/redo: where the change starts
+    changes.iterChangedRanges([&](qsizetype, qsizetype, qsizetype fromB, qsizetype toB) {
         m_lastChangeEnd = toB;
         m_hasLastChangeEnd = true;
+        if (m_trackChangeStart && (!m_changeStart || fromB < *m_changeStart))
+            m_changeStart = fromB;
     });
     // insert mode: record what was typed (vim.js onChange), relative to the cursor
     Q_UNUSED(userInput);
@@ -482,6 +471,7 @@ void VimEngine::onDocumentChanged(const ChangeDesc& changes, const ChangeSet& se
         op.text = inserted;
         const qsizetype headAfter = m_view->selection().main().head;
         op.cursorBack = int(std::clamp<qsizetype>(fromB + inserted.size() - headAfter, 0, inserted.size()));
+        op.overwrite = m_overwrite;
         last.changes.push_back(op);
     }, true);
 }
@@ -572,11 +562,8 @@ QString VimEngine::pendingKeys() const { return m_inputState->keyBuffer.join(QSt
 // ---------------------------------------------------------------------------------------------
 void VimEngine::beginEdit()
 {
-    if (m_editDepth++ == 0) {
-        m_opChanges.reset();
-        if (doc())
-            doc()->history().beginGroup();
-    }
+    if (m_editDepth++ == 0 && doc())
+        doc()->history().beginGroup();
 }
 
 void VimEngine::endEdit()
@@ -852,23 +839,28 @@ bool VimEngine::handleKey(const QString& key, const QString& origin)
         clearInputState();
         return true;
     }
+    // Obsidian: Esc in normal mode also removes the search highlight
+    if (key == u"<Esc>" && !m_insertMode && !m_visualMode)
+        clearSearchHighlight();
     const KeyCommand* command = nullptr;
     bool consumed = false;
     const bool wasInsert = m_insertMode;
+    const bool returnPending = m_insertModeReturn; // <C-o>: back to insert mode after one command
+    bool result = false;
     if (m_insertMode)
         handleKeyInsertMode(key, &command, &consumed);
     else
         handleKeyNonInsertMode(key, origin, &command, &consumed);
     if (!command) {
-        if (consumed)
-            return true;
         // unmatched: in normal/visual mode a character is swallowed, other keys go to the editor
-        return !wasInsert && !m_insertMode && (key.size() == 1 || (key.size() == 2 && key.at(0).isHighSurrogate()));
+        result = consumed || (!wasInsert && !m_insertMode && (key.size() == 1 || (key.size() == 2 && key.at(0).isHighSurrogate())));
+    } else {
+        const KeyCommand cmd = *command; // the keymap may change while it runs (:map)
+        runCommand_(cmd);
+        result = true;
     }
-    const KeyCommand cmd = *command; // the keymap may change while it runs (:map)
-    runCommand_(cmd);
-    // "vim-command-done" (oneNormalCommand returns to insert mode after one command)
-    if (m_insertModeReturn && !m_visualMode && !hasPendingInput()) {
+    // "vim-command-done": oneNormalCommand returns to insert mode once the command is complete
+    if (returnPending && m_insertModeReturn && !m_visualMode && !hasPendingInput()) {
         m_insertModeReturn = false;
         if (!m_insertMode) {
             Args a;
@@ -879,7 +871,64 @@ bool VimEngine::handleKey(const QString& key, const QString& origin)
             m_busy--;
         }
     }
-    return true;
+    return result;
+}
+
+void VimEngine::handleEx(const QString& input)
+{
+    if (!doc())
+        return;
+    m_busy++;
+    beginEdit();
+    processExCommand(input);
+    clearInputState();
+    endEdit();
+    m_busy--;
+    ensureCursorVisible();
+}
+
+void VimEngine::overwriteType(const QString& t)
+{
+    // Obsidian's overWriteSelection: the character after each cursor is replaced (not a line break)
+    if (readOnly())
+        return;
+    const Selection& sel = m_view->selection();
+    const Text& tx = text();
+    QList<ChangeSpec> specs;
+    QList<SelRange> after;
+    for (const SelRange& r : sel.ranges()) {
+        qsizetype to = r.to();
+        if (r.empty() && to < tx.length() && tx.charAt(to) != u'\n')
+            to = to + 1;
+        specs.push_back({r.from(), to, t});
+    }
+    const ChangeSet cs = ChangeSet::of(specs, tx.length());
+    for (const SelRange& r : sel.ranges())
+        after.push_back(SelRange::cursor(cs.mapPos(r.to() + (r.empty() && r.to() < tx.length() && tx.charAt(r.to()) != u'\n' ? 1 : 0), 1)));
+    applyChanges(specs, Selection::create(after, sel.mainIndex()), QStringLiteral("input.type"));
+    ensureCursorVisible();
+}
+
+void VimEngine::afterCopy()
+{
+    if (m_insertMode) {
+        setCursor(getCursor());
+        return;
+    }
+    handleKey(QStringLiteral("<Esc>"));
+}
+
+void VimEngine::ensureCursorVisible()
+{
+    // CodeMirror scrolls the cursor into view after a vim operation (no extra margin)
+    if (!doc())
+        return;
+    const QRectF r = m_view->caretRectAt(m_view->selection().main().head);
+    const double vh = m_view->viewport()->height();
+    if (r.top() < 0)
+        m_view->setScrollTop(m_view->scrollTop() + r.top());
+    else if (r.bottom() > vh)
+        m_view->setScrollTop(m_view->scrollTop() + r.bottom() - vh);
 }
 
 void VimEngine::runCommand_(const KeyCommand& command)
@@ -892,9 +941,7 @@ void VimEngine::runCommand_(const KeyCommand& command)
         processCommand(command);
     endEdit();
     m_busy--;
-    // the cursor stays visible (CodeMirror scrolls after a vim operation)
-    if (doc())
-        m_view->scrollToPos(m_view->selection().main().head);
+    ensureCursorVisible();
 }
 
 bool VimEngine::wouldHandle(const QString& key) const
@@ -928,35 +975,19 @@ void VimEngine::doKeyToKey(const QString& keys, const KeyCommand* fromKey)
 {
     // prevent infinite recursion through mappings
     if (fromKey) {
-        for (const KeyCommand* k : std::as_const(m_keyToKeyStack))
-            if (k->keys == fromKey->keys && k->context == fromKey->context && k->toKeys == fromKey->toKeys)
+        for (const KeyCommand& k : std::as_const(m_keyToKeyStack))
+            if (k.keys == fromKey->keys && k.context == fromKey->context && k.toKeys == fromKey->toKeys)
                 return;
     }
     const bool noremapBefore = m_noremap;
     if (fromKey) {
-        m_keyToKeyStack.push_back(fromKey);
+        m_keyToKeyStack.push_back(*fromKey);
         m_noremap = fromKey->user ? fromKey->noremap : true;
     }
+    m_keyToKeyDepth++;
     for (const QString& k : splitKeys(keys)) {
         if (m_virtualPrompt) {
-            // a prompt opened while replaying keys (":normal /foo<CR>") takes them
-            if (k == u"<CR>") {
-                m_virtualPrompt = false;
-                const QString v = m_virtualPromptValue.value_or(QString());
-                m_virtualPromptValue.reset();
-                if (auto close = std::exchange(m_virtualPromptClose, {}))
-                    close(v);
-            } else if (k == u"<Esc>") {
-                m_virtualPrompt = false;
-                m_virtualPromptValue.reset();
-                m_virtualPromptClose = {};
-            } else if (k == u"<BS>") {
-                QString v = m_virtualPromptValue.value_or(QString());
-                v.chop(1);
-                m_virtualPromptValue = v;
-            } else {
-                m_virtualPromptValue = m_virtualPromptValue.value_or(QString()) + (k == u"<Space>" ? QStringLiteral(" ") : k);
-            }
+            sendKeyToPrompt(k);
             continue;
         }
         const bool wasInsert = m_insertMode;
@@ -969,22 +1000,75 @@ void VimEngine::doKeyToKey(const QString& keys, const KeyCommand* fromKey)
                     t = QStringLiteral(" ");
                 else if (k == u"<CR>")
                     t = QStringLiteral("\n");
-                else if (k == u"<BS>") {
-                    const Pos c = getCursor();
-                    if (c.ch > 0 || c.line > 0)
-                        replaceRange(QString(), posFromIndex(indexFromPos(c) - 1), c);
-                    continue;
-                } else if (k == u"<Tab>")
+                else if (k == u"<Tab>")
                     t = QStringLiteral("\t");
-                else
+                else if (k == u"<BS>") {
+                    const qsizetype c = m_view->selection().main().head;
+                    if (c > 0)
+                        applyChanges({ChangeSpec{c - 1, c, QString()}}, Selection::cursor(c - 1), QStringLiteral("delete.backward"));
                     continue;
+                } else {
+                    continue;
+                }
             }
             replaceSelection(t);
         }
     }
+    m_keyToKeyDepth--;
     if (fromKey)
         m_keyToKeyStack.removeLast();
     m_noremap = m_keyToKeyStack.isEmpty() ? false : noremapBefore;
+    if (m_keyToKeyDepth == 0 && m_virtualPrompt) {
+        // the keys ended inside a prompt: show it for real
+        VirtualPrompt vp = *std::exchange(m_virtualPrompt, std::nullopt);
+        showPrompt(vp.prefix, vp.desc, vp.value, false, vp.onClose, vp.onKeyDown, vp.onKeyUp);
+    }
+}
+
+void VimEngine::sendKeyToPrompt(const QString& key)
+{
+    VirtualPrompt& vp = *m_virtualPrompt;
+    PromptClose close = [this](const std::optional<QString>& v) {
+        if (!m_virtualPrompt)
+            return;
+        if (v)
+            m_virtualPrompt->value = *v;
+        else
+            m_virtualPrompt.reset();
+    };
+    QString k = key;
+    if (key.startsWith(u'<') && key.size() > 1) {
+        const QString lower = key.mid(1, key.size() - 2).toLower();
+        const QString last = lower.section(u'-', -1);
+        if (last == u"lt") {
+            k = QStringLiteral("<");
+        } else if (last == u"space") {
+            k = QStringLiteral(" ");
+        } else if (last == u"cr") {
+            k = QStringLiteral("\n");
+        } else {
+            if (vp.onKeyDown && vp.onKeyDown(key, vp.value, close))
+                return;
+            if (!m_virtualPrompt)
+                return;
+            if (key == u"<Esc>") {
+                m_virtualPrompt.reset();
+                return;
+            }
+            if (key == u"<BS>")
+                m_virtualPrompt->value.chop(1);
+            if (m_virtualPrompt && m_virtualPrompt->onKeyUp)
+                m_virtualPrompt->onKeyUp(key, m_virtualPrompt->value, close);
+            return;
+        }
+    }
+    if (k == u"\n") {
+        VirtualPrompt p = *std::exchange(m_virtualPrompt, std::nullopt);
+        if (p.onClose)
+            p.onClose(p.value);
+        return;
+    }
+    vp.value += k;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1572,7 +1656,9 @@ void VimEngine::repeatInsertModeChanges(const QList<InsertOp>& changes, int repe
             const qsizetype c = indexFromPos(getCursor());
             const qsizetype len = text().length();
             const qsizetype from = std::max<qsizetype>(0, c - op.delBefore);
-            const qsizetype to = std::min(len, c + op.delAfter);
+            qsizetype to = std::min(len, c + op.delAfter);
+            if (op.overwrite)
+                to = std::min(to, text().lineEnd(text().lineAt(c)));
             const qsizetype cursor = from + op.text.size() - op.cursorBack;
             applyChanges({ChangeSpec{from, to, op.text}}, Selection::cursor(cursor), QStringLiteral("input.type"));
         }

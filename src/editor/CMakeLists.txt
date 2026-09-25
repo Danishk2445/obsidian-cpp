@@ -12,6 +12,15 @@ oc_add_library(oc_editor
     live_preview_decorator.cpp
     source_decorator.cpp
     spell/spell_checker.cpp
+    vim/vim_actions.cpp
+    vim/vim_controller.cpp
+    vim/vim_engine.cpp
+    vim/vim_ex.cpp
+    vim/vim_keymap.cpp
+    vim/vim_keys.cpp
+    vim/vim_motions.cpp
+    vim/vim_panel.cpp
+    vim/vim_registers.cpp
     widgets/block_widgets.cpp
     widgets/nested_renderer.cpp
   PUBLIC_DEPS oc_render oc_core Qt6::Widgets Qt6::Gui KF6::SonnetCore

@@ -6,7 +6,9 @@
 
 #include "editor/live_preview_decorator.h"
 #include "editor/spell/spell_checker.h"
+#include "editor/vim/vim_controller.h"
 
+#include "core/commands/command_registry.h"
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
@@ -224,6 +226,26 @@ void MarkdownView::applySettings()
         m_spellcheck = spell;
         m_editor->refreshDecorations();
     }
+    setVimMode(cfg->flag(QStringLiteral("vimMode")));
+}
+
+void MarkdownView::setVimMode(bool on)
+{
+    if (on == (m_vim != nullptr))
+        return;
+    if (!on) {
+        delete std::exchange(m_vim, nullptr);
+        return;
+    }
+    m_vim = new VimController(m_editor, this);
+    // ":w" / ":q" run Obsidian's commands, after the key that typed them (":q" closes this view)
+    m_vim->setCommandRunner([this](const QString& id) {
+        CommandRegistry* commands = session() ? session()->commands() : nullptr;
+        if (!commands || !commands->find(id))
+            return false;
+        QMetaObject::invokeMethod(commands, [commands, id] { commands->execute(id); }, Qt::QueuedConnection);
+        return true;
+    });
 }
 
 void MarkdownView::loadFile(TFile* file)
@@ -237,7 +259,7 @@ void MarkdownView::loadFile(TFile* file)
     m_doc.reset();
     m_file = file;
     if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
-        static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck"};
+        static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck", "vimMode"};
         m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
             for (const char* k : keys)
                 if (key == QLatin1String(k))
@@ -270,6 +292,8 @@ void MarkdownView::loadFile(TFile* file)
             });
             m_editor->setDocument(m_doc);
             m_suggest->documentChanged();
+            if (m_vim)
+                m_vim->documentChanged();
             disconnect(m_typingConn);
             m_typing = false;
             m_typingConn = connect(d, &Document::changed, this, [this](const DocUpdate& u) {
