@@ -5,6 +5,8 @@
 #include <QObject>
 #include <QPointer>
 
+#include "text/changeset.h"
+
 #include <functional>
 
 namespace oc {
@@ -43,6 +45,23 @@ public:
     QString generateMarkdownLink(const QString& targetPath, const QString& sourcePath, const QString& subpath = {},
                                  const QString& alias = {}) const;
 
+    // Change a text file: through its open (or cached) document as one undoable change that is saved
+    // right away, else on disk with a compare-and-swap write. `edit` gets the current text and returns
+    // the changes (in its '\n'-joined coordinates; none = nothing to do). False if it could not write.
+    bool editFile(const QString& path, const std::function<QList<ChangeSpec>(const Text&)>& edit, QString* error = nullptr);
+    // Obsidian's fileManager.insertIntoFile(): `text` goes after the note's content (or before it, after
+    // the frontmatter when `prepend`), separated by a blank line unless one is already there; properties
+    // in `text`'s own frontmatter are added to the note's.
+    bool insertIntoFile(TFile* file, const QString& text, bool prepend, QString* error = nullptr);
+    static QList<ChangeSpec> insertIntoFileChanges(const Text& note, const QString& text, bool prepend);
+
+    // Obsidian's runAsyncLinkUpdate(): saves open notes, waits for a clean metadata cache, records every
+    // link, runs `operation`, then rewrites the links `retarget` sends elsewhere (references from
+    // `skipSources` are left alone) — asking first unless "alwaysUpdateLinks", like renames do.
+    // Returns what `operation` returned.
+    bool runLinkUpdate(const std::function<bool()>& operation, const LinkUpdater::Retarget& retarget,
+                       const QStringList& skipSources = {});
+
 signals:
     // After a rename rewrote links: counts for the "Updated N links in M files." notice.
     void linksUpdated(int links, int files);
@@ -50,6 +69,8 @@ signals:
 
 private:
     int applyLinkEdits(const QHash<QString, QList<LinkUpdater::Edit>>& edits, int* filesChanged);
+    // The confirmation + apply + notice part of a link update.
+    void confirmAndApply(const QHash<QString, QList<LinkUpdater::Edit>>& edits);
 
     VaultSession* m_session;
     std::function<LinkUpdateChoice(int, int)> m_confirm;

@@ -104,3 +104,40 @@ Open parity questions:
   code span or math it stays `\|` where GFM shows `|`.
 - Bare URLs: Obsidian's editor uses a liberal URL regex (many schemes such as `obsidian://`, `file:///`, `ssh://`,
   `www1.`, `example.com/path`, different trailing-punctuation rules); we implement GFM's extended autolinks only.
+
+## Sidebar views (M3)
+- ✅ Backlinks: linked mentions (links, embeds, property links resolving to the note) and unlinked mentions (name +
+  aliases as whole words, any case, outside links and frontmatter; found with the search engine, re-checked
+  incrementally), Obsidian's snippets (100 chars of line context, "Show more context" = list item / section /
+  paragraph, per-snippet more-context buttons), Collapse results, sort orders, search filter, the "Link" button,
+  "Backlinks for X" when pinned / opened for a note; state keys as Obsidian's.
+- ✅ Outgoing links: one row per destination (headings, blocks, unresolved "Not created yet"), unlinked mentions of
+  other notes with destination chips that link them (pipes escaped in tables).
+- ✅ Tags view: vaultTags() counts, nested / flat, name / frequency orders, filter, folds ("tag-pane-fold").
+- ✅ Outline: heading tree (plain-text headings), current section (cursor; scroll in reading view), auto-scroll,
+  collapse / expand all, filter, click → eState {line}, drag a heading to move its section.
+- ✅ Bookmarks: bookmarks.json (Obsidian's item shapes, unknown keys kept), groups, drag reorder (into groups),
+  inline rename, remove, "Bookmark..." modal, the bookmarks:* commands, file-menu / editor-menu items, folds.
+- ✅ All properties: names with counts and type icons (types.json + reserved), orders, filter, click → ["name"].
+- ⬜ Backlinks in document (needs an EditorView bottom widget); All properties' context menu (type, rename,
+  delete); URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
+  saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
+- Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
+  group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
+  the very top adds no blank line before it.
+
+## Settings (M7)
+- ✅ Modal: Obsidian 1.13's sidebar layout (search, Options / Core plugins / Community plugins groups), setting
+  cards (groups, lists, sub-pages with back button), global settings search (simple search over names,
+  descriptions, aliases; grouped hits, "N more"), keyboard navigation in the sidebar, Esc closes a page first
+- ✅ Tabs in 1.13's order: General, Appearance, Interface, Editor, Files and links, Hotkeys, Keychain (empty state:
+  no plugins use secrets), Core plugins, Community plugins (restricted-mode explanation + built-in Greentext Guard)
+- ✅ Plugin tabs: Backlinks, Command palette (pinned), Daily notes, File recovery, Note composer, Page preview,
+  Quick switcher, Templates, Unique note creator, Greentext Guard
+- ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
+  Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
+- 🟡 Stored but not applied yet: line numbers, indentation guides, RTL, strict line breaks, properties in document,
+  Vim mode, always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
+  bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
+- 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
+- ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon

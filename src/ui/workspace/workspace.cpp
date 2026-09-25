@@ -1401,7 +1401,8 @@ void Workspace::Impl::buildDefaultLayout()
             t->currentTab = 0;
     };
     addSide(left, {QStringLiteral("file-explorer"), QStringLiteral("search"), QStringLiteral("bookmarks")});
-    addSide(right, {QStringLiteral("backlink"), QStringLiteral("outgoing-link"), QStringLiteral("tag"), QStringLiteral("outline")});
+    addSide(right, {QStringLiteral("backlink"), QStringLiteral("outgoing-link"), QStringLiteral("tag"), QStringLiteral("outline"),
+                    QStringLiteral("all-properties")});
     WorkspaceLeaf* main = mostRecentLeaf(root);
     // Like Obsidian, a fresh layout reopens the most recent file.
     if (main && !lastOpenFiles.isEmpty()) {
@@ -2044,6 +2045,20 @@ void Workspace::closeActiveLeaf()
         a->setPinned(false); // Obsidian: Ctrl+W on a pinned tab unpins it
     else
         a->detach();
+}
+
+QList<WorkspaceLeaf*> Workspace::groupLeaves(WorkspaceLeaf* leaf) const
+{
+    return leaf && leaf->m_tabs ? leaf->m_tabs->leaves : QList<WorkspaceLeaf*>();
+}
+
+void Workspace::closeLeaves(const QList<WorkspaceLeaf*>& leaves)
+{
+    d->beginBatch();
+    for (const QPointer<WorkspaceLeaf>& l : QList<QPointer<WorkspaceLeaf>>(leaves.begin(), leaves.end()))
+        if (l && l->m_tabs)
+            d->closeLeaf(l, true);
+    d->endBatch();
 }
 
 void Workspace::togglePinActiveLeaf()

@@ -5,6 +5,7 @@
 namespace oc {
 
 class EditorView;
+class Text;
 
 // Obsidian's Markdown-aware editing behaviours and editor:* commands, operating on an EditorView.
 namespace mdcmd {
@@ -39,7 +40,13 @@ void toggleComment(EditorView& view);       // %% (block comment around multi-li
 void toggleBlockquote(EditorView& view);
 void toggleBulletList(EditorView& view);
 void toggleNumberedList(EditorView& view);
-void toggleChecklist(EditorView& view);     // Mod+L: plain -> "- [ ] " -> "- [x] " -> "- [ ] "
+// Mod+L: plain -> "- [ ] " -> "- [x] " -> "- [ ] "; cycle (editor:cycle-list-checklist): plain -> "- "
+// -> "- [ ] " -> "- [x] " -> "- ". Numbered items keep their number ("1. [ ] ").
+void toggleChecklist(EditorView& view, bool cycle = false);
+int nextFootnoteNumber(const Text& text);
+// editor:insert-footnote: "[^n]" at the cursor and "[^n]: " on a new last line (after a blank line).
+QString insertFootnote(EditorView& view);
+void insertTag(EditorView& view); // editor:insert-tag: "#" at the cursor, opening the tag suggest
 void setHeading(EditorView& view, int level); // 0 removes
 void insertLink(EditorView& view);          // [text](url) — Mod+K
 void insertWikilink(EditorView& view, bool embed = false);

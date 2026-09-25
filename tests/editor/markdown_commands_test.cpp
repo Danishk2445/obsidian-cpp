@@ -150,6 +150,53 @@ private slots:
         QCOMPARE(fx2.text(), QStringLiteral("[see]()"));
         QCOMPARE(fx2.view->cursorPosition(), 6);
     }
+
+    void checklistFollowsObsidian()
+    {
+        // Mod+L on numbered items keeps the number; the cursor stays on the same text
+        auto fx = open("1. one", 6);
+        mdcmd::toggleChecklist(*fx.view);
+        QCOMPARE(fx.text(), QStringLiteral("1. [ ] one"));
+        QCOMPARE(fx.view->cursorPosition(), 10);
+        mdcmd::toggleChecklist(*fx.view);
+        QCOMPARE(fx.text(), QStringLiteral("1. [x] one"));
+        mdcmd::toggleChecklist(*fx.view);
+        QCOMPARE(fx.text(), QStringLiteral("1. [ ] one"));
+        // cycle: text -> bullet -> [ ] -> [x] -> bullet
+        auto c = open("\tnote", 1);
+        mdcmd::toggleChecklist(*c.view, true);
+        QCOMPARE(c.text(), QStringLiteral("\t- note"));
+        mdcmd::toggleChecklist(*c.view, true);
+        QCOMPARE(c.text(), QStringLiteral("\t- [ ] note"));
+        mdcmd::toggleChecklist(*c.view, true);
+        QCOMPARE(c.text(), QStringLiteral("\t- [x] note"));
+        mdcmd::toggleChecklist(*c.view, true);
+        QCOMPARE(c.text(), QStringLiteral("\t- note"));
+        // several lines take one state from the least-done line; quotes keep their prefix
+        auto m = open("> - [x] a\n> - [ ] b\n> - [x] c", 0);
+        m.view->setSelection(Selection::single(0, m.doc->text().length()));
+        mdcmd::toggleChecklist(*m.view);
+        QCOMPARE(m.text(), QStringLiteral("> - [x] a\n> - [x] b\n> - [x] c"));
+        mdcmd::toggleChecklist(*m.view);
+        QCOMPARE(m.text(), QStringLiteral("> - [ ] a\n> - [ ] b\n> - [ ] c"));
+    }
+
+    void insertFootnoteAndTag()
+    {
+        auto fx = open("Text[^1] here\n\n[^1]: first\n[^note]: named\n", 4);
+        QCOMPARE(mdcmd::nextFootnoteNumber(fx.doc->text()), 2);
+        QCOMPARE(mdcmd::insertFootnote(*fx.view), QStringLiteral("[^2]"));
+        QCOMPARE(fx.text(), QStringLiteral("Text[^2][^1] here\n\n[^1]: first\n[^note]: named\n\n[^2]: \n"));
+        QCOMPARE(fx.view->cursorPosition(), 8);
+        auto bare = open("no newline", 2);
+        mdcmd::insertFootnote(*bare.view);
+        QCOMPARE(bare.text(), QStringLiteral("no[^1] newline\n\n[^1]: \n"));
+        auto tag = open("ab", 1);
+        tag.view->setSelection(Selection::single(1, 2));
+        mdcmd::insertTag(*tag.view);
+        QCOMPARE(tag.text(), QStringLiteral("a#b"));
+        QCOMPARE(tag.view->cursorPosition(), 2);
+    }
 };
 
 QTEST_MAIN(MarkdownCommandsTest)
