@@ -44,6 +44,8 @@ public:
     bool readableLineLength() const { return m_readable; }
     void setMargins(qreal horizontal, qreal top, qreal bottom);
     void setLineWrapping(bool on);
+    // The viewport's fill (default: --background-primary), e.g. a tinted canvas card.
+    void setBackgroundColor(const QColor& color);
 
     // Selection
     const Selection& selection() const { return m_sel; }
@@ -209,6 +211,7 @@ private:
     Mode m_mode = Mode::Source;
     bool m_readOnly = false;
     bool m_readable = true;
+    QColor m_background; // invalid = theme
     qreal m_marginX = 32, m_marginTop = 32, m_marginBottom = 32;
     qreal m_topBase = 32;       // top margin without the top widget
     QPointer<QWidget> m_topWidget;

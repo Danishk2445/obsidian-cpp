@@ -65,3 +65,4 @@ oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp mark
 oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
 oc_add_test(core_canvas_test SOURCES core/canvas_json_test.cpp core/canvas_model_test.cpp core/canvas_document_test.cpp core/canvas_geometry_test.cpp DEPS oc_core)
 oc_add_test(core_canvas_links_test SOURCES core/canvas_links_test.cpp DEPS oc_core Qt6::Test GUI)
+oc_add_test(ui_canvas_test SOURCES ui/canvas_view_test.cpp DEPS oc_ui Qt6::Test GUI)
