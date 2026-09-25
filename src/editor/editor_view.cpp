@@ -1,6 +1,7 @@
 #include "editor/editor_view.h"
 
 #include "editor/editor_hooks.h"
+#include "editor/embeds/hosted_embeds.h"
 #include "editor/live_preview_decorator.h"
 #include "editor/markdown_commands.h"
 #include "editor/source_decorator.h"
@@ -62,6 +63,7 @@ EditorView::EditorView(QWidget* parent)
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, &EditorView::applyTheme);
     applyTheme();
+    new HostedEmbeds(this); // live widgets of PDF / audio / video embeds near the viewport
 }
 
 EditorView::~EditorView()

@@ -3,6 +3,7 @@
 #include "markdown/doc_source.h"
 #include "render/services/code_highlighter.h"
 #include "render/widgets/inline_widgets.h"
+#include "editor/embeds/embed_registry.h"
 #include "editor/widgets/block_widgets.h"
 
 #include <QFontMetricsF>
@@ -30,6 +31,16 @@ bool isImageExt(const QString& target)
                                      QStringLiteral("bmp"), QStringLiteral("svg"), QStringLiteral("webp"), QStringLiteral("avif")};
     const qsizetype dot = target.lastIndexOf(QLatin1Char('.'));
     return dot >= 0 && exts.contains(target.mid(dot + 1).toLower());
+}
+
+// PDF / audio / video embeds (registered providers, see editor/embeds): hosted widgets.
+std::shared_ptr<InlineWidget> fileEmbed(const std::function<QString(const QString&)>& resolve, const QString& target, const QString& subpath,
+                                        int width, int height, qreal maxWidth)
+{
+    const qsizetype dot = target.lastIndexOf(QLatin1Char('.'));
+    if (!resolve || dot < 0 || !EmbedRegistry::instance().isExtensionRegistered(target.mid(dot + 1)))
+        return nullptr;
+    return makeEmbedWidget(resolve(target), target, subpath, width, height, maxWidth);
 }
 
 bool hasScheme(const QString& dest)
@@ -475,6 +486,10 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
                         break;
                 }
             }
+            if (n.type == InlineType::Embed && !act) {
+                if (auto w = fileEmbed(resolveAttachment, wl.target, wl.subpath, wl.width, wl.height, m_contentWidth); w && addWidget(a, b, w))
+                    break;
+            }
             const bool resolved = wl.target.isEmpty() || !isResolved || isResolved(wl.target);
             const StyleId linkStyle = resolved ? StyleId::InternalLink : StyleId::InternalLinkUnresolved;
             if (act) {
@@ -541,6 +556,13 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
         case InlineType::Link:
         case InlineType::Image: {
             const md::LinkInfo& li = it->link(id);
+            if (n.type == InlineType::Image && !act && !hasScheme(li.destination)) {
+                const QString dest = QUrl::fromPercentEncoding(li.destination.toUtf8());
+                const qsizetype hash = dest.indexOf(QLatin1Char('#'));
+                if (auto w = fileEmbed(resolveAttachment, dest.left(hash), hash < 0 ? QString() : dest.mid(hash), li.width, li.height, m_contentWidth);
+                    w && addWidget(a, b, w))
+                    break;
+            }
             if (n.type == InlineType::Image && !act && !hasScheme(li.destination) && resolveAttachment) {
                 const QString path = resolveAttachment(QUrl::fromPercentEncoding(li.destination.toUtf8()));
                 if (!path.isEmpty()) {

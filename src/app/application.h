@@ -14,6 +14,8 @@ class VaultRegistry;
 class VaultSession;
 
 // Startup and window management: vault picker, one MainWindow per vault, headless screenshot mode.
+class SuggestModal;
+
 class Application : public QObject {
     Q_OBJECT
 public:
@@ -27,6 +29,9 @@ public:
 
     MainWindow* openVault(const QString& path);
     void showPicker();
+    // Obsidian's vault switcher (app:switch-vault "Change vault..." closes `from` after opening the
+    // chosen vault; app:open-another-vault "Open vault..." keeps it).
+    SuggestModal* openVaultSwitcher(MainWindow* from, bool switchVault);
 
 private:
     void applyAppearance(VaultSession* session);
