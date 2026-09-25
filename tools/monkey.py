@@ -73,10 +73,15 @@ def main():
     ap.add_argument("--steps", type=int, default=250)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--timeout", type=int, default=240)
+    ap.add_argument("--vault", default=str(FIXTURE), help="vault to copy for each run (never the real one)")
     a = ap.parse_args()
+    fixture = Path(a.vault).resolve()
+    if str(fixture).startswith("/run/media/"):  # never the user's real vault (removable drive), only copies
+        sys.exit("refusing to use a vault on removable media; pass a scratch copy")
     work = Path(a.work)
     work.mkdir(parents=True, exist_ok=True)
-    notes = sorted(str(p.relative_to(FIXTURE)) for p in FIXTURE.rglob("*.md"))
+    notes = sorted(str(p.relative_to(fixture)) for p in fixture.rglob("*.md")
+                   if not any(part.startswith(".") for part in p.relative_to(fixture).parts))
     cmds = commands()
     base_seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     failures = 0
@@ -85,7 +90,7 @@ def main():
         rng = random.Random(seed)
         d = work / f"run-{seed}"
         shutil.rmtree(d, ignore_errors=True)
-        shutil.copytree(FIXTURE, d / "vault")
+        shutil.copytree(fixture, d / "vault", ignore=shutil.ignore_patterns(".git"))
         (d / "script.txt").write_text(script(rng, notes, cmds, a.steps))
         env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1", OC_SCRIPT_TRACE="1",
                    XDG_CONFIG_HOME=str(d / "xdg/config"), XDG_DATA_HOME=str(d / "xdg/data"),
