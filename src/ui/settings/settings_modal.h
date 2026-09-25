@@ -158,7 +158,6 @@ private:
     void clearPages();
     void updateSearch();
     void buildSearchResults();
-    void showCurrent();
 
     QPointer<MainWindow> m_window;
     QPointer<SettingsController> m_controller;
@@ -216,9 +215,11 @@ public:
     // family of each comma-separated list), font size and the enabled CSS snippets' custom properties.
     void applyAppearance();
 
-    // "Always focus new tabs", "Show ribbon", "Show tab title bar", ...: applies the app.json /
-    // appearance.json options the window can apply live (called after every change).
-    void applyWindowOptions();
+    // Applies the app.json / appearance.json options that live in process-wide or window state rather
+    // than being read on use: the ribbon's visibility ("showRibbon"), the editing behaviours of
+    // mdcmd::settings() (smart lists, auto-pairing, tabs, tab size) and the spellchecker (on/off, first
+    // language). Called on every VaultConfig::configChanged; call it once at startup too.
+    void applyOptions();
 
 signals:
     void manageVaultsRequested();  // General → "Manage vaults": show the vault picker

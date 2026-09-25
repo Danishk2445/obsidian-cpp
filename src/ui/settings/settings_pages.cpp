@@ -584,7 +584,13 @@ public:
                                }}};
         list.search = SettingDef::Search{tr("Search snippets..."), {}};
         list.emptyState = tr("CSS snippets let you customize the appearance of Obsidian. Place CSS files in “%1” for them to appear here.")
-                              .arg(QDir::toNativeSeparators(css_snippets::folder()));
+                              .arg([] {
+                                  QString f = css_snippets::folder();
+                                  const QString home = QDir::homePath();
+                                  if (f.startsWith(home + u'/'))
+                                      f = u"~"_s + f.mid(home.size());
+                                  return f;
+                              }());
         SettingDef page = SettingDef::page(tr("CSS snippets"), tr("Manage your collection of CSS files for tweaking the app's appearance."), {list});
         page.displayValue = [enabledCount] { return tr("%1 enabled").arg(enabledCount); };
         n << page;
@@ -631,12 +637,7 @@ public:
         QPointer<SettingsTab> self = this;
         n << SettingDef::toggle(tr("Show tab title bar"), tr("Display the header at the top of every tab."), u"showViewHeader"_s);
         SettingDef ribbon = SettingDef::toggle(tr("Show ribbon"), tr("Display vertical toolbar on the side of the window."), u"showRibbon"_s);
-        ribbon.control.afterChange = [self](const QJsonValue&) {
-            if (self)
-                if (SettingsController* c = controllerOf(*self))
-                    c->applyWindowOptions();
-        };
-        n << ribbon;
+        n << ribbon; // applied live by SettingsController::applyOptions()
         n << ribbonPage();
 
         QList<SettingDef> adv;
@@ -802,7 +803,6 @@ public:
 
         QList<SettingDef> behavior;
         SettingDef spell = SettingDef::toggle(tr("Spellcheck"), tr("Turn on the spellchecker."), u"spellcheck"_s);
-        spell.control.afterChange = [](const QJsonValue& v) { SpellChecker::instance().setEnabled(v.toBool()); };
         behavior << spell;
         behavior << spellcheckLanguages();
         behavior << SettingDef::toggle(tr("Auto-pair brackets"), tr("Pair brackets and quotes automatically."), u"autoPairBrackets"_s);
@@ -935,8 +935,6 @@ public:
                 if (!self)
                     return;
                 self->setControlValue(u"spellcheckLanguages"_s, list.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonArray::fromStringList(list));
-                if (!list.isEmpty())
-                    SpellChecker::instance().setLanguage(list.first());
                 self->update();
             };
             if (langs.isEmpty()) {

@@ -175,10 +175,13 @@ void SettingItem::setIcon(const QString& icon)
     applyStyle();
 }
 
-void SettingItem::setPadding(int x, int y)
+void SettingItem::setPadding(int x, int top, int bottom)
 {
+    if (m_padX == x && m_padY == top && m_padBottom == bottom)
+        return;
     m_padX = x;
-    m_padY = y;
+    m_padY = top;
+    m_padBottom = bottom;
     applyStyle();
 }
 
@@ -375,7 +378,7 @@ void SettingItem::applyStyle()
     if (m_kind == Kind::Heading)
         m_layout->setContentsMargins(16, 0, 16, 0);
     else
-        m_layout->setContentsMargins(m_padX, m_padY, m_padX, m_padY);
+        m_layout->setContentsMargins(m_padX, m_padY, m_padX, m_padBottom);
     const Qt::Alignment va = centered || m_kind == Kind::Heading ? Qt::AlignVCenter : Qt::AlignTop;
     m_layout->setAlignment(m_info, va);
     m_layout->setAlignment(m_controlColumn, va);
@@ -590,6 +593,12 @@ void SettingGroup::setList(bool list)
     }
 }
 
+void SettingGroup::setPlain(bool plain)
+{
+    m_plain = plain;
+    refresh();
+}
+
 SearchInput* SettingGroup::addSearch(const QString& placeholder)
 {
     if (!m_search) {
@@ -638,6 +647,8 @@ void SettingGroup::addItem(SettingItem* item)
     m_cardLayout->insertWidget(index, item);
     m_items.push_back(item);
     item->show();
+    if (m_plain)
+        refresh(); // first / last row paddings
 }
 
 void SettingGroup::clearItems()
@@ -698,6 +709,14 @@ void SettingGroup::refresh()
         m_empty->setProperty("ocRoundTop", m_empty == first && !m_searchRow);
         m_empty->setProperty("ocRoundBottom", m_empty == last);
     }
+    if (m_plain) {
+        // padding: 16px 0; the first row has no top padding, the last none at the bottom
+        for (SettingItem* item : std::as_const(m_items)) {
+            item->setPadding(0, item == first ? 0 : 16, item == last ? 0 : 16);
+            item->setProperty("ocRoundTop", false);
+            item->setProperty("ocRoundBottom", false);
+        }
+    }
     const bool hasRows = visible > 0 || m_empty || m_searchRow;
     m_card->setVisible(hasRows);
     setVisible(m_alwaysVisible || visible > 0 || (m_empty && m_items.isEmpty()));
@@ -726,8 +745,9 @@ void SettingGroup::paintEvent(QPaintEvent*)
     const double radius = tokPx("--setting-items-radius", 12);
     QPainterPath path;
     path.addRoundedRect(card, radius, radius);
-    p.fillPath(path, t->color(QStringLiteral("--setting-items-background")));
-    const double bw = tokPx("--setting-items-border-width", 0);
+    if (!m_plain)
+        p.fillPath(path, t->color(QStringLiteral("--setting-items-background")));
+    const double bw = m_plain ? 0 : tokPx("--setting-items-border-width", 0);
     if (bw > 0) {
         p.setPen(QPen(t->color(QStringLiteral("--setting-items-border-color")), bw));
         p.drawRoundedRect(card.adjusted(bw / 2, bw / 2, -bw / 2, -bw / 2), radius, radius);
@@ -737,7 +757,7 @@ void SettingGroup::paintEvent(QPaintEvent*)
     const double divider = tokPx("--setting-items-divider-width", 1);
     if (divider <= 0)
         return;
-    const int inset = m_list ? 16 : 20;
+    const int inset = m_plain ? 0 : m_list ? 16 : 20;
     bool firstSeen = false;
     p.setRenderHint(QPainter::Antialiasing, false);
     const QColor line = t->color(QStringLiteral("--background-modifier-border"));

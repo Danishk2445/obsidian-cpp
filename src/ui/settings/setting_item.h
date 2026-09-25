@@ -53,7 +53,8 @@ public:
     void setDescWarning(bool warning);         // descEl.mod-warning (--text-warning)
     void setIcon(const QString& icon);         // .setting-item-icon (list rows); "" hides it
     QString icon() const { return m_iconName; }
-    void setPadding(int x, int y);             // --setting-items-padding-x / -y (set by the group)
+    void setPadding(int x, int y) { setPadding(x, y, y); } // --setting-items-padding-x / -y (set by the group)
+    void setPadding(int x, int top, int bottom);
 
     // .is-disabled: controls are disabled; action/navigable rows ignore clicks and fade.
     void setDisabled(bool disabled);
@@ -133,6 +134,7 @@ private:
     double m_flash = 0;
     int m_padX = 20;
     int m_padY = 20;
+    int m_padBottom = 20;
     std::function<void()> m_onClick;
 };
 
@@ -154,6 +156,11 @@ public:
 
     void setList(bool list);
     bool isList() const { return m_list; }
+    // Plain rows for ordinary modals (Obsidian's `.modal:not(.mod-settings) .setting-item` outside a
+    // .setting-group): no card, 16 px vertical padding without side padding, full-width 1 px
+    // dividers, no padding above the first / below the last row. E.g. the Export to PDF options.
+    void setPlain(bool plain);
+    bool isPlain() const { return m_plain; }
 
     SearchInput* addSearch(const QString& placeholder);
     SearchInput* searchInput() const { return m_search; }
@@ -193,6 +200,7 @@ private:
     QSet<QObject*> m_itemObjects; // identities for eventFilter()
     SettingItem* m_empty = nullptr;
     bool m_list = false;
+    bool m_plain = false;
     bool m_alwaysVisible = false;
 };
 

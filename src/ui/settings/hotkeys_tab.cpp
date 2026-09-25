@@ -307,8 +307,9 @@ QWidget* HotkeysTab::createContent()
     auto* fh = new QHBoxLayout(filters);
     fh->setContentsMargins(0, 4, 0, 4);
     fh->setSpacing(6); // gap: var(--size-2-3)
-    const QList<QPair<StatusFilter, QString>> pills = {{StatusFilter::All, tr("All")},
-                                                       {StatusFilter::Conflicts, tr("Conflicts")},
+    // Obsidian's order: Conflicts (only while there are some) first.
+    const QList<QPair<StatusFilter, QString>> pills = {{StatusFilter::Conflicts, tr("Conflicts")},
+                                                       {StatusFilter::All, tr("All")},
                                                        {StatusFilter::Assigned, tr("Assigned")},
                                                        {StatusFilter::AssignedByMe, tr("Assigned by me")},
                                                        {StatusFilter::Unassigned, tr("Unassigned")}};

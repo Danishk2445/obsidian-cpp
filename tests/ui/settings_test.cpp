@@ -4,8 +4,10 @@
 #include "app_test_support.h"
 #include "core/commands/command_registry.h"
 #include "core/config/config_store.h"
+#include "editor/markdown_commands.h"
 #include "editor/plugins/greentext_guard.h"
 #include "render/theme/theme.h"
+#include "ui/overlay/modal.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
 #include "ui/plugins/note_plugins_ui.h"
@@ -15,6 +17,7 @@
 #include "ui/settings/settings_modal.h"
 #include "ui/settings/settings_pages.h"
 #include "ui/shell/app_commands.h"
+#include "ui/shell/ribbon.h"
 #include "ui/widgets/dropdown.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/widgets/search_input.h"
@@ -25,6 +28,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
 #include <QSignalSpy>
@@ -195,6 +199,13 @@ TEST_F(SettingsTest, TogglesPersistToAppJson)
     EXPECT_EQ(configFile("app").value("showLineNumber"), QJsonValue(true));
     t->click(); // back to the default: removed from the file, like Obsidian
     EXPECT_FALSE(configFile("app").contains("showLineNumber"));
+
+    // Editing behaviours are applied live to the markdown commands' settings.
+    EXPECT_TRUE(mdcmd::settings().smartIndentList);
+    item("Smart lists")->control<ToggleSwitch>()->click();
+    EXPECT_FALSE(mdcmd::settings().smartIndentList);
+    item("Smart lists")->control<ToggleSwitch>()->click();
+    EXPECT_TRUE(mdcmd::settings().smartIndentList);
 
     // Inverted option: "Use [[Wikilinks]]" stores useMarkdownLinks.
     modal()->openTab("file");
@@ -597,6 +608,82 @@ TEST_F(SettingsTest, GreentextGuardSettings)
     GreentextGuard::instance().uninstall();
 }
 
+TEST_F(SettingsTest, RibbonOptions)
+{
+    window->ribbon()->addAction("switcher:open", "file-search", "Open quick switcher");
+    window->ribbon()->addAction("graph:open", "git-fork", "Open graph view");
+    open("interface");
+    SettingItem* page = item("Ribbon menu configuration");
+    ASSERT_TRUE(page);
+    EXPECT_FALSE(page->isHidden());
+    item("Show ribbon")->control<ToggleSwitch>()->click();
+    EXPECT_TRUE(window->ribbon()->isHidden());
+    EXPECT_EQ(configFile("appearance").value("showRibbon"), QJsonValue(false));
+    EXPECT_TRUE(page->isHidden()); // visible() follows the option
+    item("Show ribbon")->control<ToggleSwitch>()->click();
+    EXPECT_FALSE(window->ribbon()->isHidden());
+    // The configuration page lists the shown items; "×" hides one, a click on a hidden one shows it.
+    item("Ribbon menu configuration")->activate();
+    SettingItem* graph = item("Open graph view");
+    ASSERT_TRUE(graph);
+    graph->findChild<IconButton*>()->click();
+    QApplication::processEvents();
+    bool hidden = false;
+    for (const auto& [id, button] : window->ribbon()->actions())
+        if (id == "graph:open")
+            hidden = button->isHidden();
+    EXPECT_TRUE(hidden);
+    SettingItem* other = item("Open graph view");
+    ASSERT_TRUE(other);
+    EXPECT_EQ(other->kind(), SettingItem::Kind::Action);
+    other->activate();
+    for (const auto& [id, button] : window->ribbon()->actions()) {
+        if (id == "graph:open") {
+            EXPECT_FALSE(button->isHidden());
+        }
+    }
+}
+
+// The rows reused by ordinary modals (e.g. Export to PDF): a plain group in a Modal's content.
+TEST_F(SettingsTest, PlainRowsInAModal)
+{
+    auto* m = new Modal(window->overlay());
+    m->setTitle("Export to PDF");
+    auto* g = new SettingGroup;
+    g->setPlain(true);
+    QString size = "Letter";
+    bool landscape = false;
+    double scale = 100;
+    SettingItem* a = g->addItem();
+    a->setName("Page size");
+    a->addDropdown({{"A4", "A4"}, {"Letter", "Letter"}}, size, [&](const QString& v) { size = v; });
+    SettingItem* b = g->addItem();
+    b->setName("Landscape");
+    b->addToggle(landscape, [&](bool on) { landscape = on; });
+    SettingItem* c = g->addItem();
+    c->setName("Downscale percent");
+    c->addSlider(0, 100, 1, scale, [&](double v) { scale = v; });
+    m->addContentWidget(g);
+    m->addButton("Export", Modal::ButtonStyle::Cta);
+    m->open();
+    QApplication::processEvents();
+    a->control<Dropdown>()->choose("A4");
+    b->control<ToggleSwitch>()->click();
+    QTest::keyClick(c->control<ValueSlider>(), Qt::Key_Left);
+    EXPECT_EQ(size, "A4");
+    EXPECT_TRUE(landscape);
+    EXPECT_EQ(scale, 99);
+    // padding: 16px 0, none above the first / below the last row
+    EXPECT_EQ(a->layout()->contentsMargins(), QMargins(0, 0, 0, 16));
+    EXPECT_EQ(b->layout()->contentsMargins(), QMargins(0, 16, 0, 16));
+    EXPECT_EQ(c->layout()->contentsMargins(), QMargins(0, 16, 0, 0));
+    if (const QString dir = qEnvironmentVariable("OC_SHOT_DIR"); !dir.isEmpty()) {
+        QDir().mkpath(dir);
+        window->grab().save(dir + "/settings-plain-rows.png");
+    }
+    m->close();
+}
+
 TEST(SettingsCssSnippets, ParsesCustomProperties)
 {
     const auto o = css_snippets::parse(
@@ -631,6 +718,12 @@ TEST_F(SettingsTest, Screenshots)
         GTEST_SKIP() << "set OC_SHOT_DIR to write screenshots";
     QDir().mkpath(dir);
     window->resize(1400, 850);
+    // The application's ribbon actions (for the ribbon configuration page).
+    window->ribbon()->addAction("switcher:open", "file-search", "Open quick switcher");
+    window->ribbon()->addAction("graph:open", "git-fork", "Open graph view");
+    window->ribbon()->addAction("daily-notes", "calendar-days", "Open today's daily note");
+    window->ribbon()->addAction("command-palette:open", "terminal", "Open command palette");
+    window->ribbon()->setActionHidden("graph:open", true);
     QApplication::processEvents();
     for (const auto& [mode, name] : {std::pair{ThemeManager::Mode::Dark, "dark"}, std::pair{ThemeManager::Mode::Light, "light"}}) {
         ThemeManager::instance()->setMode(mode);
@@ -641,14 +734,48 @@ TEST_F(SettingsTest, Screenshots)
             QApplication::processEvents();
             window->grab().save(dir + QStringLiteral("/settings-%1-%2.png").arg(QString::fromLatin1(tab), QString::fromLatin1(name)));
         }
+        auto shot = [&](const char* what) {
+            QApplication::processEvents();
+            window->grab().save(dir + QStringLiteral("/settings-%1-%2.png").arg(QString::fromLatin1(what), QString::fromLatin1(name)));
+        };
+        for (const char* tab : {"interface", "keychain", "greentext-guard", "page-preview", "command-palette"}) {
+            open(QString::fromLatin1(tab));
+            modal()->searchInput()->clearFocus();
+            shot(tab);
+        }
         open("appearance");
         modal()->setSearchQuery("font");
-        QApplication::processEvents();
-        window->grab().save(dir + QStringLiteral("/settings-search-%1.png").arg(QString::fromLatin1(name)));
+        shot("search");
         modal()->setSearchQuery("");
         item("Interface font")->activate();
-        QApplication::processEvents();
-        window->grab().save(dir + QStringLiteral("/settings-fontpage-%1.png").arg(QString::fromLatin1(name)));
+        shot("fontpage");
+        modal()->closePage();
+        item("CSS snippets")->activate();
+        shot("snippets");
+        open("interface");
+        item("Ribbon menu configuration")->activate();
+        shot("ribbon");
+        open("file");
+        session->vaultConfig()->set("userIgnoreFilters", QJsonArray{"Archive/", "/daily-.*/"});
+        modal()->activeTab()->update();
+        item("Excluded files")->activate();
+        shot("excluded");
+        session->vaultConfig()->set("userIgnoreFilters", QJsonValue());
+        // Hotkeys: a conflict and a recording in progress.
+        auto* hk = qobject_cast<HotkeysTab*>(open("hotkeys")->activeTab());
+        hk->startCustomizing("app:open-settings");
+        hk->handleChord(Hotkey::parse("Mod+T"));
+        hk->startCustomizing("workspace:new-tab");
+        modal()->searchInput()->clearFocus();
+        shot("hotkeys-recording");
+        hk->cancelCustomizing();
+        hk->restoreDefault("app:open-settings");
+        // The Vim test modal.
+        open("editor");
+        item("Vim key bindings")->control<ToggleSwitch>()->click();
+        shot("vim");
+        if (auto* vim = window->overlay()->findChild<Modal*>("ocVimTestModal"))
+            vim->close();
         modal()->close();
         QApplication::processEvents();
     }

@@ -5,7 +5,9 @@
 #include "core/config/vault_config.h"
 #include "core/fuzzy/fuzzy.h"
 #include "core/vault_session.h"
+#include "editor/markdown_commands.h"
 #include "editor/plugins/greentext_guard.h"
+#include "editor/spell/spell_checker.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
@@ -20,6 +22,7 @@
 #include <QApplication>
 #include <QCollator>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
@@ -916,6 +919,15 @@ SettingsController::SettingsController(MainWindow* window)
     , m_window(window)
     , m_session(window->session())
 {
+    if (VaultConfig* cfg = m_session ? m_session->vaultConfig() : nullptr) {
+        static const QSet<QString> keys = {QStringLiteral("showRibbon"),      QStringLiteral("smartIndentList"), QStringLiteral("autoPairBrackets"),
+                                           QStringLiteral("autoPairMarkdown"), QStringLiteral("useTab"),          QStringLiteral("tabSize"),
+                                           QStringLiteral("spellcheck"),       QStringLiteral("spellcheckLanguages")};
+        connect(cfg, &VaultConfig::configChanged, this, [this](const QString& key) {
+            if (key.isEmpty() || keys.contains(key))
+                applyOptions();
+        });
+    }
 }
 
 SettingsModal* SettingsController::open(const QString& tabId)
@@ -1041,7 +1053,7 @@ void SettingsController::applyAppearance()
     }
 }
 
-void SettingsController::applyWindowOptions()
+void SettingsController::applyOptions()
 {
     VaultSession* s = m_session;
     VaultConfig* cfg = s ? s->vaultConfig() : nullptr;
@@ -1049,6 +1061,17 @@ void SettingsController::applyWindowOptions()
         return;
     if (Ribbon* r = m_window->ribbon())
         r->setVisible(cfg->flag(QStringLiteral("showRibbon")));
+    mdcmd::Settings& md = mdcmd::settings();
+    md.smartIndentList = cfg->flag(QStringLiteral("smartIndentList"));
+    md.autoPairBrackets = cfg->flag(QStringLiteral("autoPairBrackets"));
+    md.autoPairMarkdown = cfg->flag(QStringLiteral("autoPairMarkdown"));
+    md.useTab = cfg->useTab();
+    md.tabSize = cfg->tabSize();
+    SpellChecker& spell = SpellChecker::instance();
+    spell.setEnabled(cfg->flag(QStringLiteral("spellcheck")));
+    const QJsonArray langs = cfg->get(QStringLiteral("spellcheckLanguages")).toArray();
+    if (!langs.isEmpty() && langs.first().toString() != spell.language())
+        spell.setLanguage(langs.first().toString());
 }
 
 // ---------------------------------------------------------------------------------------------
