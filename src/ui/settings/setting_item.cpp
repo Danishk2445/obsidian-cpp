@@ -441,7 +441,6 @@ void SettingItem::applyStyle()
     update();
 }
 
-QSize SettingItem::sizeHint() const { return QWidget::sizeHint(); }
 
 void SettingItem::paintEvent(QPaintEvent*)
 {
@@ -730,7 +729,6 @@ bool SettingGroup::eventFilter(QObject* obj, QEvent* ev)
     return QWidget::eventFilter(obj, ev);
 }
 
-QSize SettingGroup::sizeHint() const { return QWidget::sizeHint(); }
 
 QRect SettingGroup::cardRect() const { return m_card->geometry(); }
 

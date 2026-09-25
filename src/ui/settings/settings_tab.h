@@ -192,7 +192,4 @@ public:
 void renderSettings(SettingsTab& tab, const QList<SettingDef>& defs, QVBoxLayout* layout, RenderedSettings& out,
                     const std::function<void(const SettingDef& page)>& openPage);
 
-// Folder path normalization used by folder controls (Obsidian's normalizePath, "" for the root).
-QString normalizeSettingPath(const QString& path);
-
 } // namespace oc

@@ -163,7 +163,7 @@ SettingsNavItem::SettingsNavItem(const QString& icon, const QString& title, QWid
 {
     setAttribute(Qt::WA_Hover);
     setCursor(Qt::ArrowCursor);
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(Qt::ClickFocus); // tabIndex -1: reachable with the arrow keys, not with Tab
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, [this] {
@@ -213,11 +213,16 @@ void SettingsNavItem::paintEvent(QPaintEvent*)
     const ThemePtr t = currentTheme();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
+    const double r = tokPx("--radius-m", 8);
     if (m_active || m_hover) {
         QPainterPath path;
-        const double r = tokPx("--radius-m", 8);
         path.addRoundedRect(QRectF(rect()), r, r);
         p.fillPath(path, t->color(QStringLiteral("--background-modifier-hover")));
+    }
+    if (hasFocus() && m_focusVisible) {
+        // :focus-visible { box-shadow: 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-focus) }
+        p.setPen(QPen(t->color(QStringLiteral("--background-modifier-border-focus")), 2));
+        p.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), r - 1, r - 1);
     }
     double x = 8 + m_indent;
     const double fs = tokPx("--font-ui-small", 13);
@@ -264,6 +269,53 @@ void SettingsNavItem::mouseReleaseEvent(QMouseEvent* e)
 {
     if (rect().contains(e->position().toPoint()) && e->button() == Qt::LeftButton)
         emit clicked();
+}
+
+void SettingsNavItem::keyPressEvent(QKeyEvent* e)
+{
+    const bool plain = !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier));
+    switch (e->key()) {
+    case Qt::Key_Down:
+    case Qt::Key_J:
+        if (plain) {
+            emit moveFocus(1);
+            return;
+        }
+        break;
+    case Qt::Key_Up:
+    case Qt::Key_K:
+        if (plain) {
+            emit moveFocus(-1);
+            return;
+        }
+        break;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Right:
+    case Qt::Key_L:
+        emit clicked();
+        return;
+    case Qt::Key_Slash:
+    case Qt::Key_Backtab:
+        emit focusSearch();
+        return;
+    default:
+        break;
+    }
+    QWidget::keyPressEvent(e);
+}
+
+void SettingsNavItem::focusInEvent(QFocusEvent* e)
+{
+    m_focusVisible = e->reason() != Qt::MouseFocusReason;
+    update();
+    QWidget::focusInEvent(e);
+}
+
+void SettingsNavItem::focusOutEvent(QFocusEvent* e)
+{
+    update();
+    QWidget::focusOutEvent(e);
 }
 
 void SettingsNavItem::enterEvent(QEnterEvent* e)
@@ -431,6 +483,7 @@ void SettingsModal::rebuildNavigation()
             item->setTabId(t->id());
             item->setActive(t == m_active);
             connect(item, &SettingsNavItem::clicked, this, [this, t] { openTab(t); });
+            connectNavItem(item);
             gv->addWidget(item);
         }
         m_navLayout->addWidget(group);
@@ -451,6 +504,36 @@ QList<SettingsNavItem*> SettingsModal::navItems() const
         if (QWidget* group = m_navLayout->itemAt(i)->widget())
             out += group->findChildren<SettingsNavItem*>();
     return out;
+}
+
+QList<SettingsNavItem*> SettingsModal::focusableNavItems() const
+{
+    QList<SettingsNavItem*> items = m_resultsScroll->isVisible() || !m_search->text().trimmed().isEmpty()
+                                        ? m_resultsWidget->findChildren<SettingsNavItem*>()
+                                        : navItems();
+    items.removeIf([](SettingsNavItem* i) { return i->isHidden(); });
+    return items;
+}
+
+void SettingsModal::moveNavFocus(SettingsNavItem* from, int delta)
+{
+    const QList<SettingsNavItem*> items = focusableNavItems();
+    const qsizetype i = items.indexOf(from);
+    if (items.isEmpty())
+        return;
+    const qsizetype next = i < 0 ? 0 : std::clamp<qsizetype>(i + delta, 0, items.size() - 1);
+    items[next]->setFocus(Qt::TabFocusReason);
+    if (QScrollArea* s = m_resultsScroll->isVisible() ? m_resultsScroll : m_navScroll)
+        s->ensureWidgetVisible(items[next], 0, 8);
+}
+
+void SettingsModal::connectNavItem(SettingsNavItem* item)
+{
+    connect(item, &SettingsNavItem::moveFocus, this, [this, item](int delta) { moveNavFocus(item, delta); });
+    connect(item, &SettingsNavItem::focusSearch, this, [this] {
+        m_search->setFocus(Qt::ShortcutFocusReason);
+        m_search->selectAll();
+    });
 }
 
 SettingsTab* SettingsModal::openTab(const QString& id)
@@ -800,6 +883,7 @@ void SettingsModal::updateSearch()
         if (!g.pagePath.isEmpty())
             head->setSublabel(g.tab->name());
         connect(head, &SettingsNavItem::clicked, this, [this, gi] { navigateToSearchResult(gi); });
+        connectNavItem(head);
         gv->addWidget(head);
         QList<SettingsNavItem*> more;
         for (int hi = 0; hi < g.hits.size(); ++hi) {
@@ -808,6 +892,7 @@ void SettingsModal::updateSearch()
             item->setIndent(24); // padding-inline-start: 32px (8 of it is the item padding)
             item->setTitleMatches(ranges(g.hits[hi].name));
             connect(item, &SettingsNavItem::clicked, this, [this, gi, hi] { navigateToSearchResult(gi, hi); });
+            connectNavItem(item);
             gv->addWidget(item);
             if (hi >= 3) {
                 item->hide();
@@ -822,7 +907,10 @@ void SettingsModal::updateSearch()
                 for (SettingsNavItem* i : more)
                     i->show();
                 showMore->hide();
+                if (!more.isEmpty())
+                    more.first()->setFocus(Qt::OtherFocusReason);
             });
+            connectNavItem(showMore);
             gv->addWidget(showMore);
         }
         v->addWidget(group);
@@ -889,10 +977,16 @@ bool SettingsModal::eventFilter(QObject* obj, QEvent* ev)
     }
     if (obj == m_search && ev->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(ev);
-        if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) && !m_results.isEmpty()) {
-            navigateToSearchResult(0, m_results.first().hits.isEmpty() ? -1 : 0);
+        // Enter, Tab or ↓ move into the navigation (or the results); Enter there opens the item.
+        const bool tab = ke->key() == Qt::Key_Tab && ke->modifiers() == Qt::NoModifier;
+        if (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter || ke->key() == Qt::Key_Down || tab) {
+            const QList<SettingsNavItem*> items = focusableNavItems();
+            if (!items.isEmpty())
+                items.first()->setFocus(Qt::TabFocusReason);
             return true;
         }
+        if (ke->key() == Qt::Key_Backtab)
+            return true; // stays in the search input
         if (ke->key() == Qt::Key_Escape && !m_search->text().isEmpty()) {
             m_search->clear();
             return true;

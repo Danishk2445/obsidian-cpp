@@ -95,8 +95,6 @@ public:
     // Briefly highlights the row (search result navigation).
     void flash();
 
-    QSize sizeHint() const override;
-
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
@@ -179,8 +177,6 @@ public:
     // Recomputes the dividers, the empty state and the group's own visibility after rows were shown
     // or hidden.
     void refresh();
-
-    QSize sizeHint() const override;
 
 protected:
     void paintEvent(QPaintEvent*) override;

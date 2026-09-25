@@ -134,19 +134,6 @@ SettingDef SettingDef::page(const QString& name, const QString& desc, QList<Sett
     return d;
 }
 
-QString normalizeSettingPath(const QString& path)
-{
-    QString p = path.trimmed();
-    p.replace(QLatin1Char('\\'), QLatin1Char('/'));
-    while (p.contains(QStringLiteral("//")))
-        p.replace(QStringLiteral("//"), QStringLiteral("/"));
-    while (p.startsWith(QLatin1Char('/')))
-        p.remove(0, 1);
-    while (p.endsWith(QLatin1Char('/')))
-        p.chop(1);
-    return p;
-}
-
 // ---------------------------------------------------------------------------------------------
 // SettingsTab
 // ---------------------------------------------------------------------------------------------

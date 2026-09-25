@@ -47,14 +47,22 @@ public:
 
 signals:
     void clicked();
+    // Keyboard navigation (Obsidian: ↑/↓ or k/j move, Enter/→/l/Tab activate, Shift+Tab or / go back to
+    // the search input).
+    void moveFocus(int delta);
+    void focusSearch();
 
 protected:
     void paintEvent(QPaintEvent*) override;
     void mouseReleaseEvent(QMouseEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
+    void focusInEvent(QFocusEvent*) override;
+    void focusOutEvent(QFocusEvent*) override;
     void enterEvent(QEnterEvent*) override;
     void leaveEvent(QEvent*) override;
 
 private:
+    bool m_focusVisible = false;
     QString m_icon;
     QString m_title;
     QString m_sublabel;
@@ -158,6 +166,9 @@ private:
     void clearPages();
     void updateSearch();
     void buildSearchResults();
+    QList<SettingsNavItem*> focusableNavItems() const; // the navigation, or the search results
+    void moveNavFocus(SettingsNavItem* from, int delta);
+    void connectNavItem(SettingsNavItem* item);
 
     QPointer<MainWindow> m_window;
     QPointer<SettingsController> m_controller;

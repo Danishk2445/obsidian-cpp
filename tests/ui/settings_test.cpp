@@ -143,6 +143,34 @@ TEST_F(SettingsTest, NavigationRemembersLastTab)
     EXPECT_TRUE(again->openTab("daily-notes"));
     EXPECT_FALSE(again->openTab("zk-prefixer"));
     EXPECT_EQ(again->activeTab()->id(), "daily-notes");
+
+    // Keyboard: ↓ from the search input into the navigation, ↓/j to move, Enter to open, / back.
+    again->searchInput()->setFocus();
+    QTest::keyClick(again->searchInput(), Qt::Key_Down);
+    auto* focused = qobject_cast<SettingsNavItem*>(QApplication::focusWidget());
+    ASSERT_TRUE(focused);
+    EXPECT_EQ(focused->title(), "General");
+    QTest::keyClick(focused, Qt::Key_Down);
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_J);
+    focused = qobject_cast<SettingsNavItem*>(QApplication::focusWidget());
+    ASSERT_TRUE(focused);
+    EXPECT_EQ(focused->title(), "Interface");
+    QTest::keyClick(focused, Qt::Key_Return);
+    EXPECT_EQ(again->activeTab()->id(), "interface");
+    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Slash);
+    EXPECT_EQ(QApplication::focusWidget(), again->searchInput());
+    // In search mode the results are navigated the same way.
+    QTest::keyClicks(again->searchInput(), "strict line");
+    QTest::keyClick(again->searchInput(), Qt::Key_Return);
+    focused = qobject_cast<SettingsNavItem*>(QApplication::focusWidget());
+    ASSERT_TRUE(focused);
+    EXPECT_EQ(focused->title(), "Editor");
+    QTest::keyClick(focused, Qt::Key_Down);
+    focused = qobject_cast<SettingsNavItem*>(QApplication::focusWidget());
+    ASSERT_TRUE(focused);
+    EXPECT_EQ(focused->title(), "Strict line breaks");
+    QTest::keyClick(focused, Qt::Key_Return);
+    EXPECT_EQ(again->activeTab()->id(), "editor");
 }
 
 TEST_F(SettingsTest, SearchFindsSettingsAcrossTabs)
