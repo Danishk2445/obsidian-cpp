@@ -2,6 +2,7 @@
 
 #include "app/cli.h"
 
+#include <QJsonObject>
 #include <QObject>
 #include <QPointer>
 
@@ -14,6 +15,7 @@ class VaultRegistry;
 class VaultSession;
 
 // Startup and window management: vault picker, one MainWindow per vault, headless screenshot mode.
+class SingleInstance;
 class SuggestModal;
 
 class Application : public QObject {
@@ -22,7 +24,9 @@ public:
     explicit Application(CliOptions opts, QObject* parent = nullptr);
     ~Application() override;
 
-    int start(); // returns non-zero on fatal startup error
+    enum : int { HandedOff = -1 };
+    // 0 = running, HandedOff = a running instance took the request (exit quietly), else fatal.
+    int start();
 
     VaultRegistry* registry() const { return m_registry; }
     ThemeManager* themes() const { return m_themes; }
@@ -34,6 +38,9 @@ public:
     SuggestModal* openVaultSwitcher(MainWindow* from, bool switchVault);
 
 private:
+    void resolveTarget(); // positional file / obsidian:// URI -> vault + note
+    void handleRequest(const QJsonObject& request);
+    void openPath(MainWindow* w, const QString& vaultPath, const QString& mode);
     void applyAppearance(VaultSession* session);
     void createServices(VaultSession* session);
     void populateWindow(MainWindow* w);
@@ -46,6 +53,7 @@ private:
     VaultRegistry* m_registry;
     QPointer<VaultPicker> m_picker;
     QList<QPointer<MainWindow>> m_windows;
+    SingleInstance* m_single = nullptr;
 };
 
 } // namespace oc
