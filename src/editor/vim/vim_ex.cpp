@@ -624,13 +624,11 @@ void VimEngine::processSearch(const KeyCommand& command)
                 m_view->setFocus();
                 return true;
             }
-            if (key == u"<Up>" || key == u"<Down>")
-                return true; // handled on key up
             if (key == u"<C-u>") {
                 close(QString());
                 return true;
             }
-            return false;
+            return false; // <Up> / <Down> walk the history on key up
         };
         showPrompt(promptPrefix, QStringLiteral("(JavaScript regexp)"), QString(), true, onClose, onKeyDown, onKeyUp);
         return;

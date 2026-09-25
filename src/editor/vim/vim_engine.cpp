@@ -1654,8 +1654,8 @@ void VimEngine::repeatInsertModeChanges(const QList<InsertOp>& changes, int repe
             const qsizetype len = text().length();
             const qsizetype from = std::max<qsizetype>(0, c - op.delBefore);
             qsizetype to = std::min(len, c + op.delAfter);
-            if (op.overwrite)
-                to = std::min(to, text().lineEnd(text().lineAt(c)));
+            if (op.overwrite) // replace mode overwrites as much as it types, within the line
+                to = std::min(c + op.text.size(), text().lineEnd(text().lineAt(c)));
             const qsizetype cursor = from + op.text.size() - op.cursorBack;
             applyChanges({ChangeSpec{from, to, op.text}}, Selection::cursor(cursor), QStringLiteral("input.type"));
         }

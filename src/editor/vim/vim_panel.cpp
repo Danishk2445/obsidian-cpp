@@ -267,6 +267,12 @@ bool VimPanel::eventFilter(QObject* obj, QEvent* ev)
     const QString key = keyFromEvent(ke);
     if (key.isEmpty())
         return false;
+    // Every key typed in the prompt stays in the prompt: an ignored key event would propagate to
+    // the editor (the parent) and run as a vim key.
+    struct AcceptOnExit {
+        QKeyEvent* e;
+        ~AcceptOnExit() { e->accept(); }
+    } acceptOnExit{ke};
     // the handlers may close or replace the prompt: keep them alive while they run
     const KeyFn onKeyDown = m_onKeyDown;
     const KeyFn onKeyUp = m_onKeyUp;

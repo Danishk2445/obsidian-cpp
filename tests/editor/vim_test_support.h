@@ -19,6 +19,10 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <ostream>
+
+// readable gtest failures
+inline void PrintTo(const QString& s, std::ostream* os) { *os << '"' << s.toStdString() << '"'; }
 
 namespace oc::test {
 

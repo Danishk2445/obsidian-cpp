@@ -59,4 +59,4 @@ oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_pal
 oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_metadata_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS oc_markdown LABELS perf)
-oc_add_test(editor_vim_keys_test SOURCES editor/vim_keys_test.cpp editor/vim_test_support.h editor/vim_cases.inc DEPS oc_editor GUI)
+oc_add_test(editor_vim_keys_test SOURCES editor/vim_keys_test.cpp editor/vim_behavior_test.cpp editor/vim_test_support.h editor/vim_cases.inc DEPS oc_editor Qt6::Test GUI)
