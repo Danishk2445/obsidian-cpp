@@ -27,11 +27,12 @@ QHash<const EditorView*, VimController*>& registry()
 VimController::VimController(EditorView* view, QObject* parent)
     : QObject(parent)
     , m_view(view)
+    , m_viewKey(view)
 {
     registry().insert(view, this);
     m_panel = new VimPanel(view);
     m_keyHook = EditorHooks::global().addKeyHandler([this](EditorView& v, QKeyEvent* e) {
-        if (&v != m_view.data())
+        if (&v != m_viewKey)
             return false;
         return handleKeyEvent(e);
     });
@@ -69,23 +70,28 @@ VimController::VimController(EditorView* view, QObject* parent)
 
 VimController::~VimController()
 {
-    registry().remove(m_view.data());
+    registry().remove(m_viewKey);
     EditorHooks::global().remove(m_keyHook);
     disconnect(m_docConn);
-    if (m_engine)
+    if (m_engine && m_view)
         m_engine->leaveVimMode();
     m_engine.reset();
     if (m_view) {
         m_view->removeEventFilter(this);
         m_view->removeDecorationLayer(m_layer);
         m_view->setCursorShape(EditorView::CursorShape::Bar);
+        if (m_view->bottomPanel() == m_panel.data()) {
+            if (m_panel)
+                m_panel->hide();
+            m_view->setBottomPanel(nullptr);
+        }
     }
-    delete m_panel;
+    delete m_panel.data();
 }
 
 VimController* VimController::of(const EditorView* view) { return registry().value(view); }
 
-VimPanel* VimController::panel() const { return m_panel; }
+VimPanel* VimController::panel() const { return m_panel.data(); }
 
 void VimController::setCommandRunner(std::function<bool(const QString&)> runner)
 {
@@ -108,7 +114,7 @@ void VimController::bindDocument()
         m_engine->leaveVimMode();
     m_doc = d;
     m_engine = std::make_unique<VimEngine>(m_view);
-    m_engine->setPanel(m_panel);
+    m_engine->setPanel(m_panel.data());
     m_engine->runCommand = m_runner;
     m_engine->modeChanged = [this] { syncCursorShape(); };
     m_engine->highlightChanged = [this] {
@@ -227,7 +233,8 @@ bool VimController::handleKeyEvent(QKeyEvent* e)
 bool VimController::eventFilter(QObject* obj, QEvent* ev)
 {
     // IME commits outside insert mode are keys (like Obsidian's compositionend handling)
-    if (obj == m_view && ev->type() == QEvent::InputMethod && m_engine && m_view && m_view->mode() != EditorView::Mode::Reading
+    // (the type first: this filter also sees the events of a view being destroyed)
+    if (ev->type() == QEvent::InputMethod && obj == m_viewKey && m_engine && m_view && m_view->mode() != EditorView::Mode::Reading
         && !m_engine->insertMode()) {
         auto* ime = static_cast<QInputMethodEvent*>(ev);
         const QString commit = ime->commitString();

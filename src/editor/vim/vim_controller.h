@@ -77,8 +77,9 @@ private:
     bool eventFilter(QObject* obj, QEvent* ev) override;
 
     QPointer<EditorView> m_view;
+    const EditorView* m_viewKey; // registry key (m_view is null once the editor is gone)
     std::unique_ptr<vim::VimEngine> m_engine;
-    vim::VimPanel* m_panel = nullptr;
+    QPointer<vim::VimPanel> m_panel; // a child of the editor
     QPointer<Document> m_doc;
     QMetaObject::Connection m_docConn;
     int m_keyHook = 0;

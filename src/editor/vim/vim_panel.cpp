@@ -65,13 +65,9 @@ VimPanel::VimPanel(EditorView* view)
         view->setBottomPanel(this);
 }
 
-VimPanel::~VimPanel()
-{
-    if (m_view && m_view->bottomPanel() == this) {
-        hide();
-        m_view->setBottomPanel(nullptr);
-    }
-}
+// The owner detaches the panel from a living editor (VimController); when the editor itself is
+// being destroyed it deletes the panel as its child, and must not be called back.
+VimPanel::~VimPanel() = default;
 
 void VimPanel::applyTheme()
 {
