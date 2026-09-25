@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QSet>
 #include <QWidget>
 
 class QVBoxLayout;
@@ -18,7 +19,8 @@ public:
     IconButton* sidebarToggle() const { return m_toggle; }
     IconButton* addAction(const QString& id, const QString& icon, const QString& title);
     IconButton* addBottomAction(const QString& id, const QString& icon, const QString& title);
-    void setActionHidden(const QString& id, bool hidden);
+    void setActionHidden(const QString& id, bool hidden); // the user's choice (left-ribbon.hiddenItems)
+    void setActionAvailable(const QString& id, bool available); // false while its core plugin is off
     QList<QPair<QString, IconButton*>> actions() const { return m_actions; }
     // The left sidedock is collapsed: the ribbon takes --ribbon-background-collapsed.
     void setCollapsed(bool collapsed);
@@ -38,6 +40,8 @@ private:
     QVBoxLayout* m_bottomLayout;
     QList<QPair<QString, IconButton*>> m_actions;
     bool m_collapsed = false;
+    QSet<QString> m_hidden;
+    QSet<QString> m_unavailable;
 };
 
 } // namespace oc

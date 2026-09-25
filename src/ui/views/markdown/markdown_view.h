@@ -43,7 +43,7 @@ public:
     QJsonObject ephemeralState() const override;
     void setEphemeralState(const QJsonObject& eState) override;
     QList<QWidget*> headerActions() override;
-    void populatePaneMenu(QMenu* menu) override;
+    void paneMenuEntries(QList<MenuEntry>& items, const QString& source) override;
     void onClose() override;
     void focusContent() override;
 

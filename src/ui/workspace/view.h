@@ -10,6 +10,7 @@ class QMenu;
 
 namespace oc {
 
+struct MenuEntry;
 class TFile;
 class VaultSession;
 class Workspace;
@@ -44,6 +45,10 @@ public:
     virtual bool showsViewHeader() const { return true; }
     // Items for the header's "More options" menu.
     virtual void populatePaneMenu(QMenu* menu) { Q_UNUSED(menu); }
+    // (additive) Obsidian's onPaneMenu(menu, source): sectioned items of the "More options" menu
+    // (source "more-options") and the tab header menu ("tab-header"), laid out by paneMenuLayout().
+    // The default adds "Split right" / "Split down"; FileView adds the "file-menu" hooks' items.
+    virtual void paneMenuEntries(QList<MenuEntry>& items, const QString& source);
     // Extra action buttons shown in the view header (right side), e.g. reading/editing toggle.
     virtual QList<QWidget*> headerActions() { return {}; }
 
@@ -75,6 +80,7 @@ public:
     virtual void onDelete(TFile* file);
 
     QString displayText() const override;
+    void paneMenuEntries(QList<MenuEntry>& items, const QString& source) override;
     QJsonObject state() const override;
     void setState(const QJsonObject& state) override; // {"file": "<vault path>"}
 

@@ -19,8 +19,12 @@ oc_add_library(oc_ui
     overlay/modal.h
     overlay/overlay_layer.cpp
     overlay/suggest_modal.cpp
+    overlay/text_prompt_modal.cpp
     picker/vault_picker.cpp
+    plugins/core_file_menu.cpp
+    plugins/core_plugins.cpp
     plugins/file_recovery_ui.cpp
+    plugins/pdf_export_ui.cpp
     plugins/note_composer_ui.cpp
     plugins/note_plugins_ui.cpp
     settings/hotkeys_tab.cpp
