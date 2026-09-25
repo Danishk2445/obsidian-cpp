@@ -125,3 +125,19 @@ Open parity questions:
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
   the very top adds no blank line before it.
+
+## Settings (M7)
+- ✅ Modal: Obsidian 1.13's sidebar layout (search, Options / Core plugins / Community plugins groups), setting
+  cards (groups, lists, sub-pages with back button), global settings search (simple search over names,
+  descriptions, aliases; grouped hits, "N more"), keyboard navigation in the sidebar, Esc closes a page first
+- ✅ Tabs in 1.13's order: General, Appearance, Interface, Editor, Files and links, Hotkeys, Keychain (empty state:
+  no plugins use secrets), Core plugins, Community plugins (restricted-mode explanation + built-in Greentext Guard)
+- ✅ Plugin tabs: Backlinks, Command palette (pinned), Daily notes, File recovery, Note composer, Page preview,
+  Quick switcher, Templates, Unique note creator, Greentext Guard
+- ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
+  Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
+- 🟡 Stored but not applied yet: line numbers, indentation guides, RTL, strict line breaks, properties in document,
+  Vim mode, always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
+  bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
+- 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
+- ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
