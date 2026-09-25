@@ -94,6 +94,25 @@ public:
     QRectF caretRectAt(qsizetype pos) const; // viewport coordinates of a caret at `pos`
     qsizetype positionAt(const QPoint& viewportPos);
 
+    // Caret shape. Block: a filled box over the character at the cursor, drawn in
+    // --interactive-accent with the character in --text-on-accent (vim's "fat cursor" in normal,
+    // visual and replace modes); for a forward selection the box covers the character before the
+    // head (the last selected one) unless the head is at a line break. mainOnly: draw it for the
+    // main range only (vim visual-block mode).
+    enum class CursorShape { Bar, Block };
+    void setCursorShape(CursorShape shape, bool mainOnly = false);
+    CursorShape cursorShape() const { return m_cursorShape; }
+    // Viewport rectangle of the block cursor for `range` (empty when the shape is Bar or the
+    // position isn't laid out as text).
+    QRectF blockCursorRect(const SelRange& range) const;
+
+    // A panel docked at the bottom of the editor, below the scrolling text and spanning its full
+    // width (CodeMirror's bottom panels; vim's ":" / "/" prompt). The view reserves its
+    // sizeHint() height; call updateBottomPanel() after its content or visibility changed.
+    void setBottomPanel(QWidget* panel);
+    QWidget* bottomPanel() const { return m_bottomPanel; }
+    void updateBottomPanel();
+
     // A widget shown above the first line that scrolls with the text (Obsidian's inline title and
     // properties). It is reparented to the viewport; its heightForWidth() (or sizeHint height) plus
     // `bottomMargin` is reserved above the text, at the text column's width.
@@ -215,6 +234,11 @@ private:
     int m_topWidgetMargin = 0;
     qreal m_topWidgetH = 0;     // reserved height (widget + margin)
     void positionTopWidget();
+    QPointer<QWidget> m_bottomPanel;
+    CursorShape m_cursorShape = CursorShape::Bar;
+    bool m_cursorMainOnly = false;
+    qsizetype blockCursorPos(const SelRange& r) const;
+    void paintBlockCursor(QPainter& p, const SelRange& r);
     double m_contentLeft = 0;
     double m_scrollTop = 0; // doc y at the viewport top (can be negative: top margin)
     bool m_settingScroll = false;

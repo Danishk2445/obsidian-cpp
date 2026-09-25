@@ -137,10 +137,42 @@ Open parity questions:
 - ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
 - 🟡 Stored but not applied yet: line numbers, indentation guides, RTL, strict line breaks, properties in document,
-  Vim mode, always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
+  always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
   bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
+
+## Vim mode (M8)
+- ✅ "Vim key bindings" (`vimMode`) toggles live on every open editor. Behaviour follows the vim.js Obsidian 1.13
+  ships (CodeMirror-vim on its CM6 adapter); a 404-case key-sequence table is checked against that code run as an
+  oracle (CodeMirror 6 + jsdom, indentUnit "\t", tabSize 4).
+- ✅ Modes normal / insert / replace / visual / visual-line / visual-block; counts; motions (h j k l w W b B e E ge gE
+  0 ^ $ g_ gg G | f F t T ; , % { } ( ) H M L gj gk g0 g^ g$ + - _ * # n N / ? gn gN ]` [` marks); operators
+  (d c y > < = g~ gu gU gq gw, ~ u U in visual); text objects (w W s p quotes brackets b B tags); x X s S C D Y p P
+  ]p [p J gJ r R ~ o O a A i I gI gi <C-a> <C-x> . u <C-r>; registers ("a-"z, "A-"Z, "0-"9, "-, "", "_, ".", ":",
+  "/", "+ and "* = system clipboard); marks, jumps (<C-o>/<C-i> unless a hotkey owns them), macros (q @ @@);
+  visual o O gv I A (block insert); insert-mode <C-w> <C-u> <C-o> <C-r>x <C-t> <C-d> <Esc> <C-[> <C-c>; user
+  mappings (:map :nmap :imap :noremap … :unmap :mapclear).
+- ✅ Ex: :{range} :s :%s :'<,'>s (flags g i c, count), :g :v :normal :sort :d :y :j :delmarks :marks :registers :noh
+  :set (pcre, textwidth, insertModeEscKeysTimeout, filetype) :undo :redo :startinsert :image, plus :w :q :wq :x
+  (Obsidian's "editor:save-file" / "workspace:close").
+- ✅ The ":" / "/" command line and messages are a panel docked under the text (.cm-vim-panel styling); block cursor in
+  --interactive-accent with the glyph in --text-on-accent; search matches use the search highlight.
+- ✅ Obsidian's hotkeys keep precedence over vim (Obsidian resolves them in a capture-phase keydown listener): Mod+P,
+  Mod+O (not vim's jump back), Mod+E, Mod+D (not half-page down), Mod+F, Mod+W … run their commands; unbound chords
+  (<C-r> <C-v> <C-a> <C-x> <C-[> <C-y> …) and plain keys reach vim.
+- ✅ Each vim command and each insert session is one undo step (Document History groups); undo/redo put the cursor at
+  the start of the change like Obsidian's adapter.
+- Differences (deliberate): a count past the line end moves / deletes to the end ("5l", "5x"; Obsidian's moveByChar
+  does nothing); "g_", "za/zo/zc/zR/zM" and ":q/:wq/:x" exist (not in Obsidian's keymap); "it"/"at" find tags by
+  scanning the text (Obsidian uses the syntax tree); ":j" with a range joins all its lines and ":y" takes the range
+  (Obsidian: one line too few / the cursor line, and a blockwise "0); "* is the clipboard (Obsidian: not a register);
+  "+p reads the clipboard synchronously; insert-mode deletions are part of "." (Obsidian records insertions only);
+  ":s" uses the match's own captures for $1… (Obsidian re-runs the pattern on the matched text); undo steps are
+  per command / insert session (CodeMirror joins changes within 500 ms).
+- ⬜ Not done: langmap, :colorscheme, multi-cursor "run the command for every cursor" outside visual-block, image
+  actions (g+ g- g= g<CR>), table-cell and embedded-image navigation with h/l/j/k, focusing the properties/title with k
+  on the first line.
 
 ## Media views and embeds (M8)
 - ✅ Views for Obsidian's extension lists: "image" (bmp png jpg jpeg gif svg webp avif), "audio" (mp3 wav m4a 3gp
