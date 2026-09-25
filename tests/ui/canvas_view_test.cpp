@@ -355,6 +355,35 @@ TEST_F(CanvasTest, DoubleClickCreatesAndEditsATextCard)
     EXPECT_FALSE(c->data().node(n.id));
 }
 
+TEST_F(CanvasTest, KeysAndClicksReachTheCardEditor)
+{
+    CanvasView* cv = openCanvas("Plain.canvas");
+    ASSERT_TRUE(cv);
+    CanvasWidget* c = cv->canvas();
+    window->activateWindow();
+    QApplication::setActiveWindow(window);
+    c->setViewport(300, 200, 0);
+    dclick(c, QPointF(100, 50)); // edit "Alpha" in place
+    ASSERT_EQ(c->editingId(), "a");
+    EditorView* ed = c->activeEditor();
+    ASSERT_TRUE(ed);
+    // Keys typed while the canvas has focus go to the proxied editor.
+    ed->setCursorPosition(ed->document()->text().length());
+    QTest::keyClicks(c, " one");
+    EXPECT_EQ(c->data().node(u"a")->text, "Alpha one");
+    // Delete/Backspace edit the text instead of removing the card.
+    QTest::keyClick(c, Qt::Key_Backspace);
+    EXPECT_EQ(c->data().node(u"a")->text, "Alpha on");
+    EXPECT_TRUE(c->data().node(u"a"));
+    // Clicks inside the card place the cursor; a click outside ends editing.
+    click(c, QPointF(20, 30));
+    EXPECT_EQ(c->editingId(), "a");
+    click(c, QPointF(300, 220));
+    EXPECT_TRUE(c->editingId().isEmpty());
+    EXPECT_TRUE(c->selection().isEmpty());
+    EXPECT_EQ(c->data().node(u"a")->text, "Alpha on");
+}
+
 TEST_F(CanvasTest, ClickSelectsBoxSelectsAndShiftToggles)
 {
     CanvasView* cv = openCanvas("Plain.canvas");
