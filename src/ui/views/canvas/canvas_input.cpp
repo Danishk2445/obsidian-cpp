@@ -261,6 +261,13 @@ void CanvasWidget::mousePressEvent(QMouseEvent* e)
         QGraphicsView::mousePressEvent(e);
         return;
     }
+    // The focused media card's viewer / player (its resizers still resize).
+    if (e->button() != Qt::MiddleButton && !m_spaceHeld && overFocusedMedia(mapToScene(e->pos()))
+        && hitTest(mapToCanvas(e->pos())).handle == Handle::None) {
+        setProperty("ocForwardMouse", true);
+        QGraphicsView::mousePressEvent(e);
+        return;
+    }
     if (m_labelEdit && m_labelEdit->isVisible())
         finishLabelEdit(true);
     setFocus(Qt::MouseFocusReason);
@@ -347,7 +354,8 @@ void CanvasWidget::mousePressEvent(QMouseEvent* e)
 void CanvasWidget::mouseMoveEvent(QMouseEvent* e)
 {
     m_lastMouse = e->pos();
-    if (property("ocForwardMouse").toBool() || (!m_drag && editorContains(m_editorProxy, mapToScene(e->pos())))) {
+    if (property("ocForwardMouse").toBool()
+        || (!m_drag && (editorContains(m_editorProxy, mapToScene(e->pos())) || overFocusedMedia(mapToScene(e->pos()))))) {
         QGraphicsView::mouseMoveEvent(e);
         if (!property("ocForwardMouse").toBool())
             viewport()->unsetCursor();
@@ -521,7 +529,7 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent* e)
 void CanvasWidget::mouseDoubleClickEvent(QMouseEvent* e)
 {
     const QPointF cp = mapToCanvas(e->pos());
-    if (editorContains(m_editorProxy, mapToScene(e->pos()))) {
+    if (editorContains(m_editorProxy, mapToScene(e->pos())) || overFocusedMedia(mapToScene(e->pos()))) {
         QGraphicsView::mouseDoubleClickEvent(e);
         return;
     }
@@ -1044,6 +1052,14 @@ void CanvasWidget::keyPressEvent(QKeyEvent* e)
         QGraphicsView::keyPressEvent(e);
         return;
     }
+    // Keys belong to a focused media card's viewer / player (Escape leaves it).
+    if (QGraphicsItem* fi = scene()->focusItem(); fi && fi != m_editorProxy) {
+        if (e->key() != Qt::Key_Escape) {
+            QGraphicsView::keyPressEvent(e);
+            return;
+        }
+        scene()->clearFocus();
+    }
     const Qt::KeyboardModifiers mods = e->modifiers();
     const bool ctrl = mods & Qt::ControlModifier;
     const bool shift = mods & Qt::ShiftModifier;
@@ -1146,7 +1162,7 @@ void CanvasWidget::keyPressEvent(QKeyEvent* e)
 
 void CanvasWidget::keyReleaseEvent(QKeyEvent* e)
 {
-    if (m_editorProxy && m_editorProxy->hasFocus()) {
+    if ((m_editorProxy && m_editorProxy->hasFocus()) || (scene()->focusItem() && scene()->focusItem() != m_editorProxy)) {
         QGraphicsView::keyReleaseEvent(e);
         return;
     }
@@ -1168,7 +1184,7 @@ void CanvasWidget::wheelEvent(QWheelEvent* e)
         return;
     const QPoint pos = e->position().toPoint();
     const bool ctrl = e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier);
-    if (!ctrl && editorContains(m_editorProxy, mapToScene(pos))) {
+    if (!ctrl && (editorContains(m_editorProxy, mapToScene(pos)) || overFocusedMedia(mapToScene(pos)))) {
         QGraphicsView::wheelEvent(e);
         return;
     }
@@ -1266,7 +1282,7 @@ void CanvasWidget::popupMenu(QMenu* menu, const QPoint& globalPos)
 
 void CanvasWidget::contextMenuEvent(QContextMenuEvent* e)
 {
-    if (editorContains(m_editorProxy, mapToScene(e->pos()))) {
+    if (editorContains(m_editorProxy, mapToScene(e->pos())) || overFocusedMedia(mapToScene(e->pos()))) {
         QGraphicsView::contextMenuEvent(e);
         return;
     }

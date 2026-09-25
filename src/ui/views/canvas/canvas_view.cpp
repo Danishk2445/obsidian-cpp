@@ -1,5 +1,6 @@
 #include "ui/views/canvas/canvas_view.h"
 
+#include "core/canvas/canvas_links.h"
 #include "core/config/clone_paths.h"
 #include "core/config/config_store.h"
 #include "core/config/json_file.h"
@@ -13,6 +14,9 @@
 #include "ui/workspace/workspace.h"
 
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QRegularExpression>
 #include <QMenu>
 #include <QVBoxLayout>
 
@@ -272,7 +276,14 @@ void CanvasView::setEphemeralState(const QJsonObject& eState)
     if (eState.value(u"focus").toBool())
         m_canvas->setFocus();
     const QJsonObject match = eState.value(u"match").toObject();
-    const QString nodeId = match.value(u"nodeId").toString();
+    QString nodeId = match.value(u"nodeId").toString();
+    if (nodeId.isEmpty() && match.contains(u"content")) {
+        // A match in the text of the cards (canvasText(): the backlink pane's snippets).
+        const CanvasText text = canvasText(m_canvas->data());
+        const QJsonArray ranges = match.value(u"matches").toArray();
+        if (!ranges.isEmpty() && match.value(u"content").toString() == text.text)
+            nodeId = text.nodeAt(ranges.first().toArray().first().toInteger());
+    }
     if (const Node* n = m_canvas->data().node(nodeId)) {
         m_canvas->selectOnly(nodeId);
         m_canvas->panIntoView(n->rect());

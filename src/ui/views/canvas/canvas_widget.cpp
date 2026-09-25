@@ -9,6 +9,7 @@
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
+#include "editor/embeds/embed_registry.h"
 #include "editor/live_preview_decorator.h"
 #include "render/services/image_cache.h"
 #include "render/theme/icons.h"
@@ -283,6 +284,7 @@ CanvasWidget::~CanvasWidget()
 {
     stopEditing();
     m_drag.reset();
+    m_media.clear();
 }
 
 void CanvasWidget::setSession(VaultSession* session)
@@ -670,6 +672,7 @@ void CanvasWidget::resizeEvent(QResizeEvent* e)
 void CanvasWidget::showEvent(QShowEvent* e)
 {
     QGraphicsView::showEvent(e);
+    m_syncedRevision = ~0ull;
     scene()->setSceneRect(QRectF(QPointF(0, 0), QSizeF(viewport()->size())));
     if ((m_fitQueued || m_autoFit) && viewport()->width() > 0 && viewport()->height() > 0)
         autoFit();
@@ -820,6 +823,69 @@ void CanvasWidget::syncItems()
     m_overlay->update();
     if (m_controls)
         m_controls->setHistory(canUndo(), canRedo());
+    updateMediaWidgets();
+}
+
+void CanvasWidget::updateMediaWidgets()
+{
+    using canvasui::EmbedContent;
+    const QRectF visible = m_vp.visibleRect();
+    QSet<QString> keep;
+    const bool live = !isZoomedOut() && m_error.isEmpty() && isVisible();
+    for (const Node& n : m_doc.data().nodes) {
+        if (n.type != NodeType::File || !n.isShown())
+            continue;
+        auto* content = dynamic_cast<EmbedContent*>(contentFor(n.id));
+        MediaHost* host = m_media.contains(n.id) ? &m_media[n.id] : nullptr;
+        const bool busy = host && host->proxy && host->proxy->widget() && host->proxy->widget()->property("ocEmbedBusy").toBool();
+        if (!content || (!busy && (!live || !n.rect().intersects(visible))))
+            continue;
+        const QString key = content->request().key();
+        if (!host || !host->proxy || host->key != key) {
+            if (host && host->proxy)
+                host->proxy->deleteLater();
+            EmbedContext ctx;
+            ctx.request = content->request();
+            QWidget* w = content->provider()->createWidget(ctx, nullptr);
+            if (!w)
+                continue;
+            auto* proxy = new QGraphicsProxyWidget(m_root);
+            proxy->setWidget(w);
+            m_media.insert(n.id, MediaHost{proxy, key});
+            host = &m_media[n.id];
+        }
+        keep.insert(n.id);
+        const QRectF inner = n.rect().adjusted(2, 2, -2, -2); // inside the card's border and selection ring
+        host->proxy->setGeometry(inner);
+        if (host->proxy->widget() && host->proxy->widget()->size() != inner.size().toSize())
+            host->proxy->widget()->resize(inner.size().toSize());
+        const CanvasItem* item = m_nodeItems.value(n.id);
+        host->proxy->setZValue((item ? item->zValue() : 1) + 0.5);
+        host->proxy->setVisible(n.id != m_editingId);
+    }
+    for (auto it = m_media.begin(); it != m_media.end();) {
+        if (!keep.contains(it.key())) {
+            if (it->proxy)
+                it->proxy->deleteLater();
+            it = m_media.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+QWidget* CanvasWidget::mediaWidget(const QString& nodeId) const
+{
+    const auto it = m_media.constFind(nodeId);
+    return it != m_media.cend() && it->proxy ? it->proxy->widget() : nullptr;
+}
+
+bool CanvasWidget::overFocusedMedia(const QPointF& scenePos) const
+{
+    if (m_selection.size() != 1)
+        return false;
+    const auto it = m_media.constFind(*m_selection.begin());
+    return it != m_media.cend() && it->proxy && it->proxy->isVisible() && it->proxy->sceneBoundingRect().contains(scenePos);
 }
 
 void CanvasWidget::paintItem(QPainter* p, const CanvasItem& item)
@@ -892,6 +958,11 @@ std::unique_ptr<canvasui::CardContent> CanvasWidget::buildContent(const Node& n)
         }
         if (isImagePath(f->path()))
             return std::make_unique<ImageContent>(vault->absolutePath(f->path()));
+        if (ext != u"canvas") {
+            // PDF, audio, video: the media module's embed providers.
+            if (std::shared_ptr<EmbedProvider> provider = EmbedRegistry::instance().provider(ext))
+                return std::make_unique<EmbedContent>(provider, EmbedRequest::fromLink(vault->absolutePath(f->path()), f->path(), n.subpath));
+        }
         if (ext == u"canvas") {
             if (const std::optional<QByteArray> bytes = vault->read(f->path(), nullptr, nullptr))
                 if (std::optional<CanvasData> data = parseCanvas(*bytes))
@@ -1380,6 +1451,8 @@ void CanvasWidget::setSelectionInternal(QSet<QString> ids)
         stopEditing();
     if (!m_labelTarget.isEmpty())
         finishLabelEdit(true);
+    if (QGraphicsItem* fi = scene()->focusItem(); fi && fi != m_editorProxy)
+        scene()->clearFocus(); // a media card's widget had the keys
     m_selection = std::move(ids);
     m_syncedRevision = ~0ull;
     syncItems();
@@ -1462,6 +1535,23 @@ QString CanvasWidget::createFileNode(const QString& path, const QPointF& pos, An
         if (nat.isValid() && nat.height() > 0) {
             const double ratio = double(nat.width()) / nat.height();
             sz = QSizeF(std::min(sz.width(), sz.height() * ratio), std::min(sz.height(), sz.width() / ratio));
+        }
+    } else if (m_session && m_session->vault() && !size) {
+        // Audio cards take the player's height, videos their picture's ratio (Obsidian resizes the card
+        // once the media has loaded).
+        const QString ext = path.section(u'.', -1).toLower();
+        static const QStringList audio = {u"mp3"_s, u"wav"_s, u"m4a"_s, u"3gp"_s, u"flac"_s, u"ogg"_s, u"oga"_s, u"opus"_s};
+        static const QStringList video = {u"mp4"_s, u"webm"_s, u"ogv"_s, u"mov"_s, u"mkv"_s};
+        if (const std::shared_ptr<EmbedProvider> provider = EmbedRegistry::instance().provider(ext);
+            provider && (audio.contains(ext) || video.contains(ext))) {
+            const EmbedRequest req = EmbedRequest::fromLink(m_session->vault()->absolutePath(path), path, subpath);
+            const QSizeF natural = provider->size(req, sz.width());
+            if (audio.contains(ext)) {
+                sz.setHeight(natural.height());
+            } else if (natural.height() > 0) {
+                const double ratio = natural.width() / natural.height();
+                sz = QSizeF(std::min(sz.width(), sz.height() * ratio), std::min(sz.height(), sz.width() / ratio));
+            }
         }
     }
     n.setRect(QRectF(placeRect(pos, sz, anchor), sz));

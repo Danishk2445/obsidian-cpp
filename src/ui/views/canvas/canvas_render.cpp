@@ -8,10 +8,13 @@
 #include "render/theme/theme.h"
 #include "text/text.h"
 
+#include <QFileInfo>
 #include <QFontMetricsF>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <QWidget>
 
 #include <cmath>
 
@@ -299,9 +302,19 @@ MinimapContent::MinimapContent(canvas::CanvasData data)
 {
 }
 
+namespace {
+void paintMinimap(QPainter* p, const QRectF& rect, const canvas::CanvasData& m_data);
+} // namespace
+
 void MinimapContent::paint(QPainter* p, const QRectF& rect, double scroll)
 {
     Q_UNUSED(scroll);
+    paintMinimap(p, rect, m_data);
+}
+
+namespace {
+void paintMinimap(QPainter* p, const QRectF& rect, const canvas::CanvasData& m_data)
+{
     using namespace oc::canvas;
     const Palette& pal = Palette::current();
     QRectF box = allNodesBounds(m_data);
@@ -349,6 +362,7 @@ void MinimapContent::paint(QPainter* p, const QRectF& rect, double scroll)
             drawNode(n);
     p->restore();
 }
+} // namespace
 
 // ---------------------------------------------------------------------------------------------
 // PlaceholderContent
@@ -392,6 +406,159 @@ void PlaceholderContent::paint(QPainter* p, const QRectF& rect, double scroll)
         p->drawText(l2, Qt::AlignHCenter | Qt::AlignTop, fm.elidedText(m_subtitle, Qt::ElideMiddle, l2.width()));
     }
     p->restore();
+}
+
+// ---------------------------------------------------------------------------------------------
+// EmbedContent
+// ---------------------------------------------------------------------------------------------
+
+EmbedContent::EmbedContent(std::shared_ptr<EmbedProvider> provider, EmbedRequest request)
+    : m_provider(std::move(provider))
+    , m_request(std::move(request))
+{
+}
+
+void EmbedContent::paint(QPainter* p, const QRectF& rect, double scroll)
+{
+    Q_UNUSED(scroll);
+    if (!m_provider)
+        return;
+    p->save();
+    p->setClipRect(rect, Qt::IntersectClip);
+    m_provider->paint(p, rect, m_request);
+    p->restore();
+}
+
+double EmbedContent::aspectRatio() const
+{
+    // Obsidian: videos keep their picture's ratio (like images); PDFs and audio resize freely.
+    static const QStringList video = {u"mp4"_s, u"webm"_s, u"ogv"_s, u"mov"_s, u"mkv"_s};
+    if (!m_provider || !video.contains(m_request.extension))
+        return 0;
+    const QSizeF s = m_provider->size(m_request, 1000);
+    return s.height() > 0 && s.width() > 0 && s.height() != 42 ? s.width() / s.height() : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Canvas embeds in notes
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+constexpr double kEmbedCanvasMaxHeight = 400; // --embed-canvas-max-height
+
+// Parsed canvases by path + mtime (embeds repaint often).
+std::shared_ptr<const canvas::CanvasData> embeddedCanvas(const QString& absPath)
+{
+    struct Entry {
+        qint64 mtime = -1;
+        std::shared_ptr<const canvas::CanvasData> data;
+    };
+    static QHash<QString, Entry> cache;
+    const QFileInfo fi(absPath);
+    const qint64 mtime = fi.exists() ? fi.lastModified().toMSecsSinceEpoch() : -1;
+    Entry& e = cache[absPath];
+    if (!e.data || e.mtime != mtime) {
+        e.mtime = mtime;
+        QFile f(absPath);
+        std::optional<canvas::CanvasData> d = f.open(QIODevice::ReadOnly) ? canvas::parseCanvas(f.readAll()) : std::nullopt;
+        e.data = std::make_shared<const canvas::CanvasData>(d ? std::move(*d) : canvas::CanvasData{});
+    }
+    return e.data;
+}
+
+double titleRowHeight()
+{
+    const ThemePtr t = currentTheme();
+    const double px = t ? t->px(u"--font-text-size"_s, -1, 16) : 16;
+    return std::ceil(px * 1.5) + 8; // .embed-title: one line + padding-bottom var(--size-4-2)
+}
+
+class CanvasEmbedProvider : public EmbedProvider {
+public:
+    QSizeF size(const EmbedRequest& request, qreal maxWidth) const override
+    {
+        const double w = std::max<qreal>(80, maxWidth);
+        const std::shared_ptr<const canvas::CanvasData> data = embeddedCanvas(request.absPath);
+        double h = 150;
+        const QRectF box = canvas::allNodesBounds(*data);
+        if (!box.isEmpty())
+            h = std::clamp((w - 8) * box.height() / box.width() + 8, 60.0, kEmbedCanvasMaxHeight);
+        if (request.display == EmbedRequest::Display::Popover)
+            return QSizeF(std::min<qreal>(450, w), std::min(400.0, h + titleRowHeight()));
+        return QSizeF(w, h + titleRowHeight());
+    }
+    void paint(QPainter* p, const QRectF& rect, const EmbedRequest& request) const override
+    {
+        const Palette& pal = Palette::current();
+        const ThemePtr t = currentTheme();
+        const double px = t ? t->px(u"--font-text-size"_s, -1, 16) : 16;
+        // .embed-title: the canvas icon and the file's name
+        const double rowH = titleRowHeight() - 8;
+        const double iconPx = std::round(px);
+        const double dpr = std::max(1.0, std::abs(p->combinedTransform().m11()));
+        const QPixmap icon = IconProvider::instance().pixmap(u"layout-dashboard"_s, int(iconPx), pal.textMuted, 1.75, dpr);
+        p->drawPixmap(QRectF(rect.left(), rect.top() + (rowH - iconPx) / 2, iconPx, iconPx), icon, QRectF(icon.rect()));
+        QFont f = t ? t->textFont(px) : QFont();
+        f.setWeight(QFont::DemiBold);
+        p->setFont(f);
+        p->setPen(pal.textNormal);
+        const QRectF titleRect(rect.left() + iconPx + 4, rect.top(), rect.width() - iconPx - 4, rowH);
+        const QString name = QFileInfo(request.absPath).completeBaseName();
+        p->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, QFontMetricsF(f).elidedText(name, Qt::ElideRight, titleRect.width()));
+        const QRectF map(rect.left(), rect.top() + titleRowHeight(), rect.width(), rect.height() - titleRowHeight());
+        paintMinimap(p, map, *embeddedCanvas(request.absPath));
+    }
+    QWidget* createWidget(const EmbedContext& context, QWidget* parent) const override;
+    quint64 signature(const EmbedRequest& request) const override
+    {
+        const QFileInfo fi(request.absPath);
+        return quint64(fi.exists() ? fi.lastModified().toMSecsSinceEpoch() : 0);
+    }
+};
+
+// The live embed: the same painting; a click opens the canvas (Mod: in a new tab).
+class CanvasEmbedWidget : public QWidget {
+public:
+    CanvasEmbedWidget(const CanvasEmbedProvider* provider, EmbedContext context, QWidget* parent)
+        : QWidget(parent)
+        , m_provider(provider)
+        , m_ctx(std::move(context))
+    {
+        setObjectName(u"ocCanvasEmbed"_s);
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        m_provider->paint(&p, QRectF(rect()), m_ctx.request);
+    }
+    void mouseReleaseEvent(QMouseEvent* e) override
+    {
+        if (e->button() == Qt::LeftButton && rect().contains(e->pos()))
+            EmbedRegistry::instance().open(this, m_ctx.request, (e->modifiers() & Qt::ControlModifier) ? u"tab"_s : QString());
+    }
+
+private:
+    const CanvasEmbedProvider* m_provider;
+    EmbedContext m_ctx;
+};
+
+QWidget* CanvasEmbedProvider::createWidget(const EmbedContext& context, QWidget* parent) const
+{
+    return new CanvasEmbedWidget(this, context, parent);
+}
+} // namespace
+
+void registerCanvasEmbed()
+{
+    static const std::shared_ptr<CanvasEmbedProvider> provider = std::make_shared<CanvasEmbedProvider>();
+    EmbedRegistry& r = EmbedRegistry::instance();
+    if (r.provider(u"canvas"_s) != provider)
+        r.registerExtensions({u"canvas"_s}, provider);
 }
 
 } // namespace oc::canvasui

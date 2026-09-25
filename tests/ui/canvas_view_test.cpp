@@ -4,6 +4,7 @@
 // in-place editing, commands and renames. With OC_SHOT_DIR set, writes canvas-{dark,light}.png and
 // canvas-zoom-{dark,light}.png.
 #include "ui/app_test_support.h"
+#include "ui/media_test_support.h"
 
 #include "core/canvas/canvas_model.h"
 #include "core/commands/command_registry.h"
@@ -15,6 +16,10 @@
 #include "ui/views/canvas/canvas_render.h"
 #include "ui/views/canvas/canvas_view.h"
 #include "ui/views/canvas/canvas_widget.h"
+#include "ui/views/file_explorer/file_explorer_view.h"
+#include "ui/views/file_explorer/file_tree.h"
+#include "ui/views/sidebar/backlink_view.h"
+#include "ui/views/sidebar/sidebar_registration.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -113,7 +118,7 @@ protected:
             {"Notes/Idea.md", "# Idea\n\nSome **important** idea with a [[Plan]] link.\n\n## Details\n\n- first\n- second\n\n## Other\n\nMore.\n"},
             {"Plan.md", "# Plan\n\nStep one.\n"},
             {"attachments/image.png", fixtureBytes("vault-basic/attachments/image.png")},
-            {"docs/Manual.pdf", "%PDF-1.4\n% placeholder\n"},
+            {"docs/Manual.pdf", makePdf(1)},
             {"Showcase.canvas", kShowcase},
             {"Mini.canvas", kMini},
             {"Plain.canvas", kPlain},
@@ -751,7 +756,7 @@ TEST_F(CanvasTest, CardContentsAndLinks)
     EXPECT_TRUE(dynamic_cast<canvasui::ImageContent*>(c->contentFor("i1")));
     EXPECT_GT(c->contentFor("i1")->aspectRatio(), 0);
     EXPECT_TRUE(dynamic_cast<canvasui::MinimapContent*>(c->contentFor("m1")));
-    EXPECT_TRUE(dynamic_cast<canvasui::PlaceholderContent*>(c->contentFor("p1")));
+    EXPECT_TRUE(dynamic_cast<canvasui::PlaceholderContent*>(c->contentFor("p1")) || dynamic_cast<canvasui::EmbedContent*>(c->contentFor("p1")));
     EXPECT_TRUE(dynamic_cast<canvasui::PlaceholderContent*>(c->contentFor("x1")));
     // A subpath card shows only its section.
     auto* details = dynamic_cast<canvasui::MarkdownContent*>(c->contentFor("f2"));
@@ -817,6 +822,127 @@ TEST_F(CanvasTest, FileDropsFromTheExplorer)
     EXPECT_TRUE(c->ocFileDrag({"Notes"}, global, true));
     EXPECT_EQ(c->data().nodes.size(), 2);
     EXPECT_FALSE(c->ocFileDrag({"Plan.md"}, c->viewport()->mapToGlobal(QPoint(-50, -50)), true));
+}
+
+TEST_F(CanvasTest, DragFromTheFileExplorerAddsACard)
+{
+    registerFileExplorerView(*registry);
+    Workspace* ws = window->workspace();
+    WorkspaceLeaf* side = ws->ensureSideLeaf("file-explorer", Workspace::Side::Left, true);
+    ASSERT_TRUE(side);
+    auto* fe = qobject_cast<FileExplorerView*>(side->view());
+    ASSERT_TRUE(fe);
+    CanvasView* cv = openCanvas("Empty.canvas");
+    ASSERT_TRUE(cv);
+    CanvasWidget* c = cv->canvas();
+    QApplication::processEvents();
+    FileTree* tree = fe->tree();
+    const int row = tree->rowOf(vault->item("Plan.md"));
+    ASSERT_GE(row, 0);
+    const QPoint from = tree->rowRect(row).center();
+    const QPoint dropView = c->viewport()->rect().center();
+    const QPoint target = tree->viewport()->mapFromGlobal(c->viewport()->mapToGlobal(dropView));
+    QWidget* vp = tree->viewport();
+    send(vp, QEvent::MouseButtonPress, from, Qt::LeftButton, Qt::LeftButton, {});
+    send(vp, QEvent::MouseMove, from + QPoint(20, 0), Qt::NoButton, Qt::LeftButton, {});
+    send(vp, QEvent::MouseMove, target, Qt::NoButton, Qt::LeftButton, {});
+    send(vp, QEvent::MouseButtonRelease, target, Qt::LeftButton, Qt::NoButton, {});
+    QApplication::processEvents();
+    ASSERT_EQ(c->data().nodes.size(), 1);
+    EXPECT_EQ(c->data().nodes[0].type, NodeType::File);
+    EXPECT_EQ(c->data().nodes[0].file, "Plan.md");
+    EXPECT_EQ(c->data().nodes[0].rect().topLeft(), c->mapToCanvas(dropView));
+    // The canvas stays in its tab (no split was made for the file).
+    EXPECT_EQ(ws->activeRootLeaf()->view(), cv);
+}
+
+TEST_F(CanvasTest, MediaCardsHostTheMediaWidgets)
+{
+    media::registerMediaEmbeds();
+    ASSERT_TRUE(writeFile(root + "/docs/Manual.pdf", makePdf(2)));
+    ASSERT_TRUE(writeFile(root + "/audio/tone.wav", makeWav(1.0)));
+    vault->rescan();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return vault->file("audio/tone.wav") != nullptr; }, 5000));
+    CanvasView* cv = openCanvas("Empty.canvas");
+    ASSERT_TRUE(cv);
+    CanvasWidget* c = cv->canvas();
+    c->setViewport(300, 250, 0);
+    const QString pdf = c->createFileNode("docs/Manual.pdf", QPointF(0, 0), Anchor::TopLeft);
+    const QString wav = c->createFileNode("audio/tone.wav", QPointF(0, 450), Anchor::TopLeft);
+    // New audio cards take the player's height (Obsidian: the <audio> element's).
+    EXPECT_EQ(c->data().node(wav)->height, 42);
+    EXPECT_TRUE(dynamic_cast<canvasui::EmbedContent*>(c->contentFor(pdf)));
+    EXPECT_TRUE(dynamic_cast<canvasui::EmbedContent*>(c->contentFor(wav)));
+    // Live widgets while on screen, sized to the card.
+    QWidget* viewer = c->mediaWidget(pdf);
+    ASSERT_TRUE(viewer);
+    EXPECT_EQ(viewer->objectName(), "ocPdfEmbed");
+    EXPECT_EQ(viewer->size(), QSize(396, 396));
+    ASSERT_TRUE(c->mediaWidget(wav));
+    // An unfocused card is dragged, a focused one gets the clicks (Obsidian's content blocker).
+    c->deselectAll();
+    click(c, QPointF(200, 200));
+    EXPECT_EQ(c->selection(), QSet<QString>{pdf});
+    drag(c, QPointF(200, 200), QPointF(260, 260));
+    EXPECT_EQ(c->data().node(pdf)->rect().topLeft(), QPointF(0, 0)); // the viewer took the drag
+    c->deselectAll();
+    drag(c, QPointF(200, 200), QPointF(260, 260), Qt::AltModifier);
+    EXPECT_EQ(c->data().node(pdf)->rect().topLeft(), QPointF(60, 60));
+    // Zoomed out or off screen: static rendering only.
+    c->setViewport(300, 250, -2.5);
+    EXPECT_FALSE(c->mediaWidget(pdf));
+    c->setViewport(5000, 5000, 0);
+    EXPECT_FALSE(c->mediaWidget(pdf));
+    EXPECT_FALSE(c->grab().isNull());
+    if (const QString dir = qEnvironmentVariable("OC_SHOT_DIR"); !dir.isEmpty()) {
+        c->setViewport(300, 250, -0.3);
+        c->selectOnly(pdf);
+        QTest::qWait(200);
+        window->grab().save(dir + "/canvas-media-dark.png");
+    }
+}
+
+TEST_F(CanvasTest, CanvasEmbedInANote)
+{
+    media::registerMediaEmbeds(); // the embed opener
+    registerCanvasView(*registry); // registers the "canvas" embed provider too
+    ASSERT_TRUE(EmbedRegistry::instance().isExtensionRegistered("canvas"));
+    ASSERT_TRUE(writeFile(root + "/Embedding.md", "# Board\n\n![[Mini.canvas]]\n\nAfter.\n"));
+    vault->rescan();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return vault->file("Embedding.md") != nullptr; }, 5000));
+    ASSERT_TRUE(meta->waitUntilClean());
+    MarkdownView* mv = open("Embedding.md", EditorView::Mode::Reading);
+    ASSERT_TRUE(mv);
+    QApplication::processEvents();
+    QWidget* embed = nullptr;
+    ASSERT_TRUE(QTest::qWaitFor([&] { return (embed = mv->editor()->findChild<QWidget*>("ocCanvasEmbed")) != nullptr; }, 5000));
+    EXPECT_GT(embed->height(), 100);
+    EXPECT_LE(embed->height(), 400 + 40);
+    if (const QString dir = qEnvironmentVariable("OC_SHOT_DIR"); !dir.isEmpty())
+        window->grab().save(dir + "/canvas-embed-dark.png");
+    // A click opens the canvas.
+    QTest::mouseClick(embed, Qt::LeftButton, {}, embed->rect().center());
+    QApplication::processEvents();
+    auto* cv = qobject_cast<CanvasView*>(window->workspace()->activeRootLeaf()->view());
+    ASSERT_TRUE(cv);
+    EXPECT_EQ(cv->file()->path(), "Mini.canvas");
+}
+
+TEST_F(CanvasTest, BacklinksListCanvases)
+{
+    ASSERT_TRUE(meta->waitUntilClean());
+    registerSidebarViews(*registry);
+    Workspace* ws = window->workspace();
+    ws->openFile(vault->file("Plan.md"), Workspace::NewLeaf::No);
+    WorkspaceLeaf* leaf = ws->ensureSideLeaf("backlink", Workspace::Side::Right, true);
+    ASSERT_TRUE(leaf);
+    auto* bv = qobject_cast<BacklinkView*>(leaf->view());
+    ASSERT_TRUE(bv);
+    BacklinkPane* pane = bv->pane();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return pane->linkedFiles().contains("Showcase.canvas"); }, 5000));
+    // Notes/Idea.md links Plan too; the canvas' match is the [[Plan]] link in its text card.
+    EXPECT_TRUE(pane->linkedFiles().contains("Notes/Idea.md"));
+    EXPECT_EQ(pane->linkedCount(), 2);
 }
 
 TEST_F(CanvasTest, CommandsAndRenames)

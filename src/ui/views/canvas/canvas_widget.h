@@ -167,6 +167,8 @@ public:
 
     // Rendered card contents (tests).
     canvasui::CardContent* contentFor(const QString& nodeId);
+    // The live widget of a media card (PDF, audio, video) while it is on screen, else nullptr (tests).
+    QWidget* mediaWidget(const QString& nodeId) const;
     // The whole canvas as an image (Obsidian's "Export as image"): every card with a 100px margin at
     // `zoom` (log2, at most 1), without selection or controls.
     QImage renderImage(double zoom = 0);
@@ -332,6 +334,15 @@ private:
     };
     QHash<QString, ContentEntry> m_contents;
     QHash<QString, double> m_scroll; // content scroll of cards
+    // Live widgets of media cards (PDF viewer, players) while on screen; input reaches them only when the
+    // card is focused (Obsidian's .canvas-node-content-blocker).
+    struct MediaHost {
+        QPointer<QGraphicsProxyWidget> proxy;
+        QString key;
+    };
+    QHash<QString, MediaHost> m_media;
+    void updateMediaWidgets();
+    bool overFocusedMedia(const QPointF& scenePos) const;
     std::unique_ptr<LivePreviewDecorator> m_resolver;
 
     // interaction

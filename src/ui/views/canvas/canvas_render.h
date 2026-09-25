@@ -5,6 +5,7 @@
 // and notes, images, embedded canvases as minimaps, placeholders).
 
 #include "core/canvas/canvas_model.h"
+#include "editor/embeds/embed_registry.h"
 #include "render/layout/style_sheet.h"
 
 #include <QColor>
@@ -148,6 +149,26 @@ public:
 private:
     QString m_icon, m_title, m_subtitle;
 };
+
+// A file shown by an embed provider of the EmbedRegistry (PDF, audio, video): its static rendering.
+// The canvas hosts the provider's live widget over it while the card is on screen.
+class EmbedContent : public CardContent {
+public:
+    EmbedContent(std::shared_ptr<EmbedProvider> provider, EmbedRequest request);
+    void paint(QPainter* p, const QRectF& rect, double scroll) override;
+    double aspectRatio() const override; // videos keep their picture's ratio when resized
+    const EmbedRequest& request() const { return m_request; }
+    EmbedProvider* provider() const { return m_provider.get(); }
+
+private:
+    std::shared_ptr<EmbedProvider> m_provider;
+    EmbedRequest m_request;
+};
+
+// Obsidian's embed of a canvas in a note ("![[board.canvas]]"): the file name and a minimap of the
+// canvas, at most --embed-canvas-max-height (400px) tall; a click opens the canvas. Registered for the
+// "canvas" extension by registerCanvasView().
+void registerCanvasEmbed();
 
 } // namespace canvasui
 } // namespace oc

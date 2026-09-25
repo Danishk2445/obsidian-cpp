@@ -8,6 +8,7 @@
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
 #include "ui/views/canvas/canvas_modals.h"
+#include "ui/views/canvas/canvas_render.h"
 #include "ui/views/canvas/canvas_view.h"
 #include "ui/views/canvas/canvas_widget.h"
 #include "ui/workspace/file_menu.h"
@@ -154,6 +155,7 @@ void registerCanvasView(ViewRegistry& registry)
 {
     registry.registerView(u"canvas"_s, [](WorkspaceLeaf* leaf) -> View* { return new CanvasView(leaf); });
     registry.registerExtensions({u"canvas"_s}, u"canvas"_s);
+    canvasui::registerCanvasEmbed(); // "![[board.canvas]]" in notes: Obsidian's minimap embed
 }
 
 TFile* createNewCanvas(VaultSession* session, Workspace::NewLeaf mode, const QString& folder, bool useFolder)
