@@ -68,3 +68,4 @@ oc_add_test(perf_markdown_inline_test SOURCES markdown/inline_perf_test.cpp DEPS
 oc_add_test(editor_vim_keys_test SOURCES editor/vim_keys_test.cpp editor/vim_behavior_test.cpp editor/vim_test_support.h editor/vim_cases.inc DEPS oc_editor Qt6::Test GUI)
 oc_add_test(ui_vim_test SOURCES ui/vim_ui_test.cpp ui/app_test_support.h DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_settings_test SOURCES ui/settings_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(perf_vim_test SOURCES perf/vim_perf_test.cpp editor/vim_test_support.h DEPS oc_editor Qt6::Test GUI LABELS perf)

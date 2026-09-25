@@ -1274,7 +1274,8 @@ VimEngine::MotionResult VimEngine::textObjectManipulation(Pos head, Args& args)
             if (!m_visualLine)
                 m_visualLine = true;
         } else {
-            m_inputState->operatorArgs.linewise = true; // the pending operator (already cleared: see evalInput)
+            // (vim.js also flags the pending operator linewise, but its input state is already cleared
+            // here; motionArgs.linewise is what makes the operator linewise)
             tmp->end.line--;
         }
     } else if (c == u't') {
