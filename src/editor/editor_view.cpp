@@ -244,6 +244,54 @@ void EditorView::setTopWidget(QWidget* widget, int bottomMargin)
     updateTopWidget();
 }
 
+void EditorView::setFooterWidget(QWidget* widget, int topMargin)
+{
+    if (m_footer && m_footer != widget) {
+        m_footer->removeEventFilter(this);
+        m_footer->hide();
+    }
+    m_footer = widget;
+    m_footerMargin = topMargin;
+    if (widget) {
+        widget->setParent(viewport());
+        widget->installEventFilter(this);
+        widget->show();
+    }
+    updateFooterWidget();
+}
+
+void EditorView::updateFooterWidget()
+{
+    qreal h = 0;
+    if (m_footer && !m_footer->isHidden()) {
+        const int w = int(m_columnWidth);
+        h = m_footerMargin + (m_footer->hasHeightForWidth() ? m_footer->heightForWidth(w) : m_footer->sizeHint().height());
+    }
+    if (!qFuzzyCompare(h + 1, m_footerH + 1)) {
+        m_footerH = h;
+        updateScrollbar();
+    }
+    positionFooter();
+}
+
+void EditorView::positionFooter()
+{
+    if (!m_footer || m_footer->isHidden())
+        return;
+    const int top = int(std::round(m_marginTop + m_layout.totalHeight() + m_footerMargin - m_scrollTop));
+    const QRect r(int(m_columnLeft), top, int(m_columnWidth), int(std::max<qreal>(0, m_footerH - m_footerMargin)));
+    if (m_footer->geometry() != r)
+        m_footer->setGeometry(r);
+}
+
+bool EditorView::eventFilter(QObject* obj, QEvent* ev)
+{
+    // the footer's content changed size: re-measure once its layout has settled
+    if (obj == m_footer && ev->type() == QEvent::LayoutRequest)
+        QMetaObject::invokeMethod(this, &EditorView::updateFooterWidget, Qt::QueuedConnection);
+    return QAbstractScrollArea::eventFilter(obj, ev);
+}
+
 void EditorView::setTopWidgetOverhang(int px)
 {
     m_topOverhang = std::max(0, px);
@@ -273,6 +321,7 @@ void EditorView::updateTopWidget()
 
 void EditorView::positionTopWidget()
 {
+    positionFooter(); // the chrome that scrolls with the text
     if (!m_topWidget)
         return;
     const int w = int(m_columnWidth) + m_topOverhang;
@@ -521,7 +570,7 @@ void EditorView::setScrollTop(double y)
 void EditorView::updateScrollbar()
 {
     const double viewH = viewport()->height();
-    const double total = m_marginTop + m_layout.totalHeight() + m_marginBottom + std::max(0.0, viewH * 0.5 - m_marginBottom);
+    const double total = m_marginTop + m_layout.totalHeight() + m_footerH + m_marginBottom + std::max(0.0, viewH * 0.5 - m_marginBottom);
     const int max = std::max(0, int(std::ceil(total - viewH)));
     m_scrollTop = std::clamp(m_scrollTop, 0.0, double(max));
     m_settingScroll = true;

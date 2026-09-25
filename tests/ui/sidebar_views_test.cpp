@@ -25,6 +25,7 @@
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QScrollBar>
 
 #include <ostream>
 
@@ -426,6 +427,42 @@ TEST_F(SidebarTest, BacklinksClickOpensMatch)
     EXPECT_EQ(mv->file()->path(), "Linker.md");
     EXPECT_EQ(mv->editor()->selection().main().from(), range.from);
     EXPECT_EQ(mv->editor()->selection().main().to(), range.to);
+}
+
+TEST_F(SidebarTest, BacklinksInDocument)
+{
+    MarkdownView* mv = open("Target.md");
+    ASSERT_TRUE(mv);
+    EXPECT_FALSE(mv->showBacklinks());
+    EXPECT_FALSE(mv->editor()->footerWidget());
+    const double plainHeight = mv->editor()->documentHeight();
+    ASSERT_TRUE(session->commands()->execute("backlink:toggle-backlinks-in-document"));
+    BacklinkPane* pane = mv->embeddedBacklinks();
+    ASSERT_TRUE(pane);
+    EXPECT_TRUE(pane->isEmbedded());
+    EXPECT_EQ(mv->editor()->footerWidget(), pane);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return !pane->linkedFiles().isEmpty(); }, 5000));
+    settle();
+    // natural height below the text: the note gets taller, the pane doesn't scroll
+    EXPECT_TRUE(pane->tree()->autoHeight());
+    EXPECT_GT(mv->editor()->documentHeight(), plainHeight + pane->tree()->height() - 1);
+    EXPECT_EQ(pane->tree()->verticalScrollBar()->maximum(), 0);
+    // per-view state, restored
+    const QJsonObject st = mv->state();
+    EXPECT_TRUE(st.value("backlinks").toBool());
+    EXPECT_TRUE(st.value("backlinkOpts").isObject());
+    mv->setState(QJsonObject{{"file", "Target.md"}, {"backlinks", false}});
+    EXPECT_FALSE(mv->showBacklinks());
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    EXPECT_FALSE(mv->editor()->footerWidget());
+    EXPECT_DOUBLE_EQ(mv->editor()->documentHeight(), plainHeight);
+    // new views follow the Backlinks option
+    session->config()->setValue("backlink", "backlinkInDocument", true);
+    window->workspace()->openFile(session->vault()->file("Linker.md"), Workspace::NewLeaf::Tab);
+    settle();
+    auto* other = qobject_cast<MarkdownView*>(window->workspace()->activeRootLeaf()->view());
+    ASSERT_TRUE(other);
+    EXPECT_TRUE(other->showBacklinks());
 }
 
 TEST_F(SidebarTest, OutgoingLinks)

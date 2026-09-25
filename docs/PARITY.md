@@ -120,7 +120,10 @@ Open parity questions:
   inline rename, remove, "Bookmark..." modal, the bookmarks:* commands, file-menu / editor-menu items, folds.
 - ✅ All properties: names with counts and type icons (types.json + reserved), orders, filter, click → ["name"].
 - ✅ All properties' context menu: property type, rename (F2; merges into an existing name after asking), delete.
-- ⬜ Backlinks in document (needs an EditorView bottom widget); URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
+- ✅ Backlinks in document: the backlinks pane below the text (border, header buttons at the right, natural height),
+  per view ("backlinks" / "backlinkOpts" state), backlink:toggle-backlinks-in-document, the Backlinks option
+  for new views.
+- ⬜ URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
   saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to

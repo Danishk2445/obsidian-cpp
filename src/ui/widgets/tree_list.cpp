@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollBar>
+#include <QWheelEvent>
 #include <QTextLayout>
 #include <QToolTip>
 
@@ -574,9 +575,47 @@ void TreeList::ensureGeometry() const
     m_contentHeight = y + m_marginBottom;
 }
 
+void TreeList::setAutoHeight(bool on)
+{
+    m_autoHeight = on;
+    setVerticalScrollBarPolicy(on ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    setSizePolicy(QSizePolicy::Preferred, on ? QSizePolicy::Fixed : QSizePolicy::Expanding);
+    m_reportedHeight = -1;
+    updateScrollRange();
+    updateGeometry();
+}
+
+QSize TreeList::sizeHint() const
+{
+    if (!m_autoHeight)
+        return QAbstractScrollArea::sizeHint();
+    ensureGeometry();
+    return {QAbstractScrollArea::sizeHint().width(), m_contentHeight + 2 * frameWidth()};
+}
+
+QSize TreeList::minimumSizeHint() const
+{
+    if (!m_autoHeight)
+        return QAbstractScrollArea::minimumSizeHint();
+    return {0, sizeHint().height()};
+}
+
+void TreeList::wheelEvent(QWheelEvent* e)
+{
+    if (m_autoHeight) {
+        e->ignore(); // the note scrolls
+        return;
+    }
+    QAbstractScrollArea::wheelEvent(e);
+}
+
 void TreeList::updateScrollRange()
 {
     ensureGeometry();
+    if (m_autoHeight && m_contentHeight != m_reportedHeight) {
+        m_reportedHeight = m_contentHeight;
+        updateGeometry();
+    }
     const int vh = viewport()->height();
     QScrollBar* sb = verticalScrollBar();
     sb->setRange(0, std::max(0, m_contentHeight - vh));
@@ -802,7 +841,7 @@ TreeList::Node* TreeList::hoveredNode() const { return nodeAt(m_hoverRow); }
 // painting
 // ---------------------------------------------------------------------------------------------
 
-void TreeList::paintEvent(QPaintEvent*)
+void TreeList::paintEvent(QPaintEvent* e)
 {
     ensureGeometry();
     QPainter p(viewport());
@@ -810,8 +849,9 @@ void TreeList::paintEvent(QPaintEvent*)
     const int n = int(m_rows.size());
     if (n == 0)
         return;
-    const int scroll = verticalScrollBar()->value();
-    const int vh = viewport()->height();
+    // auto height: the widget is as tall as its content, only the exposed rows are painted
+    const int scroll = m_autoHeight ? e->rect().top() : verticalScrollBar()->value();
+    const int vh = m_autoHeight ? e->rect().height() : viewport()->height();
     // first / last rows intersecting the viewport
     auto firstIt = std::upper_bound(m_tops.begin(), m_tops.end(), scroll);
     int first = std::max(0, int(firstIt - m_tops.begin()) - 1);

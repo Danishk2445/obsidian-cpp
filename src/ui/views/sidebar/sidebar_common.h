@@ -55,6 +55,8 @@ public:
     QString searchQuery() const;
     void setSearchQuery(const QString& query); // without running `changed`
     QList<NavActionButton*> buttons() const { return m_buttons; }
+    // .embedded-backlinks .nav-header: buttons at the right, padding 12 0 0 0.
+    void setEmbedded(bool on);
 
 private:
     QHBoxLayout* m_row;

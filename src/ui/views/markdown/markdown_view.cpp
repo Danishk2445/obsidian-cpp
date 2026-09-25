@@ -9,6 +9,7 @@
 #include "editor/vim/vim_controller.h"
 
 #include "core/commands/command_registry.h"
+#include "core/config/config_store.h"
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
 #include "core/documents/fold_store.h"
@@ -25,6 +26,7 @@
 #include "ui/views/markdown/inline_title.h"
 #include "ui/views/markdown/properties/properties_style.h"
 #include "ui/views/markdown/properties/properties_widget.h"
+#include "ui/views/sidebar/backlink_view.h"
 #include "core/properties/frontmatter_editor.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/workspace/file_menu.h"
@@ -164,6 +166,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
     connect(m_editor, &EditorView::modeChanged, this, [this](EditorView::Mode m) {
         m_title->setEditable(m != EditorView::Mode::Reading);
         refreshProperties(false);
+        updateBacklinksFooter();
         emit modeChanged(m);
         emit stateChanged();
     });
@@ -425,6 +428,14 @@ void MarkdownView::loadFile(TFile* file)
     disconnect(m_propsConn);
     m_doc.reset();
     m_file = file;
+    if (!m_backlinksDefaulted) {
+        // a new view: the Backlinks option "Show backlinks at the bottom of notes"
+        m_backlinksDefaulted = true;
+        ConfigStore* c = session() ? session()->config() : nullptr;
+        if (c && c->value(QStringLiteral("backlink"), QStringLiteral("backlinkInDocument")).toBool())
+            setShowBacklinks(true);
+    }
+    updateBacklinksFooter();
     if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
         static const char* keys[] = {"readableLineLength", "showLineNumber", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck", "vimMode"};
         m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
@@ -646,11 +657,42 @@ FoldStore* MarkdownView::foldStore() const
     return s ? s->findChild<FoldStore*>() : nullptr;
 }
 
+void MarkdownView::setShowBacklinks(bool on)
+{
+    m_backlinksDefaulted = true;
+    if (on == m_showBacklinks && on == (m_backlinks != nullptr))
+        return;
+    m_showBacklinks = on;
+    if (on && !m_backlinks) {
+        m_backlinks = new BacklinkPane(this);
+        m_backlinks->setObjectName(QStringLiteral("ocEmbeddedBacklinks"));
+        m_backlinks->setEmbedded(true);
+        connect(m_backlinks, &BacklinkPane::stateChanged, this, &View::stateChanged);
+        updateBacklinksFooter();
+    } else if (!on && m_backlinks) {
+        m_editor->setFooterWidget(nullptr);
+        m_backlinks->deleteLater();
+        m_backlinks = nullptr;
+    }
+    emit stateChanged();
+}
+
+void MarkdownView::updateBacklinksFooter()
+{
+    if (!m_backlinks)
+        return;
+    m_backlinks->setFile(m_file ? m_file->path() : QString());
+    // .embedded-backlinks: margin-top 3em in the reading view; after the text's own spacing when editing
+    const int gap = mode() == EditorView::Mode::Reading ? 48 : 24;
+    m_editor->setFooterWidget(m_backlinks, gap);
+}
+
 void MarkdownView::onRename(TFile* file, const QString& oldPath)
 {
     if (FoldStore* fs = foldStore())
         fs->renamed(oldPath, file->path());
     updateTitle();
+    updateBacklinksFooter();
     FileView::onRename(file, oldPath);
 }
 
@@ -673,6 +715,9 @@ QJsonObject MarkdownView::state() const
     const EditorView::Mode m = m_editor->mode();
     o.insert(QStringLiteral("mode"), m == EditorView::Mode::Reading ? QStringLiteral("preview") : QStringLiteral("source"));
     o.insert(QStringLiteral("source"), m == EditorView::Mode::Source);
+    o.insert(QStringLiteral("backlinks"), m_showBacklinks);
+    if (m_backlinks)
+        o.insert(QStringLiteral("backlinkOpts"), m_backlinks->state());
     return o;
 }
 
@@ -695,6 +740,10 @@ void MarkdownView::setState(const QJsonObject& st)
 {
     FileView::setState(st);
     setModeFromState(st);
+    if (st.contains(QStringLiteral("backlinks")))
+        setShowBacklinks(st.value(QStringLiteral("backlinks")).toBool());
+    if (m_backlinks && st.value(QStringLiteral("backlinkOpts")).isObject())
+        m_backlinks->setState(st.value(QStringLiteral("backlinkOpts")).toObject());
 }
 
 QJsonObject MarkdownView::ephemeralState() const { return m_editor->ephemeralState(); }
