@@ -148,6 +148,23 @@ QHash<QString, QList<LinkUpdater::Edit>> LinkUpdater::edits(const QList<Referenc
     return out;
 }
 
+QHash<QString, QList<LinkUpdater::Edit>> LinkUpdater::retarget(const QList<Reference>& refs, const LinkResolver& after,
+                                                               const Retarget& target, LinkResolver::LinkFormat format)
+{
+    QHash<QString, QList<Edit>> out;
+    for (const Reference& r : refs) {
+        const QString to = target ? target(r) : QString();
+        if (to.isEmpty())
+            continue;
+        const bool wiki = wikiRe().match(r.link.original).hasMatch();
+        const QString newLink = after.linkText(to, r.sourcePath, format, wiki) + subpathOf(r.link.link);
+        if (newLink == r.link.link)
+            continue;
+        out[r.sourcePath].append(Edit{r.link.position.start.offset, r.link.position.end.offset, r.link.original, rewrite(r.link, newLink)});
+    }
+    return out;
+}
+
 QString LinkUpdater::rewrite(const md::LinkCache& link, const QString& t)
 {
     const QString& r = link.original;

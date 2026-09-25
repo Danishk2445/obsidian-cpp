@@ -28,6 +28,7 @@
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
 #include "ui/plugins/file_recovery_ui.h"
+#include "ui/plugins/note_composer_ui.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
@@ -350,6 +351,7 @@ void Application::populateWindow(MainWindow* w)
     registerNavigationCommands(*commands, session, w->overlay());
     registerGraphCommands(*commands, workspace);
     registerFileRecoveryCommands(*commands, w);
+    registerNoteComposerCommands(*commands, w);
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;

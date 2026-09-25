@@ -56,6 +56,7 @@ oc_add_test(perf_file_explorer_test SOURCES perf/file_explorer_perf_test.cpp DEP
 oc_add_test(ui_attachments_test SOURCES ui/attachments_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_note_plugins_test SOURCES ui/note_plugins_ui_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_file_recovery_test SOURCES ui/file_recovery_ui_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_note_composer_test SOURCES ui/note_composer_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_palette_test.cpp ui/search_view_test.cpp ui/navigation_shots_test.cpp ui/navigation_perf_test.cpp ui/navigation_test_support.h DEPS oc_ui Qt6::Test GUI)
 oc_add_test(markdown_inline_test SOURCES markdown/inline_obsidian_test.cpp markdown/inline_leaf_content_test.cpp markdown/inline_metadata_test.cpp markdown/inline_html.cpp DEPS oc_markdown)
 oc_add_test(markdown_inline_spec_test SOURCES markdown/inline_spec_test.cpp markdown/inline_html.cpp DEPS oc_markdown)

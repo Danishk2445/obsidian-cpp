@@ -2,7 +2,9 @@
 
 #include "core/config/vault_config.h"
 #include "core/documents/document_manager.h"
+#include "core/documents/document.h"
 #include "core/metadata/metadata_cache.h"
+#include "core/plugins/note_plugins.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "text/codec.h"
@@ -53,11 +55,18 @@ bool FileManager::renameFile(TAbstractFile* item, const QString& rawNewPath, QSt
     VaultConfig* cfg = m_session->vaultConfig();
     const auto edits = LinkUpdater::edits(refs, mc->resolver(), LinkUpdater::renameMap(oldPath, newPath),
                                           cfg ? cfg->newLinkFormat() : LinkResolver::LinkFormat::Shortest);
+    confirmAndApply(edits);
+    return true;
+}
+
+void FileManager::confirmAndApply(const QHash<QString, QList<LinkUpdater::Edit>>& edits)
+{
+    VaultConfig* cfg = m_session->vaultConfig();
     int links = 0;
     for (const auto& list : edits)
         links += int(list.size());
     if (links == 0)
-        return true;
+        return;
     bool update = cfg && cfg->alwaysUpdateLinks();
     if (!update && m_confirm) {
         switch (m_confirm(links, int(edits.size()))) {
@@ -74,7 +83,7 @@ bool FileManager::renameFile(TAbstractFile* item, const QString& rawNewPath, QSt
         }
     }
     if (!update)
-        return true;
+        return;
     int files = 0;
     const int applied = applyLinkEdits(edits, &files);
     if (applied > 0) {
@@ -82,7 +91,129 @@ bool FileManager::renameFile(TAbstractFile* item, const QString& rawNewPath, QSt
         emit notice(tr("Updated %1 in %2.")
                         .arg(countNoun(applied, tr("%1 link"), tr("%1 links")), countNoun(files, tr("%1 file"), tr("%1 files"))));
     }
+}
+
+bool FileManager::runLinkUpdate(const std::function<bool()>& operation, const LinkUpdater::Retarget& retarget,
+                                const QStringList& skipSources)
+{
+    MetadataCache* mc = m_session->metadata();
+    if (DocumentManager* dm = m_session->documents())
+        dm->saveAll();
+    QList<LinkUpdater::Reference> refs;
+    if (mc) {
+        mc->waitUntilClean();
+        refs = LinkUpdater::snapshot(*mc);
+        refs.removeIf([&](const LinkUpdater::Reference& r) { return skipSources.contains(r.sourcePath); });
+    }
+    if (!operation())
+        return false;
+    if (!mc || refs.isEmpty())
+        return true;
+    VaultConfig* cfg = m_session->vaultConfig();
+    confirmAndApply(LinkUpdater::retarget(refs, mc->resolver(), retarget,
+                                          cfg ? cfg->newLinkFormat() : LinkResolver::LinkFormat::Shortest));
     return true;
+}
+
+bool FileManager::editFile(const QString& path, const std::function<QList<ChangeSpec>(const Text&)>& edit, QString* error)
+{
+    Vault* vault = m_session->vault();
+    DocumentManager* dm = m_session->documents();
+    if (Document* doc = dm ? dm->find(path) : nullptr) {
+        if (doc->isReadOnly()) {
+            if (error)
+                *error = tr("\"%1\" is read-only").arg(path);
+            return false;
+        }
+        QList<ChangeSpec> specs = edit(doc->text());
+        if (specs.isEmpty())
+            return true;
+        std::sort(specs.begin(), specs.end(), [](const ChangeSpec& a, const ChangeSpec& b) { return a.from < b.from; });
+        Transaction tr;
+        tr.changes = ChangeSet::of(specs, doc->text().length());
+        tr.userEvent = QStringLiteral("input.plugin");
+        tr.scrollIntoView = false;
+        doc->dispatch(tr, nullptr, Selection::cursor(0));
+        return doc->save(error);
+    }
+    if (!vault)
+        return false;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        DiskState state;
+        QString err;
+        const std::optional<QByteArray> bytes = vault->read(path, &state, &err);
+        if (!bytes) {
+            if (error)
+                *error = err;
+            return false;
+        }
+        const DecodedFile dec = decodeFile(*bytes);
+        if (dec.hasNul) {
+            if (error)
+                *error = tr("\"%1\" is not a text file").arg(path);
+            return false;
+        }
+        QList<ChangeSpec> specs = edit(dec.text);
+        if (specs.isEmpty())
+            return true;
+        std::sort(specs.begin(), specs.end(), [](const ChangeSpec& a, const ChangeSpec& b) { return a.from > b.from; });
+        Text t = dec.text;
+        const Eol eol = t.dominantEol();
+        for (const ChangeSpec& c : std::as_const(specs))
+            t = t.replace(c.from, c.to, c.insert, eol);
+        const DocumentStorage::WriteResult r = vault->write(path, encodeFile(t, dec.bom), state, nullptr, &err);
+        if (r == DocumentStorage::WriteResult::Ok)
+            return true;
+        if (r == DocumentStorage::WriteResult::Error) {
+            if (error)
+                *error = err;
+            return false;
+        }
+    }
+    if (error)
+        *error = tr("\"%1\" kept changing").arg(path);
+    return false;
+}
+
+QList<ChangeSpec> FileManager::insertIntoFileChanges(const Text& note, const QString& text, bool prepend)
+{
+    const QString existing = note.toString();
+    const plugins::TemplateParts ours = plugins::splitFrontmatter(existing);
+    const plugins::TemplateParts theirs = plugins::splitFrontmatter(text);
+    const QString& inserted = theirs.body;
+    const QString& body = ours.body;
+    const qsizetype bodyStart = existing.size() - body.size();
+    QList<ChangeSpec> out;
+    // Obsidian joins "first" and "second" with a blank line unless there already is one.
+    const QString& first = prepend ? inserted : body;
+    const QString& second = prepend ? body : inserted;
+    QString sep;
+    if (!first.isEmpty() && !second.isEmpty() && !QString(first.right(2) + second.left(2)).contains(QLatin1String("\n\n")))
+        sep = first.endsWith(u'\n') || second.startsWith(u'\n') ? QStringLiteral("\n") : QStringLiteral("\n\n");
+    if (!inserted.isEmpty() || !sep.isEmpty()) {
+        if (prepend)
+            out.push_back({bodyStart, bodyStart, inserted + sep});
+        else
+            out.push_back({existing.size(), existing.size(), sep + inserted});
+    }
+    if (theirs.hasFrontmatter && !theirs.frontmatter.trimmed().isEmpty()) {
+        if (ours.hasFrontmatter) {
+            // Keep the note's frontmatter text; add the keys it doesn't have yet.
+            const QString merged = plugins::mergeFrontmatter(existing.left(bodyStart), theirs.frontmatter);
+            if (merged != existing.left(bodyStart))
+                out.push_front({0, bodyStart, merged});
+        } else {
+            out.push_front({0, 0, QStringLiteral("---\n") + theirs.frontmatter.trimmed() + QStringLiteral("\n---\n")});
+        }
+    }
+    return out;
+}
+
+bool FileManager::insertIntoFile(TFile* file, const QString& text, bool prepend, QString* error)
+{
+    if (!file)
+        return false;
+    return editFile(file->path(), [&](const Text& t) { return insertIntoFileChanges(t, text, prepend); }, error);
 }
 
 int FileManager::applyLinkEdits(const QHash<QString, QList<LinkUpdater::Edit>>& edits, int* filesChanged)

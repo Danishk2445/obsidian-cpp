@@ -13,6 +13,7 @@
 #include "ui/shell/main_window.h"
 #include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/markdown/page_preview.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace_p.h"
 
@@ -917,6 +918,11 @@ void FileExplorerView::populateContextMenu(QMenu* menu, TAbstractFile* item)
                                   showInSystemExplorer(vaultOf(self), resolve());
                           }};
     }
+    // Obsidian's "file-menu" event: plugins add their items (bookmarks, note composer, ...).
+    QList<MenuEntry> extra;
+    FileMenuHooks::collect(extra, item, QStringLiteral("file-explorer-context-menu"), nullptr, this);
+    for (const MenuEntry& e : std::as_const(extra))
+        items << MenuItem{kSections.contains(e.section) ? e.section : QString(), e.title, e.icon, e.run, e.warning, e.enabled};
     buildMenu(menu, items, QStringLiteral("info.copy"), tr("Copy path"), QStringLiteral("clipboard"));
 }
 
