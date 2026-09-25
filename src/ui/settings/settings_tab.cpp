@@ -535,7 +535,7 @@ void renderSettings(SettingsTab& tab, const QList<SettingDef>& defs, QVBoxLayout
         }
         if (!first)
             layout->addSpacing(24); // .setting-group + .setting-group { margin-top: var(--size-4-6) }
-        layout->addWidget(g, 0, Qt::AlignHCenter);
+        layout->addWidget(g);
         out.groups.push_back(g);
         first = false;
     }

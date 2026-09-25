@@ -8,7 +8,7 @@ namespace oc {
 
 // Obsidian's DropdownComponent (<select class="dropdown">): 30 px high, --dropdown-background
 // (--interactive-normal) with --input-shadow and --input-radius, 13 px text with 0.8em / 2.4em
-// padding and the chevrons-up-down icon 0.65em from the end. As wide as its widest option (Obsidian
+// padding and the chevrons-up-down icon 0.65em from the end. As wide as the selected option (Obsidian
 // measures --dropdown-fitted-width), at most 400 px. Clicking, Space, Enter or Alt+↓ open the options
 // as a menu below it; ↑/↓ step through them without opening.
 class Dropdown : public QWidget {

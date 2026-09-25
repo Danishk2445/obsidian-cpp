@@ -162,6 +162,7 @@ private:
 
     QPointer<MainWindow> m_window;
     QPointer<SettingsController> m_controller;
+    QPointer<VaultSession> m_session;
     QList<SettingsTab*> m_tabs;
     SettingsTab* m_active = nullptr;
 
@@ -232,6 +233,7 @@ signals:
 private:
     friend class SettingsModal;
     QPointer<MainWindow> m_window;
+    QPointer<VaultSession> m_session; // cached: see SettingsModal::session()
     QPointer<VaultRegistry> m_registry;
     QPointer<SettingsModal> m_modal;
     QString m_lastTab;

@@ -354,8 +354,10 @@ bool isCorePluginEnabled(MainWindow* window, const char* id)
     const QString key = QString::fromLatin1(id);
     if (cfg.contains(key))
         return cfg.value(key).toBool();
+    // Obsidian 1.13's plugins without defaultOn (see ui/settings/settings_pages.cpp corePluginInfos()).
     static const QStringList offByDefault = {u"zk-prefixer"_s, u"random-note"_s, u"slash-command"_s, u"workspaces"_s,
-                                             u"audio-recorder"_s, u"slides"_s, u"markdown-importer"_s};
+                                             u"audio-recorder"_s, u"slides"_s, u"markdown-importer"_s,
+                                             u"footnotes"_s, u"webviewer"_s, u"publish"_s};
     return !offByDefault.contains(key);
 }
 

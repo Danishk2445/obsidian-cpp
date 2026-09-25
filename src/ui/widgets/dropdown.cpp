@@ -89,12 +89,14 @@ void Dropdown::setValue(const QString& value)
     for (qsizetype i = 0; i < m_options.size(); ++i) {
         if (m_options[i].first == value) {
             m_index = int(i);
+            updateGeometry();
             update();
             return;
         }
     }
     // Like a <select> given an unknown value: nothing selected.
     m_index = -1;
+    updateGeometry();
     update();
 }
 
@@ -112,10 +114,8 @@ QSize Dropdown::sizeHint() const
 {
     const QFontMetricsF fm(textFont());
     const double em = textFont().pixelSize();
-    double widest = 0;
-    for (const auto& o : m_options)
-        widest = std::max(widest, fm.horizontalAdvance(o.second));
-    const int w = int(std::ceil(widest + 0.8 * em + 2.4 * em));
+    // Obsidian 1.13 measures the selected option (resizeToFit -> --dropdown-fitted-width).
+    const int w = int(std::ceil(fm.horizontalAdvance(displayText()) + 0.8 * em + 2.4 * em));
     return {std::min(kMaxWidth, std::max(w, int(3.2 * em))), int(tokPx("--input-height", 30))};
 }
 

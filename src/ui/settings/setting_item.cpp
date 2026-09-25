@@ -253,6 +253,10 @@ void SettingItem::addControl(QWidget* widget)
     m_controlLayout->insertWidget(index, widget, 0, Qt::AlignVCenter);
     widget->setEnabled(!m_disabled);
     widget->show();
+    if (m_controlColumn->isHidden()) {
+        m_controlColumn->show();
+        m_info->setContentsMargins(0, 0, 16, 0);
+    }
 }
 
 void SettingItem::clearControls()
@@ -385,13 +389,15 @@ void SettingItem::applyStyle()
         nf.setWeight(QFont::Weight(int(t->number(QStringLiteral("--setting-group-heading-weight"), 600))));
     if (!m_nameFamily.isEmpty())
         nf.setFamilies({m_nameFamily});
+    // (the role first: re-polishing a label resets its font)
+    const bool accentName = m_kind == Kind::Action && !property("ocActionPlain").toBool(); // font rows use --text-normal
+    setTextRole(m_name, accentName ? "accent" : m_kind == Kind::EmptyState ? "muted" : "");
     m_name->setFont(nf);
-    setTextRole(m_name, m_kind == Kind::Action ? "accent" : m_kind == Kind::EmptyState ? "muted" : "");
     m_name->setVisible(!m_nameText.isEmpty() || m_kind == Kind::Heading);
 
     // Description (links use --link-color = --text-muted inside descriptions, underlined).
-    m_desc->setFont(t->interfaceFont(m_kind == Kind::Heading ? small : smaller));
     setTextRole(m_desc, m_descWarning ? "warning" : "muted");
+    m_desc->setFont(t->interfaceFont(m_kind == Kind::Heading ? small : smaller));
     if (!m_descHtml.isEmpty()) {
         QString html = m_descHtml;
         const QString link = (m_descWarning ? tok("--text-warning") : tok("--text-muted")).name();
@@ -415,13 +421,13 @@ void SettingItem::applyStyle()
     }
 
     // Error message.
-    m_error->setFont(t->interfaceFont(smaller));
     setTextRole(m_error, "warning");
+    m_error->setFont(t->interfaceFont(smaller));
 
     // Navigable: value (muted 13 px), status icon, chevron (--text-faint, --icon-s).
     if (m_value) {
-        m_value->setFont(t->interfaceFont(small));
         setTextRole(m_value, "muted");
+        m_value->setFont(t->interfaceFont(small));
         const int px = int(tokPx("--icon-s", 16));
         m_status->setPixmap(iconPixmap(QStringLiteral("alert-triangle"), px, tok("--text-warning"), 2, devicePixelRatioF()));
         m_chevron->setPixmap(iconPixmap(QStringLiteral("chevron-right"), px, tok("--text-faint"), tokPx("--icon-s-stroke-width", 2),

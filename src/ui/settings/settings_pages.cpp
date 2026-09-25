@@ -372,6 +372,7 @@ public:
         m_search->setObjectName(u"ocFontSearch"_s);
         QObject::connect(m_search, &QLineEdit::textChanged, this, [this] { filter(); });
         m_custom = m_all->addItem();
+        m_custom->setProperty("ocActionPlain", true);
         m_custom->setKind(SettingItem::Kind::Action);
         m_custom->setClickHandler([this] {
             const QString name = m_search->text().trimmed();
@@ -387,10 +388,10 @@ public:
             if (QFontDatabase::isPrivateFamily(f))
                 continue;
             SettingItem* row = m_all->addItem();
+            row->setProperty("ocActionPlain", true); // nameEl.style.color = var(--text-normal)
             row->setKind(SettingItem::Kind::Action);
             row->setName(f);
             row->setNameFamily(f);
-            row->setProperty("ocActionPlain", true);
             row->setClickHandler([this, f] { add(f); });
             m_rows.insert(f, row);
         }

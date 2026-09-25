@@ -52,6 +52,34 @@ QScrollArea* makeScrollArea(QWidget* parent)
     return s;
 }
 
+// A column whose side padding centres the setting groups: Obsidian's
+// padding-inline: max(<min>, (100% - var(--setting-group-max-width)) / 2).
+class CenteredColumn : public QWidget {
+public:
+    CenteredColumn(int minSide, int top, int bottom, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_min(minSide)
+        , m_top(top)
+        , m_bottom(bottom)
+    {
+        auto* v = new QVBoxLayout(this);
+        v->setSpacing(0);
+        v->setContentsMargins(minSide, top, minSide, bottom);
+    }
+    QVBoxLayout* column() const { return static_cast<QVBoxLayout*>(layout()); }
+
+protected:
+    void resizeEvent(QResizeEvent* e) override
+    {
+        const int side = std::max(m_min, (width() - int(tokPx("--setting-group-max-width", 700))) / 2);
+        layout()->setContentsMargins(side, m_top, side, m_bottom);
+        QWidget::resizeEvent(e);
+    }
+
+private:
+    int m_min, m_top, m_bottom;
+};
+
 // The sidebar (.vertical-tab-header): --modal-sidebar-background with a --divider-color end border.
 class Sidebar : public QWidget {
 public:
@@ -257,6 +285,7 @@ SettingsModal::SettingsModal(MainWindow* window, SettingsController* controller)
     : Modal(window->overlay())
     , m_window(window)
     , m_controller(controller)
+    , m_session(window->session())
 {
     setObjectName(QStringLiteral("ocSettingsModal"));
     setSidebarLayout(true);
@@ -321,7 +350,9 @@ SettingsModal::SettingsModal(MainWindow* window, SettingsController* controller)
 
 SettingsModal::~SettingsModal() { clearPages(); }
 
-VaultSession* SettingsModal::session() const { return m_window ? m_window->session() : nullptr; }
+// Cached: rows may still commit (an input's focus-out) while the window is being destroyed, when its
+// methods must not be called anymore; the session outlives the window's overlay.
+VaultSession* SettingsModal::session() const { return m_session; }
 OverlayLayer* SettingsModal::overlay() const { return m_window ? m_window->overlay() : nullptr; }
 
 void SettingsModal::notice(const QString& message) const
@@ -449,18 +480,14 @@ QWidget* SettingsModal::buildTabBody(SettingsTab* t, QScrollArea** scrollOut, Re
 {
     QScrollArea* scroll = makeScrollArea(m_stack);
     scroll->setObjectName(QStringLiteral("ocSettingsTabScroll"));
-    auto* body = new QWidget;
-    body->setObjectName(QStringLiteral("ocSettingsTabContent")); // .vertical-tab-content
-    auto* v = new QVBoxLayout(body);
-    // padding-top 48, padding-bottom 64, padding-inline max(32px, centring offset)
-    v->setContentsMargins(32, 48, 32, 64);
-    v->setSpacing(0);
+    // .vertical-tab-content: padding-top 48, padding-bottom 64, padding-inline max(32px, centring offset)
+    auto* body = new CenteredColumn(32, 48, 64);
+    body->setObjectName(QStringLiteral("ocSettingsTabContent"));
+    QVBoxLayout* v = body->column();
     m_tabHandBuilt = false;
     if (QWidget* custom = t->createContent()) {
         m_tabHandBuilt = true;
-        custom->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        custom->setMaximumWidth(int(tokPx("--setting-group-max-width", 700)));
-        v->addWidget(custom, 0, Qt::AlignHCenter);
+        v->addWidget(custom);
     } else {
         renderSettings(*t, t->definitions(), v, *rendered, [this](const SettingDef& page) { openPage(page); });
     }
@@ -585,14 +612,10 @@ void SettingsModal::renderPage(Page& page)
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(0);
     // .setting-page-titlebar: back chevron + 13 px semibold title, aligned with the groups.
-    auto* bar = new QWidget(page.root);
+    auto* bar = new CenteredColumn(12, 12, 0, page.root);
     bar->setObjectName(QStringLiteral("ocSettingPageTitlebar"));
-    auto* bh = new QHBoxLayout(bar);
-    bh->setContentsMargins(0, 12, 0, 0);
-    bh->setSpacing(4);
     auto* inner = new QWidget(bar);
-    inner->setMaximumWidth(int(tokPx("--setting-group-max-width", 700)) + 40);
-    inner->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    bar->column()->addWidget(inner);
     auto* ih = new QHBoxLayout(inner);
     ih->setContentsMargins(0, 0, 0, 0);
     ih->setSpacing(4);
@@ -605,23 +628,16 @@ void SettingsModal::renderPage(Page& page)
     tf.setWeight(QFont::Weight(int(currentTheme()->number(QStringLiteral("--font-semibold"), 600))));
     title->setFont(tf);
     ih->addWidget(title, 1);
-    bh->addSpacing(12);
-    bh->addWidget(inner, 1, Qt::AlignHCenter);
-    bh->addSpacing(12);
     v->addWidget(bar);
 
     page.scroll = makeScrollArea(page.root);
-    auto* body = new QWidget;
+    auto* body = new CenteredColumn(32, 12, 64); // .setting-page-content { margin-top: 12px }
     body->setObjectName(QStringLiteral("ocSettingPageContent"));
-    auto* bv = new QVBoxLayout(body);
-    bv->setContentsMargins(32, 12, 32, 64); // .setting-page-content { margin-top: 12px }
-    bv->setSpacing(0);
+    QVBoxLayout* bv = body->column();
     page.rendered = std::make_unique<RenderedSettings>();
     if (page.def.customPage) {
         if (QWidget* w = page.def.customPage(*this)) {
-            w->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            w->setMaximumWidth(int(tokPx("--setting-group-max-width", 700)));
-            bv->addWidget(w, 0, Qt::AlignHCenter);
+            bv->addWidget(w);
         }
     } else if (m_active) {
         renderSettings(*m_active, page.def.items, bv, *page.rendered, [this](const SettingDef& p) { openPage(p); });
@@ -898,6 +914,7 @@ SettingsController* SettingsController::of(MainWindow* window)
 SettingsController::SettingsController(MainWindow* window)
     : QObject(window)
     , m_window(window)
+    , m_session(window->session())
 {
 }
 
@@ -920,12 +937,19 @@ SettingsModal* SettingsController::open(const QString& tabId)
 
 bool SettingsController::isCorePluginEnabled(const QString& id) const
 {
-    return oc::isCorePluginEnabled(m_window, id.toLatin1().constData());
+    // Same rule as oc::isCorePluginEnabled(window, id), read through the cached session.
+    const QJsonObject cfg = m_session && m_session->config() ? m_session->config()->object(QStringLiteral("core-plugins")) : QJsonObject();
+    if (cfg.contains(id))
+        return cfg.value(id).toBool();
+    for (const CorePluginInfo& p : corePluginInfos())
+        if (p.id == id)
+            return p.defaultOn;
+    return true;
 }
 
 void SettingsController::setCorePluginEnabled(const QString& id, bool enabled)
 {
-    VaultSession* s = m_window ? m_window->session() : nullptr;
+    VaultSession* s = m_session;
     if (!s || !s->config() || isCorePluginEnabled(id) == enabled)
         return;
     // Obsidian writes the state of every core plugin.
@@ -957,7 +981,7 @@ void SettingsController::setCorePluginEnabled(const QString& id, bool enabled)
 
 bool SettingsController::isCommunityPluginEnabled(const QString& id) const
 {
-    VaultSession* s = m_window ? m_window->session() : nullptr;
+    VaultSession* s = m_session;
     if (!s || !s->config())
         return true;
     return s->config()->value(QStringLiteral("community-plugins"), id).toBool(true);
@@ -965,7 +989,7 @@ bool SettingsController::isCommunityPluginEnabled(const QString& id) const
 
 void SettingsController::setCommunityPluginEnabled(const QString& id, bool enabled)
 {
-    VaultSession* s = m_window ? m_window->session() : nullptr;
+    VaultSession* s = m_session;
     if (!s || !s->config() || isCommunityPluginEnabled(id) == enabled)
         return;
     s->config()->setValue(QStringLiteral("community-plugins"), id, enabled);
@@ -983,7 +1007,7 @@ void SettingsController::setCommunityPluginEnabled(const QString& id, bool enabl
 void SettingsController::applyAppearance()
 {
     ThemeManager* tm = ThemeManager::instance();
-    VaultSession* s = m_window ? m_window->session() : nullptr;
+    VaultSession* s = m_session;
     if (!tm || !s || !s->config())
         return;
     // Every ThemeManager setter restyles the whole application: only call the ones that change.
@@ -1019,7 +1043,7 @@ void SettingsController::applyAppearance()
 
 void SettingsController::applyWindowOptions()
 {
-    VaultSession* s = m_window ? m_window->session() : nullptr;
+    VaultSession* s = m_session;
     VaultConfig* cfg = s ? s->vaultConfig() : nullptr;
     if (!cfg || !m_window)
         return;
