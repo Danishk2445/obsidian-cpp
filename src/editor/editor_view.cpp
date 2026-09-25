@@ -1,6 +1,7 @@
 #include "editor/editor_view.h"
 
 #include "editor/editor_hooks.h"
+#include "editor/embeds/hosted_embeds.h"
 #include "editor/live_preview_decorator.h"
 #include "editor/markdown_commands.h"
 #include "editor/source_decorator.h"
@@ -18,6 +19,7 @@
 #include <QPainter>
 #include <QScrollBar>
 #include <QStyleHints>
+#include <QFontMetricsF>
 #include <QTextBoundaryFinder>
 
 #include <cmath>
@@ -61,6 +63,7 @@ EditorView::EditorView(QWidget* parent)
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, &EditorView::applyTheme);
     applyTheme();
+    new HostedEmbeds(this); // live widgets of PDF / audio / video embeds near the viewport
 }
 
 EditorView::~EditorView()
@@ -202,6 +205,142 @@ void EditorView::positionTopWidget()
 }
 
 void EditorView::setLineWrapping(bool) {}
+
+// ---------------------------------------------------------------------------------------------
+// cursor shape & bottom panel
+// ---------------------------------------------------------------------------------------------
+void EditorView::setCursorShape(CursorShape shape, bool mainOnly)
+{
+    if (m_cursorShape == shape && m_cursorMainOnly == mainOnly)
+        return;
+    m_cursorShape = shape;
+    m_cursorMainOnly = mainOnly;
+    restartBlink();
+    viewport()->update();
+}
+
+qsizetype EditorView::blockCursorPos(const SelRange& r) const
+{
+    // Obsidian's vim fat cursor: on the head, or on the last selected character of a forward
+    // selection (unless the head sits at a line break).
+    const Text& t = m_doc->text();
+    qsizetype s = r.head;
+    if (r.anchor < r.head && !(s < t.length() && t.charAt(s) == u'\n'))
+        --s;
+    if (s > 1 && s < t.length() && t.charAt(s).isLowSurrogate())
+        --s;
+    return std::clamp<qsizetype>(s, 0, t.length());
+}
+
+namespace {
+struct BlockCursorBox {
+    QRectF rect;       // doc coordinates
+    int dispFrom = -1; // display range of the character inside it (-1: none)
+    int dispTo = -1;
+    int line = -1;
+};
+
+BlockCursorBox computeBlockCursor(DocLayout& layout, const Text& t, qsizetype s, const StyleSheet* styles, int tabSize)
+{
+    BlockCursorBox box;
+    const QRectF r0 = layout.caretRect(s, 1);
+    const int line = t.lineAt(s);
+    const qsizetype ls = t.lineStart(line), le = t.lineEnd(line);
+    box.line = line;
+    const DocLayout::UnitLayout* ul = layout.isInBlock(line) ? nullptr : layout.layoutFor(line);
+    QFont font = styles ? styles->line(StyleId::Normal).font : QFont();
+    int disp = -1;
+    if (ul) {
+        font = styles ? styles->line(ul->deco.lineStyle).font : font;
+        disp = ul->block.docToDisp(int(s - ls), 1);
+        for (const QTextLayout::FormatRange& f : ul->block.formats())
+            if (disp >= f.start && disp < f.start + f.length)
+                font = f.format.font().resolve(font);
+    }
+    const qreal spaceW = QFontMetricsF(font).horizontalAdvance(QLatin1Char(' '));
+    qreal x = r0.x(), w = 0;
+    if (s < le) {
+        QTextBoundaryFinder f(QTextBoundaryFinder::Grapheme, t.line(line));
+        f.setPosition(int(s - ls));
+        qsizetype e = f.toNextBoundary();
+        e = e < 0 ? le : ls + e;
+        const QRectF r1 = layout.caretRect(e, -1);
+        if (qFuzzyCompare(r1.top() + 1, r0.top() + 1) && r1.x() > r0.x()) {
+            w = r1.x() - r0.x();
+            if (t.charAt(s) == u'\t') {
+                w = w / std::max(1, tabSize); // one column at the end of the tab
+                x = r1.x() - w;
+            } else if (ul) {
+                box.dispFrom = disp;
+                box.dispTo = ul->block.docToDisp(int(e - ls), -1);
+            }
+        }
+    }
+    if (w <= 0)
+        w = spaceW;
+    box.rect = QRectF(x, r0.y(), w, r0.height());
+    return box;
+}
+} // namespace
+
+QRectF EditorView::blockCursorRect(const SelRange& range) const
+{
+    if (!m_doc || m_cursorShape != CursorShape::Block)
+        return {};
+    auto* self = const_cast<EditorView*>(this);
+    const BlockCursorBox b = computeBlockCursor(self->m_layout, m_doc->text(), blockCursorPos(range), m_styles.get(), m_foldOptions.tabSize);
+    return QRectF(docToViewport(b.rect.topLeft()), b.rect.size());
+}
+
+void EditorView::paintBlockCursor(QPainter& p, const SelRange& r)
+{
+    const Text& t = m_doc->text();
+    const BlockCursorBox b = computeBlockCursor(m_layout, t, blockCursorPos(r), m_styles.get(), m_foldOptions.tabSize);
+    if (b.rect.isEmpty())
+        return;
+    const ThemePtr th = currentTheme();
+    const QColor bg = th->color(QStringLiteral("--interactive-accent"));
+    const QColor fg = th->color(QStringLiteral("--text-on-accent"));
+    p.fillRect(b.rect, bg);
+    if (b.dispTo <= b.dispFrom || b.dispFrom < 0)
+        return;
+    const DocLayout::UnitLayout* ul = m_layout.layoutFor(b.line);
+    if (!ul || !ul->text)
+        return;
+    QTextLayout::FormatRange fr;
+    fr.start = b.dispFrom;
+    fr.length = b.dispTo - b.dispFrom;
+    fr.format.setForeground(fg);
+    fr.format.setBackground(bg);
+    p.save();
+    p.setClipRect(b.rect);
+    ul->text->draw(&p, QPointF(0, m_layout.lineTop(b.line)), {fr});
+    p.restore();
+}
+
+void EditorView::setBottomPanel(QWidget* panel)
+{
+    if (m_bottomPanel != panel) {
+        if (m_bottomPanel)
+            m_bottomPanel->hide();
+        m_bottomPanel = panel;
+        if (panel)
+            panel->setParent(this); // not the viewport: it doesn't scroll
+    }
+    updateBottomPanel();
+}
+
+void EditorView::updateBottomPanel()
+{
+    const bool shown = m_bottomPanel && !m_bottomPanel->isHidden();
+    const int h = shown ? std::max(0, m_bottomPanel->sizeHint().height()) : 0;
+    if (viewportMargins().bottom() != h)
+        setViewportMargins(0, 0, 0, h);
+    if (shown) {
+        m_bottomPanel->setGeometry(0, height() - h, width(), h);
+        m_bottomPanel->raise();
+    }
+}
 
 int EditorView::addDecorationLayer(DecorationLayer layer)
 {
@@ -472,7 +611,11 @@ void EditorView::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::TextAntialiasing);
     m_layout.paint(&p, ctx);
 
-    if (hasFocus() && m_caretOn && !isReadOnly()) {
+    if (hasFocus() && m_caretOn && !isReadOnly() && m_cursorShape == CursorShape::Block) {
+        for (int i = 0; i < m_sel.size(); ++i)
+            if (!m_cursorMainOnly || i == m_sel.mainIndex())
+                paintBlockCursor(p, m_sel.ranges()[i]);
+    } else if (hasFocus() && m_caretOn && !isReadOnly()) {
         const QColor caret = m_styles->caret();
         for (const SelRange& r : m_sel.ranges()) {
             QRectF cr = m_layout.caretRect(r.head);
@@ -555,6 +698,10 @@ void EditorView::timerEvent(QTimerEvent* e)
     if (e->timerId() == m_blink.timerId()) {
         m_caretOn = !m_caretOn;
         for (const SelRange& r : m_sel.ranges()) {
+            if (m_cursorShape == CursorShape::Block) {
+                viewport()->update(blockCursorRect(r).adjusted(-2, -1, 2, 1).toAlignedRect());
+                continue;
+            }
             const QRectF cr = m_layout.caretRect(r.head);
             viewport()->update(QRectF(docToViewport(cr.topLeft()) - QPointF(2, 1), QSizeF(6, cr.height() + 2)).toAlignedRect());
         }
@@ -604,6 +751,23 @@ bool EditorView::viewportEvent(QEvent* e)
 
 bool EditorView::event(QEvent* e)
 {
+    // Key hooks (vim) see keys before anything else the editor does with them — not keys typed into
+    // a child widget (the inline title, a bottom panel) that it let through.
+    if ((e->type() == QEvent::ShortcutOverride || e->type() == QEvent::KeyPress) && m_doc) {
+        auto* ke = static_cast<QKeyEvent*>(e);
+        QWidget* focus = QApplication::focusWidget();
+        const bool fromChild = focus && focus != this && isAncestorOf(focus);
+        if (!fromChild && EditorHooks::global().runKey(*this, ke)) {
+            ke->accept();
+            return true;
+        }
+    }
+    if (e->type() == QEvent::Resize || e->type() == QEvent::LayoutRequest) {
+        const bool r = QAbstractScrollArea::event(e);
+        if (m_bottomPanel)
+            updateBottomPanel();
+        return r;
+    }
     // Keep Tab / Shift+Tab for indentation instead of focus traversal.
     if (e->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(e);

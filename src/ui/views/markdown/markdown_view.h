@@ -18,6 +18,7 @@ class EditorSuggest;
 class FoldStore;
 class InlineTitle;
 class ViewRegistry;
+class VimController;
 
 // Obsidian's MarkdownView: a note in Live Preview, Source mode or Reading view, sharing its Document
 // with every other pane showing the same file. View state is Obsidian's
@@ -56,6 +57,7 @@ public:
     EditorSearchBar* searchBar() const { return m_searchBar; }
     InlineTitle* inlineTitle() const { return m_title; }
     EditorSuggest* editorSuggest() const { return m_suggest; }
+    VimController* vim() const { return m_vim; } // while "vimMode" is on
     bool save();                 // editor:save-file
     void applySettings();        // re-read the vault config (readable line length, folding, ...)
 
@@ -80,11 +82,13 @@ private:
     void restoreFolds();
     void updateTitle();
     void setModeFromState(const QJsonObject& state);
+    void setVimMode(bool on);
 
     EditorView* m_editor;
     EditorSearchBar* m_searchBar;
     InlineTitle* m_title;
     EditorSuggest* m_suggest;
+    VimController* m_vim = nullptr;
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;

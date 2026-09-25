@@ -1,6 +1,7 @@
 #include "app/application.h"
 
 #include "app/scenario_runner.h"
+#include "app/single_instance.h"
 
 #include "core/commands/command_registry.h"
 #include "core/config/clone_paths.h"
@@ -12,6 +13,7 @@
 #include "core/documents/fold_store.h"
 #include "core/documents/local_storage.h"
 #include "core/files/file_manager.h"
+#include "core/fuzzy/fuzzy.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/recovery/file_recovery.h"
 #include "core/recovery/snapshot_store.h"
@@ -25,6 +27,7 @@
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
+#include "ui/overlay/suggest_modal.h"
 #include "ui/graph/graph_view.h"
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
@@ -33,6 +36,7 @@
 #include "ui/plugins/file_recovery_ui.h"
 #include "ui/plugins/note_composer_ui.h"
 #include "ui/plugins/pdf_export_ui.h"
+#include "ui/plugins/rename_subpath.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/settings/settings_modal.h"
 #include "ui/settings/settings_pages.h"
@@ -45,6 +49,7 @@
 #include "ui/shell/status_bar.h"
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
+#include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
 #include "ui/workspace/file_menu.h"
@@ -65,6 +70,8 @@
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QUrl>
+#include <QUrlQuery>
 
 using namespace Qt::StringLiterals;
 
@@ -113,6 +120,19 @@ int Application::start()
 
     if (!m_opts.edit.isEmpty())
         return startEditHarness();
+
+    resolveTarget();
+    if (!m_opts.headless() && !m_opts.newInstance && QGuiApplication::platformName() != u"offscreen") {
+        // Another interactive instance takes the request (Obsidian runs one process).
+        QJsonObject request{{QStringLiteral("open"), m_opts.open}, {QStringLiteral("mode"), m_opts.mode}};
+        if (!m_opts.vault.isEmpty())
+            request.insert(QStringLiteral("vault"), VaultRegistry::normalizePath(QFileInfo(m_opts.vault).absoluteFilePath()));
+        if (SingleInstance::sendToRunning(request))
+            return HandedOff;
+        m_single = new SingleInstance(this);
+        if (m_single->listen())
+            connect(m_single, &SingleInstance::requestReceived, this, &Application::handleRequest);
+    }
 
     QString vault = m_opts.vault;
     if (vault.isEmpty() && !m_opts.picker) {
@@ -185,6 +205,140 @@ void Application::showPicker()
     m_picker->raise();
     if (!m_opts.screenshot.isEmpty())
         finishHeadless(m_picker);
+}
+
+void Application::resolveTarget()
+{
+    // A file: the registered vault containing it (the deepest one), opened at that file.
+    auto containing = [this](const QString& abs) -> QString {
+        QString best;
+        for (const VaultEntry& e : m_registry->vaults())
+            if (abs.startsWith(e.path + u'/') && e.path.size() > best.size())
+                best = e.path;
+        return best;
+    };
+    if (!m_opts.file.isEmpty()) {
+        const QString root = containing(m_opts.file);
+        if (root.isEmpty()) {
+            qWarning("oc: %s is not inside a known vault", qPrintable(m_opts.file));
+        } else {
+            m_opts.vault = root;
+            m_opts.open = m_opts.file.mid(root.size() + 1);
+        }
+    }
+    // obsidian://open?vault=<name or id>&file=<path> | obsidian://open?path=<absolute path>
+    if (!m_opts.uri.isEmpty()) {
+        const QUrl url(m_opts.uri);
+        const QUrlQuery q(url);
+        if (url.host() != u"open") {
+            qWarning("oc: unsupported URI action: %s", qPrintable(url.host()));
+            return;
+        }
+        const QString path = q.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
+        if (!path.isEmpty()) {
+            const QString abs = VaultRegistry::normalizePath(path);
+            if (QFileInfo(abs).isDir()) {
+                m_opts.vault = abs;
+            } else if (const QString root = containing(abs); !root.isEmpty()) {
+                m_opts.vault = root;
+                m_opts.open = abs.mid(root.size() + 1);
+            }
+            return;
+        }
+        const QString name = q.queryItemValue(QStringLiteral("vault"), QUrl::FullyDecoded);
+        for (const VaultEntry& e : m_registry->vaults())
+            if (e.id == name || e.name() == name) {
+                m_opts.vault = e.path;
+                break;
+            }
+        if (m_opts.vault.isEmpty())
+            qWarning("oc: no vault named %s", qPrintable(name));
+        m_opts.open = q.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
+    }
+}
+
+void Application::handleRequest(const QJsonObject& request)
+{
+    qInfo("oc: request from another launch: vault=%s open=%s", qPrintable(request.value(QStringLiteral("vault")).toString()),
+          qPrintable(request.value(QStringLiteral("open")).toString()));
+    const QString vault = request.value(QStringLiteral("vault")).toString();
+    MainWindow* w = nullptr;
+    if (!vault.isEmpty()) {
+        w = openVault(vault);
+    } else {
+        for (const auto& win : std::as_const(m_windows))
+            if (win)
+                w = win; // the most recent
+        if (!w) {
+            showPicker();
+            return;
+        }
+    }
+    if (!w)
+        return;
+    const QString open = request.value(QStringLiteral("open")).toString();
+    if (!open.isEmpty())
+        openPath(w, open, request.value(QStringLiteral("mode")).toString());
+    w->show();
+    if (w->isMinimized())
+        w->showNormal();
+    w->raise();
+    w->activateWindow();
+}
+
+SuggestModal* Application::openVaultSwitcher(MainWindow* from, bool switchVault)
+{
+    if (!from)
+        return nullptr;
+    struct Item {
+        QString name, path;
+        bool current;
+    };
+    QList<Item> items;
+    const QString currentPath = from->session() ? from->session()->root() : QString();
+    for (const VaultEntry& e : m_registry->vaults())
+        items.push_back({QFileInfo(e.path).fileName(), e.path, e.path == currentPath});
+    auto* m = new SuggestModal(from->overlay());
+    m->setPlaceholder(tr("Change vault..."));
+    m->setInstructions({{QStringLiteral("↑↓"), tr("to navigate")}, {QStringLiteral("↵"), tr("to use")}, {QStringLiteral("esc"), tr("to dismiss")}});
+    m->setProvider([items](const QString& query) {
+        QList<std::pair<double, Suggestion>> scored;
+        const FuzzyQuery q(query);
+        for (const Item& it : items) {
+            const std::optional<FuzzyResult> r = q.match(it.name);
+            if (!r)
+                continue;
+            Suggestion s;
+            s.title = it.name;
+            for (int i : r->matches)
+                s.titleMatches.push_back({i, i + 1});
+            if (it.current)
+                s.auxText = tr("Active"); // Obsidian's "flair mod-pop"
+            s.data = it.path;
+            scored.push_back({r->score, s});
+        }
+        std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        QList<Suggestion> out;
+        for (const auto& [score, s] : scored)
+            out.push_back(s);
+        return out;
+    });
+    QPointer<MainWindow> w = from;
+    connect(m, &SuggestModal::chosen, this, [this, w, switchVault, currentPath](const Suggestion& s, Qt::KeyboardModifiers) {
+        const QString path = s.data.toString();
+        if (path.isEmpty() || path == currentPath)
+            return;
+        MainWindow* opened = openVault(path);
+        if (!opened) {
+            if (w && w->notices())
+                w->notices()->show(tr("Failed to open."));
+            return;
+        }
+        if (switchVault && w && opened != w)
+            w->close();
+    });
+    m->open();
+    return m;
 }
 
 void Application::applyAppearance(VaultSession* session)
@@ -360,6 +514,7 @@ void Application::populateWindow(MainWindow* w)
     registerFileExplorerView(*registry); // replaces the placeholder
     registerNavigationViews(*registry);  // replaces the "search" placeholder
     registerGraphViews(*registry);       // "graph" + "localgraph"
+    registerMediaViews(*registry);       // image, audio, video, pdf views + their embeds
     connect(w, &QObject::destroyed, this, [registry] { delete registry; });
     session->setViewRegistry(registry);
 
@@ -386,11 +541,33 @@ void Application::populateWindow(MainWindow* w)
     registerSidebarCommands(*commands, w);
     registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
     registerExportPdfCommand(*commands, w);  // workspace:export-pdf
+    rename_subpath::registerCommands(*commands, w); // editor:rename-heading + editor menu "Rename this heading/block ID..."
     installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
     SettingsController* settings = SettingsController::of(w);
     settings->setVaultRegistry(m_registry); // "Window frame style" is a registry option
     settings->applyOptions();               // ribbon visibility, editing behaviours, spellchecker
     connect(settings, &SettingsController::manageVaultsRequested, this, &Application::showPicker);
+    {
+        // Vaults: "Manage vaults" (the picker), "Change vault..." and "Open vault..." (the switcher).
+        QPointer<MainWindow> win = w;
+        auto vaultCommand = [](const char* id, const QString& name, std::function<void()> run) {
+            Command c;
+            c.id = QString::fromLatin1(id);
+            c.name = name;
+            c.icon = QStringLiteral("vault");
+            c.callback = std::move(run);
+            return c;
+        };
+        commands->add(vaultCommand("app:open-vault", tr("Manage vaults"), [this] { showPicker(); }));
+        commands->add(vaultCommand("app:switch-vault", tr("Change vault..."), [this, win] {
+            if (win)
+                openVaultSwitcher(win, true);
+        }));
+        commands->add(vaultCommand("app:open-another-vault", tr("Open vault..."), [this, win] {
+            if (win)
+                openVaultSwitcher(win, false);
+        }));
+    }
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
@@ -439,21 +616,35 @@ void Application::populateWindow(MainWindow* w)
     installCorePluginSwitches(w); // disabled core plugins: no commands, ribbon actions, status items, views
 
     // --open <note> [--mode ...]: open a note in the active tab (headless screenshots, CLI).
-    if (!m_opts.open.isEmpty() && session->vault()) {
-        if (TFile* f = session->vault()->file(m_opts.open)) {
-            QJsonObject state{{QStringLiteral("file"), f->path()}};
-            if (m_opts.mode == u"reading")
-                state.insert(QStringLiteral("mode"), QStringLiteral("preview"));
-            else if (m_opts.mode == u"source" || m_opts.mode == u"live") {
-                state.insert(QStringLiteral("mode"), QStringLiteral("source"));
-                state.insert(QStringLiteral("source"), m_opts.mode == u"source");
-            }
-            WorkspaceLeaf* leaf = workspace->getLeaf(Workspace::NewLeaf::No);
-            leaf->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("markdown")}, {QStringLiteral("state"), state}});
-            workspace->setActiveLeaf(leaf, true);
-        } else {
-            qWarning("oc: --open: no such file in the vault: %s", qPrintable(m_opts.open));
+    if (!m_opts.open.isEmpty())
+        openPath(w, m_opts.open, m_opts.mode);
+}
+
+void Application::openPath(MainWindow* w, const QString& path, const QString& mode)
+{
+    VaultSession* session = w ? w->session() : nullptr;
+    Workspace* workspace = w ? w->workspace() : nullptr;
+    if (!session || !session->vault() || !workspace)
+        return;
+    TFile* f = session->vault()->file(path);
+    if (!f && !path.contains(u'.'))
+        f = session->vault()->file(path + u".md"_s); // obsidian://open?file=Note (no extension)
+    if (f && !f->isMarkdown()) {
+        // images, PDFs, media, canvases, ...: the view registered for the extension
+        workspace->openFile(f, Workspace::NewLeaf::No);
+    } else if (f) {
+        QJsonObject state{{QStringLiteral("file"), f->path()}};
+        if (mode == u"reading")
+            state.insert(QStringLiteral("mode"), QStringLiteral("preview"));
+        else if (mode == u"source" || mode == u"live") {
+            state.insert(QStringLiteral("mode"), QStringLiteral("source"));
+            state.insert(QStringLiteral("source"), mode == u"source");
         }
+        WorkspaceLeaf* leaf = workspace->getLeaf(Workspace::NewLeaf::No);
+        leaf->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("markdown")}, {QStringLiteral("state"), state}});
+        workspace->setActiveLeaf(leaf, true);
+    } else {
+        qWarning("oc: --open: no such file in the vault: %s", qPrintable(path));
     }
 }
 

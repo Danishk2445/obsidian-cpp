@@ -9,6 +9,8 @@
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
+#include "editor/embeds/embed_registry.h"
+#include "editor/live_preview_decorator.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
@@ -63,7 +65,16 @@ HoverPopover::HoverPopover(OverlayLayer* layer, VaultSession* session, TFile* fi
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(1, 1, 1, 1);
     v->setSpacing(0);
-    if (isImageExt(file->extension())) {
+    if (std::shared_ptr<EmbedProvider> provider = EmbedRegistry::instance().provider(file->extension())) {
+        // Obsidian's popover embeds: .pdf-embed 450x400 (no toolbar), .video-embed, .audio-embed
+        EmbedContext ctx;
+        ctx.request = EmbedRequest::fromLink(session->vault()->absolutePath(file->path()), file->path(), subpath);
+        ctx.request.display = EmbedRequest::Display::Popover;
+        m_embedSize = provider->size(ctx.request, kWidth).toSize();
+        m_embed = provider->createWidget(ctx, this);
+        if (m_embed)
+            v->addWidget(m_embed);
+    } else if (isImageExt(file->extension())) {
         m_image = new QLabel(this);
         m_image->setAlignment(Qt::AlignCenter);
         QImageReader reader(session->vault()->absolutePath(file->path()));
@@ -90,6 +101,21 @@ HoverPopover::HoverPopover(OverlayLayer* layer, VaultSession* session, TFile* fi
                 if (guard)
                     guard->release(doc);
             });
+            // embeds and unresolved-link styling inside the preview resolve from the previewed note
+            if (LivePreviewDecorator* lp = m_editor->livePreview(); lp && session->metadata()) {
+                QPointer<VaultSession> s = session;
+                const QString source = file->path();
+                lp->isResolved = [s, source](const QString& target) {
+                    const QString path = LinkResolver::splitSubpath(target).first;
+                    return !s || !s->metadata() || path.isEmpty() || !s->metadata()->resolver().resolve(path, source).isEmpty();
+                };
+                lp->resolveAttachment = [s, source](const QString& linkpath) -> QString {
+                    if (!s || !s->metadata() || !s->vault())
+                        return {};
+                    const QString dest = s->metadata()->resolver().resolve(LinkResolver::splitSubpath(linkpath).first, source);
+                    return dest.isEmpty() ? QString() : s->vault()->absolutePath(dest);
+                };
+            }
             m_editor->setDocument(m_doc);
             if (!subpath.isEmpty() && session->metadata()) {
                 if (const md::CachedMetadata* meta = session->metadata()->fileCache(file->path())) {
@@ -123,6 +149,9 @@ void HoverPopover::placeNear(const QRect& anchor)
         const QSize px = m_image->pixmap().size();
         w = std::min(std::max(px.width(), 30) + 2, bounds.width());
         h = std::max(px.height(), 30) + 2;
+    } else if (m_embed) {
+        w = std::min(m_embedSize.width() + 2, bounds.width());
+        h = m_embedSize.height() + 2;
     }
     // measure the note at the popover's width, then fit the height to it
     setGeometry(anchor.left(), anchor.bottom() + 4, w, h);
@@ -251,7 +280,7 @@ void PagePreview::showPending()
     auto [linkpath, subpath] = LinkResolver::splitSubpath(m_pending.linktext);
     const QString dest = linkpath.isEmpty() ? m_pending.sourcePath : s->metadata()->resolver().resolve(linkpath, m_pending.sourcePath);
     TFile* file = dest.isEmpty() ? nullptr : s->vault()->file(dest);
-    if (!file || !(file->isMarkdown() || isImageExt(file->extension())))
+    if (!file || !(file->isMarkdown() || isImageExt(file->extension()) || EmbedRegistry::instance().isExtensionRegistered(file->extension())))
         return;
     // a new popover replaces those that aren't its ancestors
     HoverPopover* parentPopover = popoverOf(m_pending.hoverParent);

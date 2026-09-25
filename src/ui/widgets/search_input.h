@@ -17,6 +17,9 @@ public:
     void setNoMatch(bool noMatch);          // tinted background (Obsidian .mod-no-match)
     bool noMatch() const { return m_noMatch; }
     void setShowIcon(bool on);
+    // Room kept free at the right edge for a child button (e.g. a match-case toggle); the clear
+    // button and the decorator move left of it.
+    void setRightReserve(int px);
 
     QSize sizeHint() const override;
 
@@ -36,6 +39,7 @@ private:
     bool m_clear = true;
     bool m_icon = true;
     bool m_noMatch = false;
+    int m_rightReserve = 0;
     QString m_decorator;
 };
 

@@ -10,19 +10,25 @@ EditorHooks& EditorHooks::global()
 
 int EditorHooks::addInputHandler(InputHandler h)
 {
-    m_entries.push_back({m_next, std::move(h), {}, {}});
+    m_entries.push_back({m_next, std::move(h), {}, {}, {}});
     return m_next++;
 }
 
 int EditorHooks::addPasteHandler(PasteHandler h)
 {
-    m_entries.push_back({m_next, {}, std::move(h), {}});
+    m_entries.push_back({m_next, {}, std::move(h), {}, {}});
     return m_next++;
 }
 
 int EditorHooks::addDropHandler(DropHandler h)
 {
-    m_entries.push_back({m_next, {}, {}, std::move(h)});
+    m_entries.push_back({m_next, {}, {}, std::move(h), {}});
+    return m_next++;
+}
+
+int EditorHooks::addKeyHandler(KeyHandler h)
+{
+    m_entries.push_back({m_next, {}, {}, {}, std::move(h)});
     return m_next++;
 }
 
@@ -54,6 +60,15 @@ bool EditorHooks::runDrop(EditorView& view, const QMimeData& data, qsizetype pos
     const QList<Entry> entries = m_entries;
     for (const Entry& e : entries)
         if (e.drop && e.drop(view, data, pos))
+            return true;
+    return false;
+}
+
+bool EditorHooks::runKey(EditorView& view, QKeyEvent* event) const
+{
+    const QList<Entry> entries = m_entries;
+    for (const Entry& e : entries)
+        if (e.key && e.key(view, event))
             return true;
     return false;
 }
