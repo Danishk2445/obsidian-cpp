@@ -417,25 +417,112 @@ void toggleNumberedList(EditorView& view)
         [](const QString& line) { return ordered.match(line).hasMatch(); });
 }
 
-void toggleChecklist(EditorView& view)
+void toggleChecklist(EditorView& view, bool cycle)
 {
-    static const QRegularExpression task(QStringLiteral("^([ \\t]*(?:>[ \\t]?)*[ \\t]*[-*+] )\\[(.)\\]"));
-    static const QRegularExpression bullet(QStringLiteral("^([ \\t]*(?:>[ \\t]?)*[ \\t]*[-*+] )(?!\\[.\\])"));
-    transformLines(
-        view,
-        [](const QString& line, int, bool) -> QString {
-            auto m = task.match(line);
-            if (m.hasMatch()) {
-                const QChar c = m.captured(2)[0];
-                return m.captured(1) + (c == u' ' ? QStringLiteral("[x]") : QStringLiteral("[ ]")) + line.mid(m.capturedEnd(0));
-            }
-            auto b = bullet.match(line);
-            if (b.hasMatch())
-                return b.captured(1) + QStringLiteral("[ ] ") + line.mid(b.capturedEnd(1));
-            const qsizetype ws = std::max<qsizetype>(0, line.indexOf(QRegularExpression(QStringLiteral("\\S|$"))));
-            return line.left(ws) + QStringLiteral("- [ ] ") + line.mid(ws);
-        },
-        [](const QString&) { return false; });
+    // Obsidian's toggleCheckList: one state for all touched lines, decided by the "least done" line —
+    // any non-list line (cycling only) -> plain bullets; any non-task -> "[ ] "; any "[ ]" -> "[x] ";
+    // otherwise (all done) -> "[ ] " again, or back to plain bullets when cycling. Only the prefix changes.
+    Document* doc = view.document();
+    if (!doc || view.isReadOnly())
+        return;
+    static const QRegularExpression re(QStringLiteral("^([>\\s]*)(([*+-] |(\\d+)([.)] ))(?:\\[(.)\\] )?)?"));
+    const Text& t = doc->text();
+    const Selection sel = view.selection();
+    QList<int> lines;
+    for (const SelRange& r : sel.ranges()) {
+        const int la = t.lineAt(r.from()), lb = t.lineAt(r.to());
+        for (int l = la; l <= lb; ++l)
+            if (lines.isEmpty() || lines.last() < l)
+                lines.push_back(l);
+    }
+    QList<QRegularExpressionMatch> matches;
+    int state = 3;
+    for (int l : lines) {
+        const QRegularExpressionMatch m = re.match(t.line(l));
+        const bool hasTask = m.capturedLength(6) > 0;
+        if (state > 2 && hasTask && m.captured(6) == u" ")
+            state = 2;
+        if (state > 1 && !hasTask)
+            state = 1;
+        if (cycle && state > 0 && m.capturedLength(3) == 0)
+            state = 0;
+        matches.push_back(m);
+    }
+    QList<ChangeSpec> specs;
+    for (qsizetype i = 0; i < lines.size(); ++i) {
+        const QRegularExpressionMatch& m = matches[i];
+        const QString marker = m.capturedLength(3) ? m.captured(3) : QStringLiteral("- ");
+        const QString base = m.captured(1) + marker;
+        QString text = base;
+        if (state == 1 && m.capturedLength(6) == 0)
+            text = base + QStringLiteral("[ ] ");
+        else if (state == 2)
+            text = base + QStringLiteral("[x] ");
+        else if (state == 3 && !cycle)
+            text = base + QStringLiteral("[ ] ");
+        if (text != m.captured(0))
+            specs.push_back({t.lineStart(lines[i]), t.lineStart(lines[i]) + m.capturedLength(0), text});
+    }
+    if (specs.isEmpty())
+        return;
+    Transaction tr;
+    tr.changes = ChangeSet::of(specs, t.length());
+    tr.selection = sel.map(tr.changes.desc(), 1);
+    tr.userEvent = QStringLiteral("format");
+    view.dispatch(tr);
+}
+
+int nextFootnoteNumber(const Text& text)
+{
+    // Obsidian's: one more than the largest numeric footnote definition id.
+    static const QRegularExpression def(QStringLiteral("^[ \\t>]*\\[\\^([^\\]\\s]+)\\]:"));
+    int max = 0;
+    for (int l = 0; l < text.lineCount(); ++l) {
+        const QStringView line = text.lineView(l);
+        if (!line.contains(QStringLiteral("[^")))
+            continue;
+        const QRegularExpressionMatch m = def.matchView(line);
+        bool ok = false;
+        const int n = m.hasMatch() ? m.captured(1).toInt(&ok) : 0;
+        static const QRegularExpression digits(QStringLiteral("^\\d+$"));
+        if (ok && digits.match(m.captured(1)).hasMatch())
+            max = std::max(max, n);
+    }
+    return max + 1;
+}
+
+QString insertFootnote(EditorView& view)
+{
+    Document* doc = view.document();
+    if (!doc || view.isReadOnly())
+        return {};
+    const Text& t = doc->text();
+    const QString ref = QStringLiteral("[^") + QString::number(nextFootnoteNumber(t)) + QLatin1Char(']');
+    const SelRange r = view.selection().main();
+    // blank line before the definition: count the newlines ending the document after the selection
+    int trailing = 0;
+    for (qsizetype p = t.length(); p > r.to() && trailing < 2 && t.slice(p - 1, p) == u"\n"; --p)
+        ++trailing;
+    const QString def = QString(2 - trailing, QLatin1Char('\n')) + ref + QStringLiteral(": \n");
+    Transaction tr;
+    tr.changes = ChangeSet::of({{r.from(), r.from(), ref}, {t.length(), t.length(), def}}, t.length());
+    tr.selection = Selection::cursor(r.from() + ref.size());
+    tr.userEvent = QStringLiteral("input");
+    view.dispatch(tr);
+    return ref;
+}
+
+void insertTag(EditorView& view)
+{
+    Document* doc = view.document();
+    if (!doc || view.isReadOnly())
+        return;
+    const qsizetype from = view.selection().main().from();
+    Transaction tr;
+    tr.changes = ChangeSet::of({{from, from, QStringLiteral("#")}}, doc->text().length());
+    tr.selection = Selection::cursor(from + 1);
+    tr.userEvent = QStringLiteral("input.autocomplete"); // opens the tag suggest
+    view.dispatch(tr);
 }
 
 void setHeading(EditorView& view, int level)

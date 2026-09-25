@@ -1,6 +1,7 @@
 #include "app/cli.h"
 
 #include <QCommandLineParser>
+#include <QFileInfo>
 
 namespace oc {
 
@@ -26,14 +27,24 @@ CliOptions parseCli(const QStringList& args)
     const QCommandLineOption frameless(QStringLiteral("frameless"), QStringLiteral("Use the Obsidian-style frameless window."));
     const QCommandLineOption accent(QStringLiteral("accent"), QStringLiteral("Accent color for this run."), QStringLiteral("#rrggbb"));
     const QCommandLineOption edit(QStringLiteral("edit"), QStringLiteral("Developer harness: edit a single file in a bare editor window."), QStringLiteral("file"));
-    p.addOptions({vault, open, mode, theme, size, shot, delay, script, collapse, det, picker, noReg, native, frameless, accent, edit});
-    p.addPositionalArgument(QStringLiteral("vault"), QStringLiteral("Vault folder (same as --vault)."), QStringLiteral("[vault]"));
+    const QCommandLineOption newInstance(QStringLiteral("new-instance"), QStringLiteral("Start a separate process even if one is running."));
+    p.addOptions({vault, open, mode, theme, size, shot, delay, script, collapse, det, picker, noReg, native, frameless, accent, edit, newInstance});
+    p.addPositionalArgument(QStringLiteral("target"), QStringLiteral("A vault folder, a file inside a known vault, or an obsidian://open URI."),
+                            QStringLiteral("[target]"));
     p.process(args);
 
     CliOptions o;
     o.vault = p.value(vault);
-    if (o.vault.isEmpty() && !p.positionalArguments().isEmpty())
-        o.vault = p.positionalArguments().first();
+    if (!p.positionalArguments().isEmpty()) {
+        const QString target = p.positionalArguments().first();
+        if (target.startsWith(QLatin1String("obsidian://"), Qt::CaseInsensitive))
+            o.uri = target;
+        else if (QFileInfo(target).isFile())
+            o.file = QFileInfo(target).absoluteFilePath();
+        else if (o.vault.isEmpty())
+            o.vault = target;
+    }
+    o.newInstance = p.isSet(newInstance);
     o.open = p.value(open);
     o.mode = p.value(mode);
     o.theme = p.value(theme);

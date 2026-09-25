@@ -31,6 +31,7 @@ public:
     TFile* file() const { return m_file; }
     QString subpath() const { return m_subpath; }
     EditorView* editor() const { return m_editor; } // null for images
+    QWidget* embed() const { return m_embed; }      // PDF / audio / video (EmbedRegistry), else null
     QWidget* hoverParent() const { return m_hoverParent; }
     QRect anchor() const { return m_anchor; }      // the hovered link (layer coordinates)
     void placeNear(const QRect& anchor);
@@ -46,6 +47,8 @@ private:
     std::shared_ptr<Document> m_doc;
     EditorView* m_editor = nullptr;
     QLabel* m_image = nullptr;
+    QWidget* m_embed = nullptr;
+    QSize m_embedSize;
     QRect m_anchor;
 };
 

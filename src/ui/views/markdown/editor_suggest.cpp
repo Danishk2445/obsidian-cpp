@@ -259,7 +259,7 @@ void EditorSuggest::trigger(bool force)
     } else if (slashCommandsEnabled() && m_view->file()) {
         // Slash commands: "/query" at the start of the line or after whitespace, up to the cursor.
         static const QRegularExpression slash(u"(^|\\s)\\/([^\\s\\/]*)$"_s);
-        const QRegularExpressionMatch m = slash.match(QStringView(lineText).left(col));
+        const QRegularExpressionMatch m = slash.matchView(QStringView(lineText).left(col));
         if (m.hasMatch()) {
             ctx.kind = Kind::Command;
             ctx.start = int(m.capturedStart() + m.capturedLength(1));

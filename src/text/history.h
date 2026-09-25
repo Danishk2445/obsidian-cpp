@@ -34,6 +34,15 @@ public:
     // Changes that aren't part of history (applied to the current document).
     void addMapping(const ChangeDesc& mapping);
 
+    // Explicit undo groups (vim: one undo step per command and per insert session). While a group
+    // is open, the first recorded change starts a new event and every later one joins it, whatever
+    // its userEvent, timing or adjacency. Groups nest (only the outermost counts). Closing a group
+    // that recorded something seals its event, so the next change never joins it. An undo/redo
+    // inside an open group makes the next change start a new event.
+    void beginGroup();
+    void endGroup();
+    bool inGroup() const { return m_groupDepth > 0; }
+
     bool canUndo() const { return !m_done.isEmpty(); }
     bool canRedo() const { return !m_undone.isEmpty(); }
     int undoDepth() const { return int(m_done.size()); }
@@ -58,6 +67,8 @@ private:
     QList<Event> m_undone;
     qint64 m_prevTime = 0;
     QString m_prevUserEvent;
+    int m_groupDepth = 0;
+    bool m_groupStarted = false; // the open group has an event on m_done
 };
 
 } // namespace oc

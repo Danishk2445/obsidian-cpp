@@ -49,6 +49,8 @@ public:
     void setEditorProvider(std::function<EditorContext()> provider) { m_editorProvider = std::move(provider); }
     EditorContext activeEditor() const { return m_editorProvider ? m_editorProvider() : EditorContext{}; }
 
+    // Commands the filter rejects are unavailable everywhere (a disabled core plugin's commands).
+    void setAvailabilityFilter(std::function<bool(const Command&)> filter) { m_filter = std::move(filter); }
     bool isAvailable(const QString& id) const;
     bool execute(const QString& id); // false if unavailable/unknown
 
@@ -78,6 +80,7 @@ private:
     QHash<QString, QList<Hotkey>> m_custom;
     QHash<Hotkey, QStringList> m_index;
     std::function<EditorContext()> m_editorProvider;
+    std::function<bool(const Command&)> m_filter;
     QStringList m_recent;
 };
 

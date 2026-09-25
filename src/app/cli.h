@@ -24,6 +24,12 @@ struct CliOptions {
     int frame = -1;         // --native-frame => 0, --frameless => 1, default -1 (setting)
     QString accent;         // --accent #rrggbb
     QString edit;           // --edit <file>: dev harness, a bare editor on one file
+    QString uri;            // positional obsidian://open?vault=…&file=… / ?path=…
+    QString file;           // positional absolute path of a file (opened in the vault containing it)
+    bool newInstance = false; // --new-instance: don't hand the request to a running instance
+
+    // Runs driven by a script or screenshot never talk to (or become) the interactive instance.
+    bool headless() const { return !screenshot.isEmpty() || !script.isEmpty() || !edit.isEmpty(); }
 };
 
 CliOptions parseCli(const QStringList& args);

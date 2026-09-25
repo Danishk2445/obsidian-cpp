@@ -68,6 +68,28 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `setFolds`, `foldsChanged`), top widget (inline title), `setVisibleLineRange` (embed a section),
   `caretRectAt`, `documentHeight`, signals `linkActivated(target, kind, newLeaf)` / `linkHovered(target, kind,
   rect)` (kind 0 wikilink, 1 embed, 2 markdown link, 3 url, 4 tag). `editor/search/*` = find/replace logic.
+- `EditorHooks` (src/editor/editor_hooks.h), additive: `KeyHandler` / `addKeyHandler` / `runKey` — a key hook run
+  first in `EditorView::event` for `ShortcutOverride` (a side-effect-free question: return true to keep the key, the
+  view then accepts the override so no application shortcut takes it) and `KeyPress` (true consumes it; unconsumed
+  keys continue to the view's own handling, typing still through the Input/Paste hooks). Keys typed into a child of
+  the view (its bottom panel) are not offered to the hook. The app's `HotkeyDispatcher` still sees keys first, like
+  Obsidian's capture-phase keymap (Obsidian hotkeys keep precedence over vim).
+- `EditorView`, additive: `setCursorShape(CursorShape::Bar|Block, mainOnly)` / `cursorShape()` /
+  `blockCursorRect(range)` (vim's fat cursor: `--interactive-accent` box, glyph in `--text-on-accent`, on the last
+  selected character of a forward selection) and `setBottomPanel(widget)` / `bottomPanel()` / `updateBottomPanel()`
+  (a full-width panel docked under the text; the viewport shrinks by its `sizeHint()` height).
+- `History` (src/text/history.h), additive: `beginGroup()` / `endGroup()` / `inGroup()` — explicit, nestable undo
+  groups (every change recorded while one is open joins one event; vim: one undo step per command and per insert
+  session). Undo/redo inside a group starts a new event; closing a group seals it.
+- `VimController` (src/editor/vim/vim_controller.h): vim key bindings for one EditorView (Obsidian's "vimMode");
+  `MarkdownView` creates it while the option is on (`MarkdownView::vim()`), `setCommandRunner` routes `:w` / `:q` /
+  `:wq` / `:x` to `editor:save-file` / `workspace:close`, `modeChanged(Mode)` / `modeName()` / `pendingKeys()` for a
+  mode indicator, `feedKeys` / `executeEx` for scripts. Internals in `src/editor/vim/vim_*` (not frozen).
+- `src/editor/embeds/embed_registry.h` — `EmbedRegistry` (Obsidian's embedRegistry for non-Markdown files:
+  extension → `EmbedProvider` {size, static paint, live widget}; `setOpener` for opening from an embed),
+  `EmbedRequest` (file, subpath params, inline / popover); `hosted_embeds.h` — `EmbedWidget` (the decorator's inline
+  placeholder) and `HostedEmbeds` (created by every `EditorView`: live widgets near the viewport, pooled; a widget
+  with the `ocEmbedBusy` property is kept alive). Providers: `src/ui/views/media` (`registerMediaViews`).
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,
@@ -88,3 +110,14 @@ Interfaces other modules/agents build against. Change deliberately and update al
   pinned/linked), `readNoteText` / `replaceNoteText`, `searchFor` (tag/property clicks → search view). Pure models:
   `core/metadata/{mentions,tag_tree,outline,property_index}.h`, `core/bookmarks/bookmarks.h` (bookmarks.json,
   `sessionBookmarks(session)`).
+- `src/ui/settings/*` — Settings (M7). `settings_modal.h`: `registerSettingsCommands` (app:open-settings, Mod+,),
+  `openSettings(window, tabId)`, `SettingsController::of(window)` (vault registry hook, core / community plugin
+  switches, live `applyAppearance()` / `applyOptions()`, signals `manageVaultsRequested`, `openHelpRequested`,
+  `corePluginToggled`, `communityPluginToggled`, `frameStyleChanged`, `relaunchRequested`), `SettingsModal`
+  (sidebar-layout Modal with tabs, sub-pages, search). `settings_tab.h`: declarative `SettingDef` /
+  `SettingControl`, `SettingsTab`, `PluginSettingsTab`, `renderSettings`. `setting_item.h`: `SettingItem`
+  (Obsidian's Setting: addToggle / addDropdown / addText / addSlider / addButton / addExtraButton /
+  addColorPicker / addControl) and `SettingGroup` (cards, lists, search; `setPlain(true)` for ordinary modals).
+  `settings_pages.h`: the tabs, `corePluginInfos()`, `css_snippets::*`, `resolveFontList`. `path_suggest.h`:
+  `FolderSuggest` (text input + folder popup), `FilePicker` (file combobox). `hotkeys_tab.h`: `HotkeysTab`,
+  `HotkeyChip`. Widgets: `ui/widgets/{dropdown,button,color_swatch}.h`.

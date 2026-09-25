@@ -1,17 +1,28 @@
 #include "ui/shell/app_commands.h"
 
 #include "core/commands/command_registry.h"
+#include "core/config/vault_config.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
+#include "render/theme/theme.h"
+#include "ui/overlay/modal.h"
+#include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
+#include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/markdown/inline_title.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/view.h"
 #include "ui/workspace/workspace.h"
 
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QLocale>
+#include <QPlainTextEdit>
 #include <QPointer>
+#include <QSysInfo>
+#include <QUrl>
 
 namespace oc {
 
@@ -34,6 +45,54 @@ Command cmd(const char* id, const QString& name, const char* icon, std::function
     c.repeatable = repeat;
     c.checkCallback = std::move(check);
     return c;
+}
+
+// Obsidian's "Debug info" modal: a read-only text area with the system info, Copy / Done.
+QString debugInfoText(MainWindow* w)
+{
+    VaultSession* s = w->session();
+    VaultConfig* cfg = s ? s->vaultConfig() : nullptr;
+    QString t = QStringLiteral("SYSTEM INFO:\n");
+    t += QStringLiteral("\tObsidian C++ version: %1\n").arg(QCoreApplication::applicationVersion());
+    t += QStringLiteral("\tQt version: %1\n").arg(QString::fromLatin1(qVersion()));
+    t += QStringLiteral("\tOperating system: %1 %2\n").arg(QSysInfo::prettyProductName(), QSysInfo::kernelVersion());
+    t += QStringLiteral("\tPlatform: %1\n").arg(QGuiApplication::platformName());
+    t += QStringLiteral("\tLanguage: %1\n").arg(QLocale().name().section(u'_', 0, 0));
+    if (cfg) {
+        t += QStringLiteral("\tLive preview: %1\n").arg(cfg->flag(QStringLiteral("livePreview")) ? QStringLiteral("on") : QStringLiteral("off"));
+        const QString theme = cfg->string(QStringLiteral("theme"));
+        t += QStringLiteral("\tBase theme: %1\n").arg(theme == u"system" ? QStringLiteral("adapt to system") : theme == u"obsidian" ? QStringLiteral("dark") : QStringLiteral("light"));
+        const QJsonArray snippets = cfg->get(QStringLiteral("enabledCssSnippets")).toArray();
+        t += QStringLiteral("\tCommunity theme: none\n\tSnippets enabled: %1\n").arg(snippets.size());
+    }
+    t += QStringLiteral("\tRestricted mode: on\n");
+    t += QStringLiteral("\nRECOMMENDATIONS:\n\tnone\n");
+    return t;
+}
+
+void openDebugInfoModal(MainWindow* w)
+{
+    auto* m = new Modal(w->overlay());
+    m->setTitle(QObject::tr("Debug info"));
+    m->setDialogWidth(800); // .modal.mod-lg
+    auto* text = new QPlainTextEdit;
+    text->setObjectName(QStringLiteral("ocDebugInfo"));
+    text->setProperty("ocInput", true);
+    text->setReadOnly(true);
+    text->setPlainText(debugInfoText(w));
+    text->setMinimumHeight(260);
+    m->addContentWidget(text);
+    const int copy = m->addButton(QObject::tr("Copy to clipboard"), Modal::ButtonStyle::Normal, false);
+    m->addButton(QObject::tr("Done"));
+    QPointer<MainWindow> pw = w;
+    QObject::connect(m, &Modal::buttonClicked, m, [pw, text, copy](int index) {
+        if (index != copy)
+            return;
+        QGuiApplication::clipboard()->setText(text->toPlainText());
+        if (pw && pw->notices())
+            pw->notices()->show(QObject::tr("%1 copied to your clipboard").arg(QObject::tr("Debug info")));
+    });
+    m->open();
 }
 
 TFile* activeFile(Workspace* ws)
@@ -94,6 +153,42 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             ws()->closeActiveLeaf();
         return true;
     }, keys({"Mod+W"})));
+    // Obsidian closes the other unpinned leaves of the active leaf's container (here: the root split).
+    r.add(cmd("workspace:close-others", QObject::tr("Close all other tabs"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock())
+            return false;
+        QList<WorkspaceLeaf*> others;
+        ws()->iterateRootLeaves([&](WorkspaceLeaf* l) {
+            if (l != a && !l->isPinned())
+                others.push_back(l);
+        });
+        if (!checking)
+            ws()->closeLeaves(others);
+        return !others.isEmpty();
+    }));
+    r.add(cmd("workspace:close-tab-group", QObject::tr("Close this tab group"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock())
+            return false;
+        if (!checking) {
+            QList<WorkspaceLeaf*> group = ws()->groupLeaves(a);
+            group.removeIf([](WorkspaceLeaf* l) { return l->isPinned(); });
+            ws()->closeLeaves(group);
+        }
+        return true;
+    }));
+    r.add(cmd("workspace:close-others-tab-group", QObject::tr("Close others in tab group"), "x", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || a->isInSidedock() || ws()->groupLeaves(a).size() < 2)
+            return false;
+        if (!checking) {
+            QList<WorkspaceLeaf*> group = ws()->groupLeaves(a);
+            group.removeIf([a](WorkspaceLeaf* l) { return l == a || l->isPinned(); });
+            ws()->closeLeaves(group);
+        }
+        return true;
+    }));
     r.add(cmd("workspace:undo-close-pane", QObject::tr("Undo close tab"), "undo-2", [ws](bool checking) {
         if (!ws() || !ws()->canUndoCloseLeaf())
             return false;
@@ -178,6 +273,92 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             return false;
         if (!checking)
             QGuiApplication::clipboard()->setText(f->path());
+        return true;
+    }));
+    r.add(cmd("workspace:copy-url", QObject::tr("Copy Obsidian URL for current file"), "vault", [ws, w](bool checking) {
+        TFile* f = activeFile(ws());
+        Vault* v = w && w->session() ? w->session()->vault() : nullptr;
+        if (!f || !v)
+            return false;
+        if (!checking) {
+            QGuiApplication::clipboard()->setText(obsidianUrl(v, f));
+            if (w->notices())
+                w->notices()->show(QObject::tr("%1 copied to your clipboard").arg(QStringLiteral("URL")));
+        }
+        return true;
+    }));
+    r.add(cmd("app:delete-file", QObject::tr("Delete current file"), "trash-2", [ws, w](bool checking) {
+        TFile* f = activeFile(ws());
+        if (!f || !w || !w->session())
+            return false;
+        if (!checking)
+            promptForDeletion(w->session(), f);
+        return true;
+    }));
+    r.add(cmd("workspace:show-trash", QObject::tr("Show trash"), "", [w](bool checking) {
+        VaultSession* s = w ? w->session() : nullptr;
+        if (!s || !s->vaultConfig() || !s->vault() || s->vaultConfig()->string(QStringLiteral("trashOption")) != u"local")
+            return false;
+        if (!checking && desktopHandlers().showInFolder)
+            desktopHandlers().showInFolder(s->vault()->absolutePath(QStringLiteral(".trash")));
+        return true;
+    }));
+    auto configFlip = [w](const char* id, const QString& name, const char* key) {
+        return cmd(id, name, "", [w, k = QString::fromLatin1(key)](bool checking) {
+            VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+            if (!cfg)
+                return false;
+            if (!checking)
+                cfg->set(k, !cfg->flag(k));
+            return true;
+        });
+    };
+    r.add(configFlip("app:toggle-ribbon", QObject::tr("Toggle ribbon"), "showRibbon"));
+    r.add(cmd("app:toggle-default-new-pane-mode", QObject::tr("Toggle default mode for new tabs"), "", [w](bool checking) {
+        VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+        if (!cfg)
+            return false;
+        if (!checking) {
+            const QString mode = cfg->string(QStringLiteral("defaultViewMode"));
+            const bool toReading = mode == u"source";
+            if (mode == u"source" || mode == u"preview") {
+                cfg->set(QStringLiteral("defaultViewMode"), toReading ? QStringLiteral("preview") : QStringLiteral("source"));
+                if (w->notices())
+                    w->notices()->show(toReading ? QObject::tr("Switched default view mode to reading view.")
+                                                 : QObject::tr("Switched default view mode to editing view."));
+            }
+        }
+        return true;
+    }));
+    // "system": flip this session's scheme only (Obsidian toggles the body class); otherwise switch
+    // between the stored "obsidian" (dark) and "moonstone" (light) themes.
+    r.add(cmd("theme:toggle-light-dark", QObject::tr("Toggle light/dark mode"), "", [w](bool checking) {
+        VaultConfig* cfg = w && w->session() ? w->session()->vaultConfig() : nullptr;
+        ThemeManager* tm = ThemeManager::instance();
+        if (!cfg || !tm)
+            return false;
+        if (!checking) {
+            const bool dark = tm->effectiveScheme() == Theme::Scheme::Dark;
+            if (cfg->string(QStringLiteral("theme")) == u"system") {
+                tm->setMode(dark ? ThemeManager::Mode::Light : ThemeManager::Mode::Dark);
+                tm->apply();
+            } else {
+                cfg->set(QStringLiteral("theme"), dark ? QStringLiteral("moonstone") : QStringLiteral("obsidian"));
+            }
+        }
+        return true;
+    }));
+    // F1: Obsidian opens its help; the clone's behaviour is Obsidian's, so its documentation applies.
+    r.add(cmd("app:open-help", QObject::tr("Open help"), "circle-help", [](bool checking) {
+        if (!checking && desktopHandlers().openUrl)
+            desktopHandlers().openUrl(QUrl(QStringLiteral("https://help.obsidian.md/")));
+        return true;
+    }, keys({"F1"})));
+    r.add(cmd("app:show-debug-info", QObject::tr("Show debug info"), "", [w](bool checking) {
+        if (!w)
+            return false;
+        if (!checking)
+            openDebugInfoModal(w);
         return true;
     }));
     r.add(cmd("workspace:copy-full-path", QObject::tr("Copy current file path from system root"), "hard-drive", [ws, w](bool checking) {

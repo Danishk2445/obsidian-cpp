@@ -55,24 +55,50 @@ const QStringList& menuSectionOrder()
     return order;
 }
 
+const MenuLayout& paneMenuLayout()
+{
+    static const MenuLayout layout{
+        {QStringLiteral("close"), QStringLiteral("pane"), QStringLiteral("open"), QStringLiteral("action"), QStringLiteral("find"),
+         QStringLiteral("info"), QStringLiteral("info.copy"), QStringLiteral("view"), QStringLiteral("view.linked"),
+         QStringLiteral("system"), QString(), QStringLiteral("danger")},
+        {{QStringLiteral("info.copy"), {QObject::tr("Copy path"), QStringLiteral("clipboard")}},
+         {QStringLiteral("view.linked"), {QObject::tr("Open linked view"), QStringLiteral("link")}}}};
+    return layout;
+}
+
 void buildSectionedMenu(QMenu* menu, const QList<MenuEntry>& items)
 {
-    QStringList sections = menuSectionOrder();
+    buildSectionedMenu(menu, items, MenuLayout{menuSectionOrder(), {}});
+}
+
+void buildSectionedMenu(QMenu* menu, const QList<MenuEntry>& items, const MenuLayout& layout)
+{
+    QStringList sections = layout.sections;
     for (const MenuEntry& e : items)
         if (!sections.contains(e.section))
-            sections.insert(sections.size() - 1, e.section); // unknown sections go before "danger"
+            sections.insert(std::max<qsizetype>(0, sections.size() - 1), e.section); // unknown sections go before "danger"
     bool first = menu->actions().isEmpty();
     for (const QString& section : std::as_const(sections)) {
+        QMenu* target = menu;
         bool any = false;
         for (const MenuEntry& e : items) {
             if (e.section != section)
                 continue;
-            if (!any && !first)
-                menu->addSeparator();
+            if (!any) {
+                if (!first)
+                    menu->addSeparator();
+                for (const auto& [name, sub] : layout.submenus)
+                    if (name == section)
+                        target = menu->addMenu(menuIcon(sub.second, false), sub.first);
+            }
             any = true;
-            QAction* a = menu->addAction(menuIcon(e.icon, e.warning), e.title);
+            QAction* a = target->addAction(menuIcon(e.icon, e.warning), e.title);
             a->setEnabled(e.enabled);
             a->setProperty("ocWarning", e.warning);
+            if (e.checkable) {
+                a->setCheckable(true);
+                a->setChecked(e.checked);
+            }
             auto run = e.run;
             QObject::connect(a, &QAction::triggered, menu, [run] {
                 if (run)

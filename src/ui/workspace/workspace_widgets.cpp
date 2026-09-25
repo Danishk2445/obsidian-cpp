@@ -15,6 +15,7 @@
 #include "ui/shell/ribbon.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/workspace/placeholder_views.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view.h"
 #include "ui/workspace/workspace_p.h"
 
@@ -53,6 +54,17 @@ QPixmap icon(const QString& name, int size, const QColor& color, double stroke, 
 }
 
 QIcon menuIcon(const QString& name) { return IconProvider::instance().icon(name, 16, 2.0); }
+
+// Views that still fill a QMenu directly (View::populatePaneMenu) add their items after the sections.
+void appendLegacyPaneMenu(QMenu* menu, View* view)
+{
+    const qsizetype before = menu->actions().size();
+    if (before > 0)
+        menu->addSeparator();
+    view->populatePaneMenu(menu);
+    if (before > 0 && menu->actions().size() == before + 1)
+        menu->removeAction(menu->actions().last());
+}
 
 bool isEmptyOrMarkdown(const WorkspaceLeaf* leaf)
 {
@@ -877,12 +889,14 @@ void TabHeaderBar::showTabMenu(int index, const QPoint& globalPos)
     QPointer<WorkspaceLeaf> leaf = leafAt(index);
     if (!leaf)
         return;
+    // Obsidian's onOpenTabHeaderMenu: the view's onTabMenu (close items, pin) then its
+    // onPaneMenu(menu, "tab-header"), in the pane menu's sections.
     WorkspaceImpl* dd = d;
-    QMenu menu(this);
-    menu.addAction(menuIcon(QStringLiteral("x")), tr("Close"), &menu, [leaf] {
-        if (leaf)
-            leaf->detach();
-    });
+    QList<MenuEntry> items;
+    items << MenuEntry{QStringLiteral("close"), tr("Close"), QStringLiteral("x"), [leaf] {
+                           if (leaf)
+                               leaf->detach();
+                       }};
     if (!m_sidedock) {
         const QList<WorkspaceLeaf*> all = m_group->leaves;
         bool others = false, after = false;
@@ -895,36 +909,23 @@ void TabHeaderBar::showTabMenu(int index, const QPoint& globalPos)
             after = after || i > index;
         }
         if (others)
-            menu.addAction(menuIcon(QStringLiteral("x")), tr("Close others"), &menu, [dd, leaf] { dd->closeOthers(leaf); });
+            items << MenuEntry{QStringLiteral("close"), tr("Close others"), QStringLiteral("x"), [dd, leaf] { dd->closeOthers(leaf); }};
         if (after)
-            menu.addAction(menuIcon(QStringLiteral("x")), tr("Close tabs after"), &menu, [dd, leaf] { dd->closeAfter(leaf); });
+            items << MenuEntry{QStringLiteral("close"), tr("Close tabs after"), QStringLiteral("x"), [dd, leaf] { dd->closeAfter(leaf); }};
         if (unpinned > 0 && !(unpinned == 1 && !leaf->isPinned()))
-            menu.addAction(menuIcon(QStringLiteral("x")), tr("Close all"), &menu, [dd, group = m_group] { dd->closeAll(group); });
-        if (leaf->view() && leaf->view()->viewType() != u"empty") {
-            menu.addSeparator();
-            menu.addAction(menuIcon(QStringLiteral("pin")), leaf->isPinned() ? tr("Unpin") : tr("Pin"), &menu, [leaf] {
-                if (leaf)
-                    leaf->setPinned(!leaf->isPinned());
-            });
-        }
+            items << MenuEntry{QStringLiteral("close"), tr("Close all"), QStringLiteral("x"), [dd, group = m_group] { dd->closeAll(group); }};
+        if (leaf->view() && leaf->view()->viewType() != u"empty")
+            items << MenuEntry{QStringLiteral("pane"), leaf->isPinned() ? tr("Unpin") : tr("Pin"), QStringLiteral("pin"), [leaf] {
+                                   if (leaf)
+                                       leaf->setPinned(!leaf->isPinned());
+                               }};
     }
-    menu.addSeparator();
-    QAction* right = menu.addAction(menuIcon(QStringLiteral("separator-vertical")), tr("Split right"), &menu, [dd, leaf] {
-        if (leaf)
-            dd->q->duplicateLeaf(leaf, Workspace::NewLeaf::SplitRight);
-    });
-    right->setEnabled(!m_sidedock);
-    menu.addAction(menuIcon(QStringLiteral("separator-horizontal")), tr("Split down"), &menu, [dd, leaf] {
-        if (leaf)
-            dd->q->duplicateLeaf(leaf, Workspace::NewLeaf::SplitDown);
-    });
-    if (leaf->view()) {
-        const int before = int(menu.actions().size());
-        menu.addSeparator();
-        leaf->view()->populatePaneMenu(&menu);
-        if (menu.actions().size() == before + 1)
-            menu.removeAction(menu.actions().last());
-    }
+    if (View* v = leaf->view())
+        v->paneMenuEntries(items, QStringLiteral("tab-header"));
+    QMenu menu(this);
+    buildSectionedMenu(&menu, items, paneMenuLayout());
+    if (View* v = leaf->view())
+        appendLegacyPaneMenu(&menu, v);
     menu.exec(globalPos);
 }
 
@@ -1228,35 +1229,18 @@ bool ViewHeader::eventFilter(QObject* obj, QEvent* ev)
 
 void ViewHeader::showMoreMenu()
 {
+    // Obsidian's onMoreOptions: the view's onPaneMenu(menu, "more-options") in the pane menu's sections
+    // (desktop: no Close / Pin here, those are on the tab header).
     QPointer<WorkspaceLeaf> leaf = m_leaf;
-    WorkspaceImpl* dd = d;
     QMenu menu(this);
-    menu.addAction(menuIcon(QStringLiteral("x")), tr("Close"), &menu, [leaf] {
-        if (leaf)
-            leaf->detach();
-    });
-    if (leaf->view() && leaf->view()->viewType() != u"empty")
-        menu.addAction(menuIcon(QStringLiteral("pin")), leaf->isPinned() ? tr("Unpin") : tr("Pin"), &menu, [leaf] {
-            if (leaf)
-                leaf->setPinned(!leaf->isPinned());
-        });
-    menu.addSeparator();
-    menu.addAction(menuIcon(QStringLiteral("separator-vertical")), tr("Split right"), &menu, [dd, leaf] {
-        if (leaf)
-            dd->q->duplicateLeaf(leaf, Workspace::NewLeaf::SplitRight);
-    });
-    menu.addAction(menuIcon(QStringLiteral("separator-horizontal")), tr("Split down"), &menu, [dd, leaf] {
-        if (leaf)
-            dd->q->duplicateLeaf(leaf, Workspace::NewLeaf::SplitDown);
-    });
-    if (View* v = leaf->view()) {
-        const int before = int(menu.actions().size());
-        menu.addSeparator();
-        v->populatePaneMenu(&menu);
-        if (menu.actions().size() == before + 1)
-            menu.removeAction(menu.actions().last());
+    if (View* v = leaf ? leaf->view() : nullptr) {
+        QList<MenuEntry> items;
+        v->paneMenuEntries(items, QStringLiteral("more-options"));
+        buildSectionedMenu(&menu, items, paneMenuLayout());
+        appendLegacyPaneMenu(&menu, v);
     }
-    execMenuBelow(menu, m_more, true);
+    if (!menu.isEmpty())
+        execMenuBelow(menu, m_more, true);
 }
 
 void ViewHeader::showHistoryMenu(bool back)

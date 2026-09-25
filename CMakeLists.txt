@@ -18,7 +18,7 @@ include(OcTarget)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS
   Core Gui Widgets Svg SvgWidgets Concurrent PrintSupport Pdf PdfWidgets
-  Multimedia MultimediaWidgets Test)
+  Multimedia MultimediaWidgets Network Test)
 qt_standard_project_setup(REQUIRES 6.8)
 
 find_package(KF6SyntaxHighlighting REQUIRED)

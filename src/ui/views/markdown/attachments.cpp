@@ -217,6 +217,25 @@ bool handleDrop(MarkdownView& view, const QMimeData& data)
     return false;
 }
 
+int attachFiles(MarkdownView& view, const QStringList& absolutePaths)
+{
+    VaultSession* s = view.session();
+    if (!s || !view.editor())
+        return 0;
+    int n = 0;
+    for (const QString& abs : absolutePaths) {
+        QFile f(abs);
+        if (!f.open(QIODevice::ReadOnly))
+            continue;
+        const QFileInfo fi(abs);
+        if (TFile* file = saveAttachment(*s, fi.completeBaseName(), fi.suffix(), f.readAll(), view.file())) {
+            insertText(*view.editor(), embedFor(*s, file, view.file()), u"input.paste"_s);
+            ++n;
+        }
+    }
+    return n;
+}
+
 void installHooks()
 {
     static const bool once = [] {

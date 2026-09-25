@@ -50,6 +50,20 @@ void History::record(const Transaction& tr, const Text& before, const Selection&
     ev.changes = tr.changes.invert(before);
     ev.startSelection = selectionBefore;
 
+    if (m_groupDepth > 0) {
+        if (m_groupStarted && !m_done.isEmpty()) {
+            Event& last = m_done.last();
+            last.changes = ev.changes.compose(last.changes);
+            last.selectionMovedAfter = false;
+        } else {
+            pushTo(m_done, std::move(ev));
+            m_groupStarted = true;
+        }
+        m_undone.clear();
+        m_prevTime = time;
+        m_prevUserEvent = tr.userEvent;
+        return;
+    }
     if (!m_done.isEmpty()) {
         Event& last = m_done.last();
         const bool compose = tr.userEvent == u"input.type.compose";
@@ -74,6 +88,21 @@ void History::noteSelectionChange()
 {
     if (!m_done.isEmpty())
         m_done.last().selectionMovedAfter = true;
+}
+
+void History::beginGroup()
+{
+    if (m_groupDepth++ == 0)
+        m_groupStarted = false;
+}
+
+void History::endGroup()
+{
+    if (m_groupDepth == 0 || --m_groupDepth > 0)
+        return;
+    if (m_groupStarted && !m_done.isEmpty())
+        m_done.last().selectionMovedAfter = true; // sealed: plain typing never joins it
+    m_groupStarted = false;
 }
 
 History::Event History::mapEvent(const Event& e, const ChangeDesc& mapping)
@@ -146,6 +175,7 @@ void History::commitUndo(const Transaction& applied, const Text& before, const S
     rev.startSelection = selectionBefore;
     pushTo(m_undone, std::move(rev));
     m_prevTime = 0; // never join into a group across undo
+    m_groupStarted = false;
 }
 
 void History::commitRedo(const Transaction& applied, const Text& before, const Selection& selectionBefore)
@@ -160,6 +190,7 @@ void History::commitRedo(const Transaction& applied, const Text& before, const S
     rev.startSelection = selectionBefore;
     pushTo(m_done, std::move(rev));
     m_prevTime = 0;
+    m_groupStarted = false;
 }
 
 void History::clear()
@@ -167,6 +198,7 @@ void History::clear()
     m_done.clear();
     m_undone.clear();
     m_prevTime = 0;
+    m_groupStarted = false;
 }
 
 } // namespace oc

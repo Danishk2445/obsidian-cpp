@@ -9,4 +9,5 @@ qt_add_resources(oc_resources "oc_resources"
     icons/lucide.json
     icons/custom.json
     icons/LUCIDE_LICENSE
+    app/obsidian-cpp.svg
 )
