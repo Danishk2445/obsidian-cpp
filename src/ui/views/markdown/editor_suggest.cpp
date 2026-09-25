@@ -1,5 +1,8 @@
 #include "ui/views/markdown/editor_suggest.h"
 
+#include "core/commands/command_registry.h"
+#include "core/commands/hotkey.h"
+#include "core/config/config_store.h"
 #include "core/config/vault_config.h"
 #include "core/documents/document.h"
 #include "core/documents/document_manager.h"
@@ -10,6 +13,7 @@
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
 #include "render/theme/theme.h"
+#include "ui/navigation/command_palette.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
 #include "ui/views/markdown/markdown_view.h"
@@ -21,6 +25,8 @@
 #include <QPainterPath>
 #include <QRegularExpression>
 #include <QVBoxLayout>
+
+#include <tuple>
 
 namespace oc {
 
@@ -250,6 +256,16 @@ void EditorSuggest::trigger(bool force)
         ctx.start = t3->start;
         ctx.end = t3->end;
         ctx.query = t3->query;
+    } else if (slashCommandsEnabled() && m_view->file()) {
+        // Slash commands: "/query" at the start of the line or after whitespace, up to the cursor.
+        static const QRegularExpression slash(u"(^|\\s)\\/([^\\s\\/]*)$"_s);
+        const QRegularExpressionMatch m = slash.match(QStringView(lineText).left(col));
+        if (m.hasMatch()) {
+            ctx.kind = Kind::Command;
+            ctx.start = int(m.capturedStart() + m.capturedLength(1));
+            ctx.end = col;
+            ctx.query = m.captured(2);
+        }
     }
     if (ctx.kind == Kind::None) {
         close();
@@ -429,6 +445,51 @@ void EditorSuggest::show(const Context& ctx)
         }
         break;
     }
+    case Kind::Command: {
+        CommandRegistry* registry = session ? session->commands() : nullptr;
+        if (!registry) {
+            close();
+            return;
+        }
+        // The command palette's commands, fuzzy-matched by name (all of them for "/"), best first.
+        const CommandPaletteOptions palette =
+            CommandPaletteOptions::fromJson(session->config() ? session->config()->object(u"command-palette"_s) : QJsonObject());
+        const FuzzyQuery q(ctx.query);
+        QList<std::tuple<double, const Command*, QList<QPair<int, int>>>> scored;
+        for (const Command* c : registry->all()) {
+            if (c->name.isEmpty() || !registry->isAvailable(c->id))
+                continue;
+            if (ctx.query.isEmpty()) {
+                scored.append({0.0, c, {}});
+            } else if (const std::optional<FuzzyResult> r = q.match(c->name)) {
+                QList<QPair<int, int>> ranges;
+                for (const MatchRange& m : matchIndicesToRanges(r->matches))
+                    ranges.append({m.from, m.to});
+                scored.append({r->score, c, ranges});
+            }
+        }
+        std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
+        m_commandItems.clear();
+        for (const auto& [score, c, ranges] : scored) {
+            if (m_commandItems.size() >= kLimit)
+                break;
+            m_commandItems.append(c->id);
+            Suggestion s;
+            const qsizetype colon = c->name.indexOf(u": "_s);
+            const int shift = colon > 0 ? int(colon) + 2 : 0;
+            s.prefix = colon > 0 ? c->name.left(colon) : QString();
+            s.title = c->name.mid(shift);
+            for (const auto& [from, to] : ranges)
+                s.titleMatches.append({from - shift, to - shift});
+            for (const Hotkey& hk : registry->hotkeys(c->id))
+                if (hk.isValid())
+                    s.hotkeys << hk.toString();
+            if (palette.pinned.contains(c->id))
+                s.auxIcon = u"pin"_s;
+            rows.append(s);
+        }
+        break;
+    }
     case Kind::None:
         break;
     }
@@ -487,10 +548,40 @@ bool EditorSuggest::choose(int index, const QString& key)
             return false;
         chooseFootnote(m_footnoteItems[index]);
         return true;
+    case Kind::Command:
+        if (index >= m_commandItems.size())
+            return false;
+        chooseCommand(m_commandItems[index]);
+        return true;
     case Kind::None:
         break;
     }
     return false;
+}
+
+bool EditorSuggest::slashCommandsEnabled() const
+{
+    VaultSession* s = m_view ? m_view->session() : nullptr;
+    // Core plugin "slash-command", off by default.
+    return s && s->config() && s->config()->object(u"core-plugins"_s).value(u"slash-command"_s).toBool(false);
+}
+
+void EditorSuggest::chooseCommand(const QString& id)
+{
+    const Context ctx = m_ctx;
+    close();
+    Document* doc = m_editor ? m_editor->document() : nullptr;
+    VaultSession* session = m_view ? m_view->session() : nullptr;
+    if (!doc || !session || !session->commands())
+        return;
+    // Remove "/query", then run the command in this editor.
+    const qsizetype base = doc->text().lineStart(ctx.line);
+    Transaction tr;
+    tr.changes = ChangeSet::of(ChangeSpec{base + ctx.start, base + ctx.end, QString()}, doc->text().length());
+    tr.selection = Selection::cursor(base + ctx.start);
+    tr.userEvent = u"delete"_s;
+    m_editor->dispatch(tr);
+    session->commands()->execute(id);
 }
 
 void EditorSuggest::chooseLink(const LinkSuggestion& s, const QString& key)

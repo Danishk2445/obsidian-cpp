@@ -22,12 +22,14 @@
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
 #include "editor/plugins/greentext_guard.h"
+#include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/graph/graph_view.h"
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
 #include "ui/plugins/file_recovery_ui.h"
+#include "ui/plugins/note_composer_ui.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/shell/app_commands.h"
 #include "ui/shell/main_window.h"
@@ -39,6 +41,7 @@
 #include "ui/views/markdown/markdown_commands.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/placeholder_views.h"
+#include "ui/workspace/file_menu.h"
 #include "ui/workspace/view_registry.h"
 #include "ui/workspace/workspace.h"
 
@@ -49,7 +52,9 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QLabel>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTimer>
@@ -350,11 +355,17 @@ void Application::populateWindow(MainWindow* w)
     registerNavigationCommands(*commands, session, w->overlay());
     registerGraphCommands(*commands, workspace);
     registerFileRecoveryCommands(*commands, w);
+    registerNoteComposerCommands(*commands, w);
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
         gh.openSearch = [](Workspace* ws, const QString& query) { openGlobalSearch(ws->session(), query); };
         gh.deleteFile = [](VaultSession* s, TFile* f) { promptForDeletion(s, f); };
+        gh.fileMenu = [](QMenu* menu, TFile* file, WorkspaceLeaf* leaf) {
+            QList<MenuEntry> items;
+            FileMenuHooks::collect(items, file, QStringLiteral("graph-context-menu"), leaf, leaf ? leaf->view() : nullptr);
+            buildSectionedMenu(menu, items);
+        };
         setGraphViewHooks(std::move(gh));
     }
     {
@@ -416,6 +427,7 @@ void Application::wireStatusBar(MainWindow* w)
     Workspace* workspace = w->workspace();
     StatusBar* sb = w->statusBar();
     sb->addItem(QStringLiteral("backlinks"), QString());
+    sb->addItem(QStringLiteral("editor-status"), QString());
     sb->addItem(QStringLiteral("word-count"), QString());
 
     // Obsidian's word count: debounced (200 ms), frontmatter excluded, the selection when there is one.
@@ -452,13 +464,63 @@ void Application::wireStatusBar(MainWindow* w)
         sb->setItemText(QStringLiteral("backlinks"), n == 1 ? tr("%1 backlink").arg(n) : tr("%1 backlinks").arg(n));
         sb->setItemVisible(QStringLiteral("backlinks"), true);
     };
-    auto hookView = [timer, activeMarkdown, w] {
+    // Obsidian's "editor-status": the active note's mode as an icon; a click offers the other modes.
+    struct ModeItem {
+        EditorView::Mode mode;
+        const char* icon;
+        QString title;
+    };
+    const QList<ModeItem> modes{{EditorView::Mode::Reading, "book-open", tr("Reading")},
+                                {EditorView::Mode::Source, "code-2", tr("Source mode")},
+                                {EditorView::Mode::LivePreview, "edit-3", tr("Live Preview")}};
+    auto updateEditorStatus = [sb, activeMarkdown, modes] {
         MarkdownView* mv = activeMarkdown();
+        QLabel* item = sb->item(QStringLiteral("editor-status"));
+        if (!mv || !item) {
+            sb->setItemVisible(QStringLiteral("editor-status"), false);
+            return;
+        }
+        const ThemePtr t = currentTheme();
+        const QColor color = t->color(QStringLiteral("--status-bar-text-color"));
+        const qreal dpr = item->devicePixelRatioF();
+        for (const ModeItem& m : modes) {
+            if (m.mode != mv->mode())
+                continue;
+            item->setPixmap(IconProvider::instance().pixmap(QString::fromLatin1(m.icon), 15, color, 1.75, dpr));
+            item->setToolTip(m.title);
+        }
+        sb->setItemVisible(QStringLiteral("editor-status"), true);
+    };
+    connect(sb, &StatusBar::itemClicked, w, [sb, activeMarkdown, modes](const QString& id) {
+        MarkdownView* mv = activeMarkdown();
+        if (id != u"editor-status" || !mv)
+            return;
+        QMenu menu;
+        QPointer<MarkdownView> view = mv;
+        for (const ModeItem& m : modes) {
+            QAction* a = menu.addAction(IconProvider::instance().icon(QString::fromLatin1(m.icon), 16, 2.0), m.title);
+            a->setCheckable(true);
+            a->setChecked(mv->mode() == m.mode);
+            const EditorView::Mode mode = m.mode;
+            connect(a, &QAction::triggered, &menu, [view, mode] {
+                if (view)
+                    view->setMode(mode);
+            });
+        }
+        QLabel* item = sb->item(QStringLiteral("editor-status"));
+        menu.exec(item ? item->mapToGlobal(QPoint(0, 0)) - QPoint(0, menu.sizeHint().height()) : QCursor::pos());
+    });
+    auto hookView = [timer, activeMarkdown, w, updateEditorStatus] {
+        MarkdownView* mv = activeMarkdown();
+        updateEditorStatus();
         if (!mv)
             return;
         // (re)connect the active view's editor; UniqueConnection keeps this idempotent
         connect(mv->editor(), &EditorView::selectionChanged, timer, qOverload<>(&QTimer::start), Qt::UniqueConnection);
-        Q_UNUSED(w);
+        if (!mv->property("ocEditorStatusHooked").toBool()) { // (lambdas can't use UniqueConnection)
+            mv->setProperty("ocEditorStatusHooked", true);
+            connect(mv, &MarkdownView::modeChanged, w, updateEditorStatus);
+        }
     };
     connect(workspace, &Workspace::activeLeafChanged, w, [timer, updateBacklinks, hookView] {
         hookView();

@@ -21,6 +21,7 @@ oc_add_library(oc_ui
     overlay/suggest_modal.cpp
     picker/vault_picker.cpp
     plugins/file_recovery_ui.cpp
+    plugins/note_composer_ui.cpp
     plugins/note_plugins_ui.cpp
     settings/hotkeys_tab.cpp
     settings/hotkeys_tab.h
@@ -63,6 +64,8 @@ oc_add_library(oc_ui
     widgets/search_input.cpp
     widgets/toggle_switch.cpp
     widgets/value_slider.cpp
+    workspace/file_menu.cpp
+    workspace/file_menu.h
     workspace/placeholder_views.cpp
     workspace/placeholder_views.h
     workspace/vault_access.cpp
