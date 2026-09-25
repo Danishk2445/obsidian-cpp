@@ -31,6 +31,10 @@ OverlayLayer::~OverlayLayer()
     // Modals and popups hold QPointer<OverlayLayer>; deleting them from ~QWidget would let them see a
     // half-destroyed layer.
     // (Deleting one may delete others, e.g. a modal its popups: re-query each time.)
+    // An open modal calls setBlocking(false) from its destructor; the refresh it triggers must not
+    // raise() the layer: the window may be deleting its children, and raise() walks the siblings.
+    m_destroying = true;
+    m_refreshTimer.stop();
     while (QWidget* w = findChild<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
         delete w;
 }
@@ -45,6 +49,8 @@ void OverlayLayer::setBlocking(QWidget* child, bool blocking)
 
 void OverlayLayer::refresh()
 {
+    if (m_destroying)
+        return;
     // isHidden(), not isVisible(): a modal shown while the layer itself is still hidden must keep blocking.
     m_blocking.removeIf([](const QPointer<QWidget>& w) { return !w || w->isHidden(); });
     QRegion region;
