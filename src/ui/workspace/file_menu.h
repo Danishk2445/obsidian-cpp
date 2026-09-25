@@ -24,12 +24,25 @@ struct MenuEntry {
     std::function<void()> run;
     bool warning = false; // red (Delete)
     bool enabled = true;
+    bool checkable = false; // Obsidian's setChecked(): a check mark when `checked`
+    bool checked = false;
 };
+
+// A menu's section order plus the sections Obsidian folds into a submenu (setSectionSubmenu), e.g.
+// "info.copy" -> "Copy path", "view.linked" -> "Open linked view".
+struct MenuLayout {
+    QStringList sections;
+    QList<std::pair<QString, std::pair<QString, QString>>> submenus; // section -> {title, icon}
+};
+// Obsidian's layout for a view's "More options" menu and tab header menu
+// (close, pane, open, action, find, info, info.copy, view, view.linked, system, "", danger).
+const MenuLayout& paneMenuLayout();
 
 // Obsidian's section order for file and editor menus ("" collects unsectioned items).
 const QStringList& menuSectionOrder();
 // Fills `menu` with `items` grouped by section.
 void buildSectionedMenu(QMenu* menu, const QList<MenuEntry>& items);
+void buildSectionedMenu(QMenu* menu, const QList<MenuEntry>& items, const MenuLayout& layout);
 
 // Obsidian's workspace "file-menu" event: views that show a file's context menu ask the providers for
 // extra items (bookmarks, note composer's "Merge entire file with...", ...). `source` is Obsidian's:

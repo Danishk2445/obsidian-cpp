@@ -2,6 +2,7 @@
 
 #include "editor/editor_view.h"
 #include "ui/workspace/view.h"
+#include "ui/workspace/workspace.h"
 
 #include <QPointer>
 #include <QTimer>
@@ -17,6 +18,7 @@ class EditorSuggest;
 class FoldStore;
 class InlineTitle;
 class ViewRegistry;
+class VimController;
 
 // Obsidian's MarkdownView: a note in Live Preview, Source mode or Reading view, sharing its Document
 // with every other pane showing the same file. View state is Obsidian's
@@ -41,7 +43,7 @@ public:
     QJsonObject ephemeralState() const override;
     void setEphemeralState(const QJsonObject& eState) override;
     QList<QWidget*> headerActions() override;
-    void populatePaneMenu(QMenu* menu) override;
+    void paneMenuEntries(QList<MenuEntry>& items, const QString& source) override;
     void onClose() override;
     void focusContent() override;
 
@@ -55,6 +57,7 @@ public:
     EditorSearchBar* searchBar() const { return m_searchBar; }
     InlineTitle* inlineTitle() const { return m_title; }
     EditorSuggest* editorSuggest() const { return m_suggest; }
+    VimController* vim() const { return m_vim; } // while "vimMode" is on
     bool save();                 // editor:save-file
     void applySettings();        // re-read the vault config (readable line length, folding, ...)
 
@@ -64,6 +67,7 @@ public:
     // Obsidian's openLinkText: follow a link written in `sourcePath` (kind as EditorView::linkActivated;
     // URLs go to the desktop, unresolved notes are created, "#sub" alone targets the source note).
     static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, bool newLeaf);
+    static void openLinkText(Workspace* ws, const QString& target, int kind, const QString& sourcePath, Workspace::NewLeaf mode);
 
 signals:
     void modeChanged(oc::EditorView::Mode mode);
@@ -78,11 +82,13 @@ private:
     void restoreFolds();
     void updateTitle();
     void setModeFromState(const QJsonObject& state);
+    void setVimMode(bool on);
 
     EditorView* m_editor;
     EditorSearchBar* m_searchBar;
     InlineTitle* m_title;
     EditorSuggest* m_suggest;
+    VimController* m_vim = nullptr;
     std::shared_ptr<Document> m_doc;
     QTimer m_foldSave;
     QMetaObject::Connection m_configConn;

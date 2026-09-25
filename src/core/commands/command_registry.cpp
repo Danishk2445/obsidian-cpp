@@ -53,7 +53,7 @@ QList<const Command*> CommandRegistry::all() const
 bool CommandRegistry::isAvailable(const QString& id) const
 {
     const Command* c = find(id);
-    if (!c)
+    if (!c || (m_filter && !m_filter(*c)))
         return false;
     if (c->callback)
         return true;

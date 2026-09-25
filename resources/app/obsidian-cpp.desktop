@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Obsidian C++
+GenericName=Markdown Knowledge Base
+Comment=A native Markdown knowledge base for local folders of notes
+Exec=obsidian-cpp %U
+Icon=obsidian-cpp
+Terminal=false
+Categories=Office;TextEditor;Utility;
+MimeType=text/markdown;
+Keywords=markdown;notes;wiki;knowledge;vault;
+StartupWMClass=obsidian-cpp
+StartupNotify=true

@@ -17,6 +17,7 @@ QLabel[ocText="muted"] { color: ${--text-muted}; }
 QLabel[ocText="faint"] { color: ${--text-faint}; }
 QLabel[ocText="accent"] { color: ${--text-accent}; }
 QLabel[ocText="error"] { color: ${--text-error}; }
+QLabel[ocText="warning"] { color: ${--text-warning}; }
 
 QToolTip {
     color: ${--text-normal};

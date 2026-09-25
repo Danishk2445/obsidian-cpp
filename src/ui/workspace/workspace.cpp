@@ -2047,6 +2047,20 @@ void Workspace::closeActiveLeaf()
         a->detach();
 }
 
+QList<WorkspaceLeaf*> Workspace::groupLeaves(WorkspaceLeaf* leaf) const
+{
+    return leaf && leaf->m_tabs ? leaf->m_tabs->leaves : QList<WorkspaceLeaf*>();
+}
+
+void Workspace::closeLeaves(const QList<WorkspaceLeaf*>& leaves)
+{
+    d->beginBatch();
+    for (const QPointer<WorkspaceLeaf>& l : QList<QPointer<WorkspaceLeaf>>(leaves.begin(), leaves.end()))
+        if (l && l->m_tabs)
+            d->closeLeaf(l, true);
+    d->endBatch();
+}
+
 void Workspace::togglePinActiveLeaf()
 {
     WorkspaceLeaf* a = d->active;
