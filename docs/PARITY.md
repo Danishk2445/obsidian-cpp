@@ -119,8 +119,8 @@ Open parity questions:
 - ✅ Bookmarks: bookmarks.json (Obsidian's item shapes, unknown keys kept), groups, drag reorder (into groups),
   inline rename, remove, "Bookmark..." modal, the bookmarks:* commands, file-menu / editor-menu items, folds.
 - ✅ All properties: names with counts and type icons (types.json + reserved), orders, filter, click → ["name"].
-- ⬜ Backlinks in document (needs an EditorView bottom widget); All properties' context menu (type, rename,
-  delete); URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
+- ✅ All properties' context menu: property type, rename (F2; merges into an existing name after asking), delete.
+- ⬜ Backlinks in document (needs an EditorView bottom widget); URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
   saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
@@ -228,3 +228,34 @@ Open parity questions:
   callout bodies / table cells and exported PDFs are static renderings (PDF export prints the embedded page); the
   video view fits tall videos to the view height instead of scrolling; `|width` is ignored on PDF / media embeds
   (like Obsidian's CSS).
+
+## Properties (M7)
+- ✅ Properties panel under the inline title (Live Preview; read-only in Reading): heading menu (add, sort, clear),
+  rows with type icon menu (type, cut / copy / paste as `obsidian/properties`, remove), key and value suggestions,
+  editors for text (links shown as links), list / tags / aliases pills, number, checkbox, date, date & time,
+  nested maps as JSON; type mismatch warning ("Display as ...?"); invalid YAML box with "Show source"; Obsidian's
+  keyboard navigation; each edit is one undoable transaction. `propertiesInDocument` visible / hidden / source.
+- ✅ Byte-exact minimal frontmatter patches (untouched lines keep bytes and EOLs; changed values in Obsidian's YAML
+  style, checked against Obsidian's serializer output); types.json in the clone config; vault-wide rename / delete.
+- ✅ Commands: markdown:add-metadata-property (Mod+;), add-alias, clear-metadata-properties, toggle-fold-properties.
+- Differences: Obsidian rewrites the whole block on every change (we patch minimally); Reading view is read-only
+  (Obsidian allows editing there); values parsed by yaml-cpp (`012`, `0x10` stay strings); Qt date editors.
+- ⬜ Drag-reordering properties, per-file collapsed state, narrow layout, "File properties" sidebar fallback.
+
+## Note embeds (M3/M7)
+- ✅ `![[Note]]` (title line, frontmatter hidden), `#Heading` / `#Heading#Sub` sections, `#^block` (list items with
+  children), `#[^1]` footnotes, "Unable to find “x” in Note", “x” is not created yet. Click to create., depth 5,
+  cycles, tall embeds scroll (max-height token), open-link icon, links inside follow / hover-preview, live refresh
+  from open documents and disk; Live Preview reveal; Reading view, hover previews and PDF export.
+- Differences: text inside an embed can't be selected; a cycle stops at the first repeat (Obsidian nests to depth 5);
+  checkboxes inside embeds don't toggle; embeds in callouts / table cells are static renderings.
+
+## Canvas (M9)
+- ✅ JSON Canvas 1.0: byte-stable reader / writer in Obsidian's layout (untouched files never rewritten, unknown keys
+  kept), text / file (notes with subpaths, images, PDF / audio / video, canvases as minimaps) / link / group cards,
+  edges (sides, ends, colours, labels, reconnect), select / box-select / move with snapping / clone / axis lock /
+  resize / connect / delete / group / recolour, undo (100 snapshots), copy / paste (`obsidian/canvas`), align /
+  distribute, pan / zoom / fit (Shift+1 / Shift+2), controls, card and selection menus, "Canvas help", read-only
+  mode, settings tab, `![[x.canvas]]` embeds, canvases as link sources (graph, backlinks), rename follow-ups.
+- Differences: link cards show the URL (no web view); "Export as image" without tiling / logo options; global search
+  doesn't search canvases; cards are sized to media only on creation.
