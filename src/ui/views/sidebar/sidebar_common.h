@@ -135,13 +135,15 @@ void unhoverLink(View* view, QWidget* hoverParent);
 // click adds it to the current query (or removes it when present).
 void searchFor(MainWindow* window, const QString& term, bool modifier);
 
-// Global search hooks, set by the application (the search view lives in another module). Without an
-// openSearch hook the "search" view gets {"query": q} in the left sidedock.
+// Optional overrides of how the sidebar views reach the global search. By default they use the search
+// view (ui/navigation: openGlobalSearch(), SearchView::query()) when the "search" view is registered.
 struct GlobalSearchHooks {
     std::function<void(MainWindow* window, const QString& query)> openSearch;
     std::function<QString(MainWindow* window)> currentQuery;
 };
 GlobalSearchHooks& globalSearchHooks();
+// Obsidian's getGlobalSearchQuery() (empty without a search view).
+QString currentGlobalSearchQuery(MainWindow* window);
 
 // Obsidian's link context menu (Open in new tab / Open to the right) for a vault path, followed by
 // `extra` items.

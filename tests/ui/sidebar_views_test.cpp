@@ -646,8 +646,10 @@ TEST_F(SidebarTest, Commands)
                            "bookmarks:bookmark-current-section", "bookmarks:bookmark-current-heading", "bookmarks:bookmark-all-tabs",
                            "properties:open"})
         EXPECT_TRUE(commands->find(QString::fromLatin1(id))) << id;
-    EXPECT_EQ(commands->find("backlink:open")->name, "Show backlinks");
-    EXPECT_EQ(commands->find("bookmarks:bookmark-current-section")->name, "Bookmark block under cursor...");
+    EXPECT_EQ(commands->find("backlink:open")->name, "Backlinks: Show backlinks");
+    EXPECT_EQ(commands->find("bookmarks:bookmark-current-section")->name, "Bookmarks: Bookmark block under cursor...");
+    EXPECT_EQ(commands->find("tag-pane:open")->name, "Tags view: Show tags");
+    EXPECT_EQ(commands->find("properties:open")->name, "Properties view: Show all properties");
     ASSERT_TRUE(commands->execute("tag-pane:open"));
     EXPECT_TRUE(qobject_cast<TagView*>(window->workspace()->activeLeaf()->view()));
     EXPECT_TRUE(window->workspace()->activeLeaf()->isInSidedock());

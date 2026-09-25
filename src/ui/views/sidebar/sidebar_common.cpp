@@ -13,6 +13,7 @@
 #include "render/theme/icons.h"
 #include "text/codec.h"
 #include "ui/shell/main_window.h"
+#include "ui/navigation/search_view.h"
 #include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/file_explorer/file_explorer_view.h"
 #include "ui/views/file_explorer/file_tree.h"
@@ -431,7 +432,7 @@ GlobalSearchHooks& globalSearchHooks()
 }
 
 namespace {
-void openGlobalSearch(MainWindow* window, const QString& query)
+void runGlobalSearch(MainWindow* window, const QString& query)
 {
     GlobalSearchHooks& h = globalSearchHooks();
     if (h.openSearch) {
@@ -439,32 +440,38 @@ void openGlobalSearch(MainWindow* window, const QString& query)
         return;
     }
     Workspace* ws = window ? window->workspace() : nullptr;
-    if (!ws || !ws->viewRegistry() || !ws->viewRegistry()->hasView(QStringLiteral("search")))
-        return;
-    WorkspaceLeaf* l = ws->ensureSideLeaf(QStringLiteral("search"), Workspace::Side::Left, true);
-    if (!l)
-        return;
-    QJsonObject st = l->viewState().value(QStringLiteral("state")).toObject();
-    st.insert(QStringLiteral("query"), query);
-    l->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("search")}, {QStringLiteral("state"), st}}, {}, false);
-    ws->setActiveLeaf(l, true);
+    if (ws && ws->viewRegistry() && ws->viewRegistry()->hasView(QStringLiteral("search")))
+        openGlobalSearch(window->session(), query); // the search view (core plugin "global-search")
+}
+
+// Obsidian's getGlobalSearchQuery(): the search view's query.
+QString globalSearchQuery(MainWindow* window)
+{
+    const GlobalSearchHooks& h = globalSearchHooks();
+    if (h.currentQuery)
+        return h.currentQuery(window);
+    Workspace* ws = window ? window->workspace() : nullptr;
+    WorkspaceLeaf* l = ws ? ws->leavesOfType(QStringLiteral("search")).value(0) : nullptr;
+    auto* sv = l ? qobject_cast<SearchView*>(l->view()) : nullptr;
+    return sv ? sv->query() : QString();
 }
 } // namespace
 
+QString currentGlobalSearchQuery(MainWindow* window) { return globalSearchQuery(window); }
+
 void searchFor(MainWindow* window, const QString& term, bool modifier)
 {
-    const GlobalSearchHooks& h = globalSearchHooks();
-    const QString current = h.currentQuery ? h.currentQuery(window) : QString();
+    const QString current = globalSearchQuery(window);
     if (!modifier || current.isEmpty()) {
-        openGlobalSearch(window, term);
+        runGlobalSearch(window, term);
         return;
     }
     if (current.contains(term)) {
         QString q = current;
         q.replace(q.indexOf(term), term.size(), QString());
-        openGlobalSearch(window, q.trimmed());
+        runGlobalSearch(window, q.trimmed());
     } else {
-        openGlobalSearch(window, current.trimmed() + QLatin1Char(' ') + term);
+        runGlobalSearch(window, current.trimmed() + QLatin1Char(' ') + term);
     }
 }
 

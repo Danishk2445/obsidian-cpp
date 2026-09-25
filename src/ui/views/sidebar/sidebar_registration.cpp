@@ -175,47 +175,47 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
     QPointer<MainWindow> w = window;
 
     // ---- backlink ----
-    Command c = makeCommand("backlink:open", tr("Show backlinks"), "link");
+    Command c = makeCommand("backlink:open", tr("Backlinks: Show backlinks"), "link");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("backlink"), Workspace::Side::Right, checking); };
     r.add(c);
-    c = makeCommand("backlink:open-backlinks", tr("Open backlinks for the current note"), "link");
+    c = makeCommand("backlink:open-backlinks", tr("Backlinks: Open backlinks for the current note"), "link");
     c.checkCallback = [w](bool checking) { return openForCurrent(w, QStringLiteral("backlink"), checking); };
     r.add(c);
-    c = makeCommand("backlink:toggle-backlinks-in-document", tr("Toggle backlinks in document"), "link");
+    c = makeCommand("backlink:toggle-backlinks-in-document", tr("Backlinks: Toggle backlinks in document"), "link");
     c.checkCallback = [](bool) { return false; }; // backlinks in document are not implemented
     r.add(c);
 
     // ---- outgoing-link ----
-    c = makeCommand("outgoing-links:open", tr("Show outgoing links"), "link");
+    c = makeCommand("outgoing-links:open", tr("Outgoing links: Show outgoing links"), "link");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("outgoing-link"), Workspace::Side::Right, checking); };
     r.add(c);
-    c = makeCommand("outgoing-links:open-for-current", tr("Open outgoing links for the current file"), "link");
+    c = makeCommand("outgoing-links:open-for-current", tr("Outgoing links: Open outgoing links for the current file"), "link");
     c.checkCallback = [w](bool checking) { return openForCurrent(w, QStringLiteral("outgoing-link"), checking); };
     r.add(c);
 
     // ---- tag-pane ----
-    c = makeCommand("tag-pane:open", tr("Show tags"), "tag");
+    c = makeCommand("tag-pane:open", tr("Tags view: Show tags"), "tag");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("tag"), Workspace::Side::Right, checking); };
     r.add(c);
 
     // ---- outline ----
-    c = makeCommand("outline:open", tr("Show outline"), "list");
+    c = makeCommand("outline:open", tr("Outline: Show outline"), "list");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("outline"), Workspace::Side::Right, checking); };
     r.add(c);
-    c = makeCommand("outline:open-for-current", tr("Open outline of the current file"), "list");
+    c = makeCommand("outline:open-for-current", tr("Outline: Open outline of the current file"), "list");
     c.checkCallback = [w](bool checking) { return openForCurrent(w, QStringLiteral("outline"), checking); };
     r.add(c);
 
     // ---- properties ----
-    c = makeCommand("properties:open", tr("Show all properties"), "archive");
+    c = makeCommand("properties:open", tr("Properties view: Show all properties"), "archive");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("all-properties"), Workspace::Side::Right, checking); };
     r.add(c);
 
     // ---- bookmarks ----
-    c = makeCommand("bookmarks:open", tr("Show bookmarks"), "bookmark");
+    c = makeCommand("bookmarks:open", tr("Bookmarks: Show bookmarks"), "bookmark");
     c.checkCallback = [w](bool checking) { return showSideView(w, QStringLiteral("bookmarks"), Workspace::Side::Left, checking); };
     r.add(c);
-    c = makeCommand("bookmarks:bookmark-current-view", tr("Bookmark..."), "bookmark-plus");
+    c = makeCommand("bookmarks:bookmark-current-view", tr("Bookmarks: Bookmark..."), "bookmark-plus");
     c.checkCallback = [w](bool checking) {
         Workspace* ws = w ? w->workspace() : nullptr;
         WorkspaceLeaf* leaf = ws ? ws->activeRootLeaf() : nullptr;
@@ -236,17 +236,14 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
         return true;
     };
     r.add(c);
-    c = makeCommand("bookmarks:bookmark-current-search", tr("Bookmark current search..."), "search");
+    c = makeCommand("bookmarks:bookmark-current-search", tr("Bookmarks: Bookmark current search..."), "search");
     c.checkCallback = [w](bool checking) {
         Workspace* ws = w ? w->workspace() : nullptr;
         if (!ws || !ws->viewRegistry() || !ws->viewRegistry()->hasView(QStringLiteral("search")))
             return false; // the global search plugin
         if (checking)
             return true;
-        QString query = globalSearchHooks().currentQuery ? globalSearchHooks().currentQuery(w) : QString();
-        if (query.isEmpty())
-            if (WorkspaceLeaf* l = ws->leavesOfType(QStringLiteral("search")).value(0))
-                query = l->viewState().value(QStringLiteral("state")).toObject().value(QStringLiteral("query")).toString();
+        const QString query = currentGlobalSearchQuery(w);
         if (query.isEmpty()) {
             if (w && w->notices())
                 w->notices()->show(tr("No search query to bookmark."));
@@ -256,7 +253,7 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
         return true;
     };
     r.add(c);
-    c = makeCommand("bookmarks:unbookmark-current-view", tr("Remove bookmark for the current file"), "bookmark-plus");
+    c = makeCommand("bookmarks:unbookmark-current-view", tr("Bookmarks: Remove bookmark for the current file"), "bookmark-plus");
     c.checkCallback = [w](bool checking) {
         Workspace* ws = w ? w->workspace() : nullptr;
         WorkspaceLeaf* leaf = ws ? ws->activeRootLeaf() : nullptr;
@@ -270,10 +267,10 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
         return true;
     };
     r.add(c);
-    c = makeCommand("bookmarks:bookmark-current-section", tr("Bookmark block under cursor..."), "bookmark-plus");
+    c = makeCommand("bookmarks:bookmark-current-section", tr("Bookmarks: Bookmark block under cursor..."), "bookmark-plus");
     c.editorCheckCallback = [w](bool checking, EditorContext& ec) { return bookmarkCurrentSection(w, ec, checking); };
     r.add(c);
-    c = makeCommand("bookmarks:bookmark-current-heading", tr("Bookmark heading under cursor..."), "bookmark-plus");
+    c = makeCommand("bookmarks:bookmark-current-heading", tr("Bookmarks: Bookmark heading under cursor..."), "bookmark-plus");
     c.editorCheckCallback = [w](bool checking, EditorContext& ec) {
         MarkdownView* mv = editorView(ec);
         VaultSession* s = w ? w->session() : nullptr;
@@ -291,7 +288,7 @@ void registerSidebarCommands(CommandRegistry& r, MainWindow* window)
         return true;
     };
     r.add(c);
-    c = makeCommand("bookmarks:bookmark-all-tabs", tr("Bookmark all tabs..."), "bookmark-plus");
+    c = makeCommand("bookmarks:bookmark-all-tabs", tr("Bookmarks: Bookmark all tabs..."), "bookmark-plus");
     c.callback = [w] {
         Workspace* ws = w ? w->workspace() : nullptr;
         if (!ws)
