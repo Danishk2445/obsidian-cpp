@@ -207,7 +207,9 @@ TEST_F(PdfViewTest, FindMatchesCaseAndWholeWords)
     PdfViewer* pv = v->viewer();
     PdfSearch* s = pv->search();
     s->setOptions({});
-    pv->showSearch();
+    // Ctrl+F in the pages opens the find bar (the view has no editor for editor:open-search)
+    pv->pages()->setFocus();
+    QTest::keyClick(pv->pages(), Qt::Key_F, Qt::ControlModifier);
     EXPECT_TRUE(pv->isSearchOpen());
     EXPECT_TRUE(pv->findInput()->hasFocus() || !pv->isActiveWindow());
     QTest::keyClicks(pv->findInput(), "needle");

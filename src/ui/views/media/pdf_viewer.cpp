@@ -281,6 +281,7 @@ PdfViewer::PdfViewer(Mode mode, QWidget* parent)
                     l->setFont([&] {
                         QFont f = currentTheme()->interfaceFont(l->font().pixelSize() > 0 ? l->font().pixelSize() : 13);
                         f.setFeature(QFont::Tag("tnum"), 1);
+                        f.setItalic(l->font().italic());
                         return f;
                     }());
                     refreshLabel(l);

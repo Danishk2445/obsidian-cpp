@@ -68,6 +68,11 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `setFolds`, `foldsChanged`), top widget (inline title), `setVisibleLineRange` (embed a section),
   `caretRectAt`, `documentHeight`, signals `linkActivated(target, kind, newLeaf)` / `linkHovered(target, kind,
   rect)` (kind 0 wikilink, 1 embed, 2 markdown link, 3 url, 4 tag). `editor/search/*` = find/replace logic.
+- `src/editor/embeds/embed_registry.h` — `EmbedRegistry` (Obsidian's embedRegistry for non-Markdown files:
+  extension → `EmbedProvider` {size, static paint, live widget}; `setOpener` for opening from an embed),
+  `EmbedRequest` (file, subpath params, inline / popover); `hosted_embeds.h` — `EmbedWidget` (the decorator's inline
+  placeholder) and `HostedEmbeds` (created by every `EditorView`: live widgets near the viewport, pooled; a widget
+  with the `ocEmbedBusy` property is kept alive). Providers: `src/ui/views/media` (`registerMediaViews`).
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,

@@ -74,8 +74,7 @@ MediaController::MediaController(bool video, QObject* parent)
 
 MediaController::~MediaController()
 {
-    if (m_state == State::Loading)
-        Busy::end();
+    setBusy(false);
     // stopping emits state changes: nobody listening may be alive any more
     m_player->disconnect(this);
     if (m_sink)
@@ -100,15 +99,22 @@ void MediaController::setSource(const QString& absPath)
 
 qint64 MediaController::position() const { return m_state == State::Ended ? m_duration : m_player->position(); }
 
+void MediaController::setBusy(bool busy)
+{
+    if (busy == m_busy)
+        return;
+    m_busy = busy;
+    busy ? Busy::begin() : Busy::end();
+}
+
 void MediaController::setState(State s)
 {
     if (s == m_state)
         return;
-    // headless screenshots wait while media loads
+    // headless screenshots wait while media loads (at most 5 s, Obsidian's timeout too)
+    setBusy(s == State::Loading);
     if (s == State::Loading)
-        Busy::begin();
-    else if (m_state == State::Loading)
-        Busy::end();
+        QTimer::singleShot(5000, this, [this] { setBusy(false); });
     m_state = s;
     emit stateChanged(s);
     emit positionChanged(position());

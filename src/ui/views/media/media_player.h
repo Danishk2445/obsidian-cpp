@@ -71,6 +71,7 @@ signals:
 private:
     void updateState();
     void setState(State s);
+    void setBusy(bool busy);
     void onFrame(const QVideoFrame& frame);
 
     bool m_video;
@@ -86,6 +87,7 @@ private:
     bool m_hasVideo = false;
     bool m_started = false; // play() was called since the source loaded
     bool m_ended = false;
+    bool m_busy = false; // holding oc::Busy while loading
     QSize m_videoSize;
     QImage m_frame;
     QString m_error;
