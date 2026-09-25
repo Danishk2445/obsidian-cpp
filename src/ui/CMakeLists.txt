@@ -68,6 +68,7 @@ oc_add_library(oc_ui
     views/markdown/markdown_commands.cpp
     views/markdown/editor_suggest.cpp
     views/markdown/markdown_view.cpp
+    views/markdown/note_embed_view.cpp
     views/markdown/page_preview.cpp
     views/sidebar/all_properties_view.cpp
     views/sidebar/all_properties_view.h

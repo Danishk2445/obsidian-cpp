@@ -33,14 +33,11 @@ bool isImageExt(const QString& target)
     return dot >= 0 && exts.contains(target.mid(dot + 1).toLower());
 }
 
-// PDF / audio / video embeds (registered providers, see editor/embeds): hosted widgets.
+// PDF / audio / video / note embeds (registered providers, see editor/embeds): hosted widgets.
 std::shared_ptr<InlineWidget> fileEmbed(const std::function<QString(const QString&)>& resolve, const QString& target, const QString& subpath,
                                         int width, int height, qreal maxWidth)
 {
-    const qsizetype dot = target.lastIndexOf(QLatin1Char('.'));
-    if (!resolve || dot < 0 || !EmbedRegistry::instance().isExtensionRegistered(target.mid(dot + 1)))
-        return nullptr;
-    return makeEmbedWidget(resolve(target), target, subpath, width, height, maxWidth);
+    return makeLinkEmbedWidget(resolve, target, subpath, width, height, maxWidth);
 }
 
 bool hasScheme(const QString& dest)
