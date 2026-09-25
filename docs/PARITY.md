@@ -128,7 +128,7 @@ Open parity questions:
 
 ## App commands, menus and integration (M4–M7)
 - ✅ Editor commands with Obsidian's ids: checklist toggle / cycle (Obsidian's state machine, numbered items kept),
-  insert footnote (`[^n]` + definition at the end), insert tag, readable line length / line numbers (stored only) /
+  insert footnote (`[^n]` + definition at the end), insert tag, readable line length / line numbers /
   spellcheck toggles (global, like Obsidian's plain callbacks), open link under cursor in a new split.
 - ✅ Workspace commands: close others / close tab group / close others in tab group, copy URL, delete file, show
   trash (local trash only), toggle ribbon, toggle default new-pane mode, toggle light / dark, open help (F1), show
@@ -152,6 +152,9 @@ Open parity questions:
   (`cmake --install build/rel --prefix ~/.local`).
 - ⬜ Window zoom (window:zoom-in / zoom-out / reset-zoom, Appearance "Zoom level"): Qt has no public runtime
   equivalent of Chromium's page zoom; use the font size setting or `QT_SCALE_FACTOR`.
+- ✅ Line numbers ("Show line number"): gutter in the text column (numbers in --text-faint at --font-ui-smaller,
+  tabular, --file-folding-offset before the text), editing modes only; baseline-aligned with the line (Obsidian:
+  top-aligned).
 - ⬜ Pop-out windows (open / move to new window), stacked tabs, always-on-top.
 
 ## Settings (M7)
@@ -164,7 +167,7 @@ Open parity questions:
   Quick switcher, Templates, Unique note creator, Greentext Guard
 - ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
-- 🟡 Stored but not applied yet: line numbers, indentation guides, RTL, strict line breaks, properties in document,
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, properties in document,
   always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
   bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied

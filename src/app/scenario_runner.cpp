@@ -134,19 +134,30 @@ bool ScenarioRunner::run(const QString& line)
     const qsizetype sp = line.indexOf(u' ');
     const QString cmd = sp < 0 ? line : line.left(sp);
     const QString arg = sp < 0 ? QString() : line.mid(sp + 1);
+    if (cmd == u"try") { // "try <line>": run it, ignore failure (monkey scripts)
+        run(arg);
+        return true;
+    }
     if (cmd == u"wait") {
         m_waitUntil = m_clock.elapsed() + arg.toInt();
         return true;
     }
     if (cmd == u"open") {
-        const QStringList parts = arg.split(u' ');
+        // "open <path> [live|source|reading]"; the path may contain spaces
+        QString path = arg, mode;
+        if (const qsizetype last = arg.lastIndexOf(u' '); last > 0) {
+            const QString m = arg.mid(last + 1);
+            if (m == u"live" || m == u"source" || m == u"reading") {
+                mode = m;
+                path = arg.left(last);
+            }
+        }
         VaultSession* s = m_window ? m_window->session() : nullptr;
-        TFile* f = s && s->vault() ? s->vault()->file(parts.value(0)) : nullptr;
+        TFile* f = s && s->vault() ? s->vault()->file(path) : nullptr;
         if (!f)
             return false;
         m_window->workspace()->openFile(f, Workspace::NewLeaf::No);
         if (MarkdownView* mv = activeMarkdown(m_window)) {
-            const QString mode = parts.value(1);
             if (mode == u"source")
                 mv->setMode(EditorView::Mode::Source);
             else if (mode == u"reading")

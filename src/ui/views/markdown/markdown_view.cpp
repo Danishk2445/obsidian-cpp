@@ -221,6 +221,7 @@ void MarkdownView::applySettings()
     if (!cfg)
         return;
     m_editor->setReadableLineLength(cfg->flag(QStringLiteral("readableLineLength")));
+    m_editor->setShowLineNumbers(cfg->flag(QStringLiteral("showLineNumber")));
     FoldOptions fo;
     fo.headings = cfg->flag(QStringLiteral("foldHeading"));
     fo.indent = cfg->flag(QStringLiteral("foldIndent"));
@@ -267,7 +268,7 @@ void MarkdownView::loadFile(TFile* file)
     m_doc.reset();
     m_file = file;
     if (VaultSession* s = session(); s && s->vaultConfig() && !m_configConn) {
-        static const char* keys[] = {"readableLineLength", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck", "vimMode"};
+        static const char* keys[] = {"readableLineLength", "showLineNumber", "foldHeading", "foldIndent", "tabSize", "showInlineTitle", "spellcheck", "vimMode"};
         m_configConn = connect(s->vaultConfig(), &VaultConfig::configChanged, this, [this](const QString& key) {
             for (const char* k : keys)
                 if (key == QLatin1String(k))
