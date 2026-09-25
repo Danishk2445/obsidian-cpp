@@ -12,6 +12,7 @@
 #include "core/documents/fold_store.h"
 #include "core/documents/local_storage.h"
 #include "core/files/file_manager.h"
+#include "core/fuzzy/fuzzy.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/recovery/file_recovery.h"
 #include "core/recovery/snapshot_store.h"
@@ -25,6 +26,7 @@
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
+#include "ui/overlay/suggest_modal.h"
 #include "ui/graph/graph_view.h"
 #include "ui/navigation/navigation.h"
 #include "ui/navigation/search_view.h"
@@ -186,6 +188,61 @@ void Application::showPicker()
     m_picker->raise();
     if (!m_opts.screenshot.isEmpty())
         finishHeadless(m_picker);
+}
+
+SuggestModal* Application::openVaultSwitcher(MainWindow* from, bool switchVault)
+{
+    if (!from)
+        return nullptr;
+    struct Item {
+        QString name, path;
+        bool current;
+    };
+    QList<Item> items;
+    const QString currentPath = from->session() ? from->session()->root() : QString();
+    for (const VaultEntry& e : m_registry->vaults())
+        items.push_back({QFileInfo(e.path).fileName(), e.path, e.path == currentPath});
+    auto* m = new SuggestModal(from->overlay());
+    m->setPlaceholder(tr("Change vault..."));
+    m->setInstructions({{QStringLiteral("↑↓"), tr("to navigate")}, {QStringLiteral("↵"), tr("to use")}, {QStringLiteral("esc"), tr("to dismiss")}});
+    m->setProvider([items](const QString& query) {
+        QList<std::pair<double, Suggestion>> scored;
+        const FuzzyQuery q(query);
+        for (const Item& it : items) {
+            const std::optional<FuzzyResult> r = q.match(it.name);
+            if (!r)
+                continue;
+            Suggestion s;
+            s.title = it.name;
+            for (int i : r->matches)
+                s.titleMatches.push_back({i, i + 1});
+            if (it.current)
+                s.auxText = tr("Active"); // Obsidian's "flair mod-pop"
+            s.data = it.path;
+            scored.push_back({r->score, s});
+        }
+        std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        QList<Suggestion> out;
+        for (const auto& [score, s] : scored)
+            out.push_back(s);
+        return out;
+    });
+    QPointer<MainWindow> w = from;
+    connect(m, &SuggestModal::chosen, this, [this, w, switchVault, currentPath](const Suggestion& s, Qt::KeyboardModifiers) {
+        const QString path = s.data.toString();
+        if (path.isEmpty() || path == currentPath)
+            return;
+        MainWindow* opened = openVault(path);
+        if (!opened) {
+            if (w && w->notices())
+                w->notices()->show(tr("Failed to open."));
+            return;
+        }
+        if (switchVault && w && opened != w)
+            w->close();
+    });
+    m->open();
+    return m;
 }
 
 void Application::applyAppearance(VaultSession* session)
@@ -393,6 +450,27 @@ void Application::populateWindow(MainWindow* w)
     settings->setVaultRegistry(m_registry); // "Window frame style" is a registry option
     settings->applyOptions();               // ribbon visibility, editing behaviours, spellchecker
     connect(settings, &SettingsController::manageVaultsRequested, this, &Application::showPicker);
+    {
+        // Vaults: "Manage vaults" (the picker), "Change vault..." and "Open vault..." (the switcher).
+        QPointer<MainWindow> win = w;
+        auto vaultCommand = [](const char* id, const QString& name, std::function<void()> run) {
+            Command c;
+            c.id = QString::fromLatin1(id);
+            c.name = name;
+            c.icon = QStringLiteral("vault");
+            c.callback = std::move(run);
+            return c;
+        };
+        commands->add(vaultCommand("app:open-vault", tr("Manage vaults"), [this] { showPicker(); }));
+        commands->add(vaultCommand("app:switch-vault", tr("Change vault..."), [this, win] {
+            if (win)
+                openVaultSwitcher(win, true);
+        }));
+        commands->add(vaultCommand("app:open-another-vault", tr("Open vault..."), [this, win] {
+            if (win)
+                openVaultSwitcher(win, false);
+        }));
+    }
     MarkdownView::setTagHandler([](const QString& tag, MarkdownView* from) { openGlobalSearchForTag(from->session(), tag); });
     {
         GraphViewHooks gh;
