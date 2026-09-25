@@ -737,7 +737,7 @@ QString Value::toString() const
     }
     case ValueType::Image: {
         const bool vaultPath = m_str.startsWith(QLatin1String("./")) || m_str.startsWith(QLatin1String("../")) || !m_str.contains(u':');
-        return vaultPath ? QStringLiteral("![[") + m_str + QStringLiteral("]]") : QStringLiteral("![](") + m_str + u')';
+        return vaultPath ? QString(QStringLiteral("![[") + m_str + QStringLiteral("]]")) : QString(QStringLiteral("![](") + m_str + u')');
     }
     case ValueType::Date:
         return m_flag ? printDate() + u'T' + printTime() : printDate();
@@ -1355,7 +1355,7 @@ std::optional<Value> Value::parseDate(const QString& s)
         const int y = m.captured(1).toInt(), mo = m.captured(2).toInt(), d = m.captured(3).toInt();
         const int h = m.captured(4).toInt(), mi = m.captured(5).toInt(), sec = m.captured(6).toInt();
         const QString frac = m.captured(7);
-        const int ms = frac.isEmpty() ? 0 : (frac + QStringLiteral("00")).left(3).toInt();
+        const int ms = frac.isEmpty() ? 0 : QString(frac + QStringLiteral("00")).left(3).toInt();
         const QDate date(y, mo, d);
         if (!date.isValid() || mo < 1 || mo > 12 || h > 24 || mi > 59 || sec > 59 || (h == 24 && (mi || sec || ms)))
             return Value::date(kNaN, true);
