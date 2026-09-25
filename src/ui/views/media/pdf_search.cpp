@@ -81,21 +81,30 @@ void PdfSearch::rebuild()
     m_matches.clear();
     const int len = int(m_query.size());
     if (m_file && len > 0) {
+        // The model's results come page by page in text order, but QtPdf reports no usable index on
+        // the page: pair them with the case-insensitive occurrences in the page text (same order).
         const int n = m_model->rowCount({});
-        for (int i = 0; i < n; ++i) {
-            const QModelIndex idx = m_model->index(i);
-            const int page = m_model->data(idx, int(QPdfSearchModel::Role::Page)).toInt();
-            const int at = m_model->data(idx, int(QPdfSearchModel::Role::IndexOnPage)).toInt();
-            if (m_options.caseSensitive || m_options.entireWord) {
-                const QString& text = m_file->pageText(page).text;
-                if (m_options.caseSensitive && QStringView(text).mid(at, len) != m_query)
+        for (int i = 0; i < n;) {
+            const int page = m_model->data(m_model->index(i), int(QPdfSearchModel::Role::Page)).toInt();
+            int end = i;
+            while (end < n && m_model->data(m_model->index(end), int(QPdfSearchModel::Role::Page)).toInt() == page)
+                ++end;
+            const QString& text = m_file->pageText(page).text;
+            QList<int> at;
+            for (qsizetype k = text.indexOf(m_query, 0, Qt::CaseInsensitive); k >= 0; k = text.indexOf(m_query, k + len, Qt::CaseInsensitive))
+                at.append(int(k));
+            const bool paired = at.size() == end - i;
+            for (int r = i; r < end; ++r) {
+                const int idx = paired ? at[r - i] : -1;
+                if (idx >= 0 && m_options.caseSensitive && QStringView(text).mid(idx, len) != m_query)
                     continue;
-                if (m_options.entireWord
-                    && ((at > 0 && isWordChar(text.at(at - 1)) && isWordChar(m_query.front()))
-                        || (at + len < text.size() && isWordChar(text.at(at + len)) && isWordChar(m_query.back()))))
+                if (idx >= 0 && m_options.entireWord
+                    && ((idx > 0 && isWordChar(text.at(idx - 1)) && isWordChar(m_query.front()))
+                        || (idx + len < text.size() && isWordChar(text.at(idx + len)) && isWordChar(m_query.back()))))
                     continue;
+                m_matches.append(Match{page, idx, m_model->resultAtIndex(r).rectangles()});
             }
-            m_matches.append(Match{page, at, m_model->resultAtIndex(i).rectangles()});
+            i = end;
         }
     }
     // keep the current match; else the first one on or after the page the search started from

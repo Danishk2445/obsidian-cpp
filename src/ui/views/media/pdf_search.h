@@ -24,7 +24,7 @@ public:
     };
     struct Match {
         int page = 0;
-        int index = 0; // in the page text
+        int index = 0; // in the page text (-1 when it could not be told)
         QList<QRectF> rects;
     };
 

@@ -792,9 +792,10 @@ int PdfPagesView::glyphIndexAt(int page, const QPointF& pt) const
     const QPdfSelection toEnd = doc->getSelection(page, *snapped, text.boxes.last().center());
     if (!toEnd.text().isEmpty())
         return toEnd.startIndex();
+    // on the page's last glyph: it ends the selection from the first one (maybe one past it)
     const QPdfSelection fromStart = doc->getSelection(page, text.boxes.first().center(), *snapped);
     if (!fromStart.text().isEmpty())
-        return fromStart.endIndex();
+        return std::min(fromStart.endIndex(), int(text.text.size()) - 1);
     return 0;
 }
 
@@ -823,23 +824,20 @@ PdfPagesView::PageSelection PdfPagesView::selectionBetween(int page, const QPoin
 {
     PageSelection out;
     out.page = page;
-    const auto sa = snapToText(page, a), sb = snapToText(page, b);
-    if (!sa || !sb)
-        return out;
-    const QPdfSelection s = m_file->document()->getSelection(page, *sa, *sb);
-    if (s.text().isEmpty() && *sa == *sb)
-        return out;
-    // QtPdf leaves out the glyph under the later point: take it when the pointer went past it.
+    // QPdfDocument::getSelection wants the earlier point first: it takes the glyph under the start
+    // point, and the glyph under the end point when the end is in its right half.
     const bool bLater = b.y() > a.y() + 2 || (std::abs(b.y() - a.y()) <= 2 && b.x() >= a.x());
-    const QPointF later = bLater ? b : a, laterSnap = bLater ? *sb : *sa;
-    int from = s.text().isEmpty() ? -1 : s.startIndex();
-    int to = s.text().isEmpty() ? -1 : s.endIndex();
-    if (later.x() > laterSnap.x() + 0.5 || s.text().isEmpty()) {
-        if (from < 0) // both points on the same glyph
-            from = to = glyphIndexAt(page, laterSnap);
-        if (from >= 0)
-            return selectionFromIndex(page, from, to + 1);
+    const QPointF early = bLater ? a : b, late = bLater ? b : a;
+    const auto se = snapToText(page, early), sl = snapToText(page, late);
+    if (!se || !sl)
         return out;
+    const QPdfSelection s = m_file->document()->getSelection(page, *se, *sl);
+    if (s.text().isEmpty()) {
+        // both points on one glyph: it is selected once the pointer crossed its middle
+        if (QLineF(early, late).length() < 1)
+            return out;
+        const int i = glyphIndexAt(page, *se);
+        return i >= 0 ? selectionFromIndex(page, i, i + 1) : out;
     }
     out.text = s.text();
     for (const QPolygonF& poly : s.bounds())
