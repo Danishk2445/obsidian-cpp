@@ -186,6 +186,15 @@ TEST(HtmlInline, KbdSubSupFormats)
     EXPECT_EQ(formatAt(b, 3).verticalAlignment(), QTextCharFormat::AlignNormal);
 }
 
+TEST(HtmlInline, AdjacentKbdPillsStaySeparate)
+{
+    Env env;
+    Note n(QStringLiteral("x <kbd>A</kbd><kbd>B</kbd> y"), *env.styles, true);
+    const DisplayBlock b = n.block(0);
+    ASSERT_EQ(b.display(), QStringLiteral("x AB y"));
+    EXPECT_EQ(b.boxes().size(), 2);
+}
+
 TEST(HtmlInline, SpanColorsAndFontAttributes)
 {
     Env env;
@@ -325,6 +334,20 @@ TEST(HtmlInline, AnchorsAreLinks)
     EXPECT_EQ(internal->kind, LivePreviewDecorator::LinkHit::Kind::Link);
     EXPECT_EQ(internal->target, QStringLiteral("Welcome.md"));
     EXPECT_FALSE(n.deco.linkAt(1).has_value());
+
+    // The hit range is what Live Preview reveals with the anchor: its outermost element, or whole lines when it
+    // is alone on them (a click there while the source shows places the cursor instead of following the link).
+    const QString nested = QStringLiteral("a <b>x <a href=\"y\">link</a></b> z\n\n  <a href=\"w\">alone</a>  \n\nend");
+    Note m(nested, *env.styles, false);
+    const auto inB = m.deco.linkAt(nested.indexOf(QStringLiteral("link")) + 1);
+    ASSERT_TRUE(inB.has_value());
+    EXPECT_EQ(inB->from, nested.indexOf(QStringLiteral("<b>")));
+    EXPECT_EQ(inB->to, nested.indexOf(QStringLiteral(" z")));
+    const Text t = Text::fromString(nested);
+    const auto alone = m.deco.linkAt(nested.indexOf(QStringLiteral("alone")) + 1);
+    ASSERT_TRUE(alone.has_value());
+    EXPECT_EQ(alone->from, t.lineStart(2));
+    EXPECT_EQ(alone->to, t.lineEnd(2));
 }
 
 TEST(HtmlInline, TableCellsRenderHtml)
@@ -351,6 +374,10 @@ TEST(HtmlInline, NestedHtmlBlockRendersInline)
     const LineDecoration d = n.line(2);
     EXPECT_EQ(d.lineStyle, StyleId::Normal);
     EXPECT_EQ(n.display(2), QStringLiteral("  nested bold"));
+    // Live preview reveals its elements one by one, like a paragraph's.
+    const QString md = QStringLiteral("- item\n\n  <span>one</span> <b>two</b>\n\nend");
+    Note lp(md, *env.styles, false, md.indexOf(QStringLiteral("two")));
+    EXPECT_EQ(lp.display(2), QStringLiteral("  one <b>two</b>"));
 }
 
 // ---- HTML blocks ------------------------------------------------------------------------------------

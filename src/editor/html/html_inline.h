@@ -45,7 +45,7 @@ QList<int> htmlTagNodes(const md::InlineTree& tree);
 InlineStructure pairTags(const md::InlineTree& tree, const QList<int>& htmlNodes);
 
 struct InlineContext {
-    const md::InlineTree* tree = nullptr;
+    md::InlineTreePtr tree;
     const md::LeafContent* content = nullptr;
     const Text* text = nullptr;
     qsizetype lineFrom = 0;  // the window being decorated (document offsets, one editor line / cell)
@@ -64,14 +64,15 @@ struct InlineContext {
 // htmlTagNodes()) to `d`.
 void decorateInline(const InlineContext& ctx, const QList<int>& htmlNodes, LineDecoration& d);
 
-// <a href> around a content offset (the innermost one), with the element's document range.
+// <a href> around a content offset (the innermost one). from/to: the range Live Preview reveals with it (its
+// outermost element, widened to whole lines when alone on them).
 struct AnchorHit {
     QString href;
     bool external = false; // href has a URL scheme
     qsizetype from = 0;
     qsizetype to = 0;
 };
-std::optional<AnchorHit> anchorAt(const md::InlineTree& tree, const md::LeafContent& content, const Text& text, int contentOffset);
+std::optional<AnchorHit> anchorAt(const md::InlineTreePtr& tree, const md::LeafContent& content, const Text& text, int contentOffset);
 
 // "https:", "mailto:", "obsidian:"...
 bool hasUrlScheme(const QString& url);

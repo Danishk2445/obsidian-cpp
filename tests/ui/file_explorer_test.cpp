@@ -273,7 +273,8 @@ TEST_F(FileExplorerTest, SelectionWithAltAndShift)
     // Shift: a range from the last item Alt+clicked on (deselecting doesn't move that anchor)
     click("Embeds.md", Qt::LeftButton, Qt::ShiftModifier);
     EXPECT_EQ(tree()->selectedItems(), (QList<TAbstractFile*>{m_vault->item("Embeds.md"), m_vault->item("Formatting.md"),
-                                                              m_vault->item("Frontmatter.md"), m_vault->item("Lists.md"), m_vault->item("Math.md")}));
+                                                              m_vault->item("Frontmatter.md"), m_vault->item("HTML.md"), m_vault->item("Lists.md"),
+                                                              m_vault->item("Math.md")}));
     // a plain click clears it
     click("Welcome.md");
     EXPECT_TRUE(tree()->selectedItems().isEmpty());

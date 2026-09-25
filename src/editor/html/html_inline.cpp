@@ -65,6 +65,46 @@ bool isBlank(QStringView s)
     return true;
 }
 
+// Document range of an element: opening tag through closing tag (or through its content when unclosed).
+std::pair<qsizetype, qsizetype> elementDocRange(const md::InlineTree& it, const md::LeafContent& content, const Text& text, const InlineElement& e)
+{
+    const qsizetype a = content.toDoc(it.node(e.open).from, text);
+    const qsizetype b = e.close >= 0 ? content.toDoc(it.node(e.close).to, text)
+                                     : std::max(content.toDoc(it.node(e.open).to, text), content.toDoc(e.contentTo, text));
+    return {a, b};
+}
+
+// What Live Preview reveals as a unit: the element's range, widened to whole lines when it is alone on them
+// (Obsidian's HTML widget range).
+std::pair<qsizetype, qsizetype> revealRange(const md::InlineTree& it, const md::LeafContent& content, const Text& text, const InlineStructure& st,
+                                            int root)
+{
+    auto [a, b] = elementDocRange(it, content, text, st.elements[root]);
+    const int la = text.lineAt(a), lb = text.lineAt(b);
+    const qsizetype lsA = text.lineStart(la);
+    if (isBlank(text.lineView(la).left(a - lsA)) && isBlank(text.lineView(lb).mid(b - text.lineStart(lb))))
+        return {lsA, text.lineEnd(lb)};
+    return {a, b};
+}
+
+// pairTags() per inline tree: decorate() runs once per visible line, and a leaf's lines share one tree.
+std::shared_ptr<const InlineStructure> structureOf(const md::InlineTreePtr& tree, const QList<int>& htmlNodes)
+{
+    struct Entry {
+        std::weak_ptr<const md::InlineTree> tree;
+        std::shared_ptr<const InlineStructure> st;
+    };
+    static QHash<const md::InlineTree*, Entry> cache; // GUI thread only
+    auto it = cache.constFind(tree.get());
+    if (it != cache.cend() && it->tree.lock() == tree)
+        return it->st;
+    if (cache.size() > 256)
+        cache.clear();
+    auto st = std::make_shared<const InlineStructure>(pairTags(*tree, htmlNodes));
+    cache.insert(tree.get(), Entry{tree, st});
+    return st;
+}
+
 } // namespace
 
 bool hasUrlScheme(const QString& url)
@@ -192,7 +232,8 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
         mark(a, b, StyleId::Html);
     };
 
-    const InlineStructure st = pairTags(it, htmlNodes);
+    const std::shared_ptr<const InlineStructure> structure = structureOf(c.tree, htmlNodes);
+    const InlineStructure& st = *structure;
 
     for (int id : st.comments) {
         const auto [a, b] = nodeRange(id);
@@ -211,9 +252,7 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
     // Live preview reveals a whole nest (the outermost element, widened to its lines when it is alone on
     // them) while the selection touches it, like Obsidian's HTML widget range.
     QList<qint8> rootActive(st.elements.size(), -1);
-    auto elementEnd = [&](const InlineElement& e) {
-        return e.close >= 0 ? nodeRange(e.close).second : std::max(nodeRange(e.open).second, toDoc(e.contentTo));
-    };
+    auto elementEnd = [&](const InlineElement& e) { return elementDocRange(it, *c.content, text, e).second; };
     auto rootOf = [&](int k) {
         while (st.elements[k].parent >= 0)
             k = st.elements[k].parent;
@@ -224,11 +263,7 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
             return false;
         const int r = rootOf(k);
         if (rootActive[r] < 0) {
-            qsizetype a = nodeRange(st.elements[r].open).first, b = elementEnd(st.elements[r]);
-            const int la = text.lineAt(a), lb = text.lineAt(b);
-            const qsizetype lsA = text.lineStart(la), leB = text.lineEnd(lb);
-            if (isBlank(text.lineView(la).left(a - lsA)) && isBlank(text.lineView(lb).mid(b - text.lineStart(lb))))
-                a = lsA, b = leB;
+            const auto [a, b] = revealRange(it, *c.content, text, st, r);
             rootActive[r] = c.touches(a, b) ? 1 : 0;
         }
         return rootActive[r] == 1;
@@ -343,26 +378,33 @@ void decorateInline(const InlineContext& c, const QList<int>& htmlNodes, LineDec
     }
 }
 
-std::optional<AnchorHit> anchorAt(const md::InlineTree& tree, const md::LeafContent& content, const Text& text, int off)
+std::optional<AnchorHit> anchorAt(const md::InlineTreePtr& tree, const md::LeafContent& content, const Text& text, int off)
 {
-    const QList<int> nodes = htmlTagNodes(tree);
+    if (!tree)
+        return std::nullopt;
+    const QList<int> nodes = htmlTagNodes(*tree);
     if (nodes.isEmpty())
         return std::nullopt;
-    const InlineStructure st = pairTags(tree, nodes);
-    const InlineElement* best = nullptr;
-    for (const InlineElement& e : st.elements) {
+    const std::shared_ptr<const InlineStructure> st = structureOf(tree, nodes);
+    int best = -1;
+    for (int k = 0; k < st->elements.size(); ++k) {
+        const InlineElement& e = st->elements[k];
         if (e.tag.name != u"a" || !e.tag.hasAttr(u"href") || e.close < 0)
             continue;
         if (off >= e.contentFrom && off <= e.contentTo)
-            best = &e; // later = inner
+            best = k; // later = inner
     }
-    if (!best)
+    if (best < 0)
         return std::nullopt;
     AnchorHit h;
-    h.href = best->tag.attr(u"href").trimmed();
+    h.href = st->elements[best].tag.attr(u"href").trimmed();
     h.external = hasUrlScheme(h.href);
-    h.from = content.toDoc(tree.node(best->open).from, text);
-    h.to = content.toDoc(tree.node(best->close).to, text);
+    // The range Live Preview reveals together with the anchor (its outermost element, widened to its lines):
+    // while the selection touches it the anchor shows as source and isn't followed on click.
+    int root = best;
+    while (st->elements[root].parent >= 0)
+        root = st->elements[root].parent;
+    std::tie(h.from, h.to) = revealRange(*tree, content, text, *st, root);
     return h;
 }
 

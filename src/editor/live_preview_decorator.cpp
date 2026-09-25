@@ -337,8 +337,9 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         const NodeType lt = tree.node(leaf).type;
         if (lt == NodeType::Paragraph || lt == NodeType::AtxHeading || lt == NodeType::SetextHeading)
             inlineDecorations(line, leaf, d);
-        else if (lt == NodeType::HtmlBlock && tree.parent(leaf) > 0 && !active) {
-            // An HTML block inside a list / quote (top-level ones are block widgets): its tags render inline.
+        else if (lt == NodeType::HtmlBlock && tree.parent(leaf) > 0) {
+            // An HTML block inside a list / quote (top-level ones are block widgets): its elements render inline
+            // and reveal one by one, like a paragraph's.
             d.lineStyle = StyleId::Normal;
             const md::LeafContent content = html::blockContent(tree, leaf, text);
             inlineDecorationsFor(content, tree.inlineTree(content), text.lineStart(line), text.lineEnd(line), text.lineStart(line), d, d.lineStyle, false);
@@ -647,7 +648,7 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
     }
     if (!htmlTags.isEmpty()) {
         html::InlineContext hc;
-        hc.tree = it.get();
+        hc.tree = it;
         hc.content = &content;
         hc.text = &text;
         hc.lineFrom = ls;
@@ -804,7 +805,7 @@ std::optional<LivePreviewDecorator::LinkHit> LivePreviewDecorator::linkAt(qsizet
             break;
         }
     }
-    if (const auto a = html::anchorAt(*it, content, text, off))
+    if (const auto a = html::anchorAt(it, content, text, off))
         return LinkHit{a->external ? LinkHit::Kind::Url : LinkHit::Kind::Link, a->href, a->from, a->to};
     return std::nullopt;
 }
