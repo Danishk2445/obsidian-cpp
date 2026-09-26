@@ -170,9 +170,10 @@ Open parity questions:
   Quick switcher, Templates, Unique note creator, Greentext Guard
 - ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, properties in document,
-  always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
-  bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
+- ✅ Applied: line numbers, properties in document, backlinks in document, quick font size adjustment (Ctrl+wheel
+  changes baseFontSize by 1 in 10...30, not within 500 ms of a plain scroll).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, always focus new tabs, default file
+  to open, delete attachments with files, URI callbacks, tab title bar, native menus, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 
