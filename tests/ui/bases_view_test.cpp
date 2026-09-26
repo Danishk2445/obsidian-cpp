@@ -11,6 +11,7 @@
 #include "render/theme/theme.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/overlay/suggest_modal.h"
+#include "ui/shell/popout_window.h"
 #include "ui/views/bases/bases_controller.h"
 #include "ui/views/bases/bases_embed.h"
 #include "ui/views/bases/bases_layout.h"
@@ -646,4 +647,37 @@ TEST_F(BasesTest, ViewCommands)
     TFile* created = vault->file("Untitled.md");
     ASSERT_TRUE(created);
     EXPECT_EQ(disk("Untitled.md"), "---\ntags:\n  - book\n---\n");
+}
+
+TEST_F(BasesTest, WorksInPopoutWindows)
+{
+    BasesFileView* v = openBase("Books.base");
+    ASSERT_TRUE(v);
+    WorkspaceLeaf* leaf = ws()->activeRootLeaf();
+    PopoutWindow* pop = ws()->moveLeafToPopout(leaf, QRect(100, 100, 900, 640));
+    ASSERT_TRUE(pop);
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(pop));
+    auto* moved = qobject_cast<BasesFileView*>(leaf->view());
+    ASSERT_TRUE(moved);
+    BasesController* c = moved->controller();
+    ASSERT_TRUE(waitReady(c));
+    EXPECT_EQ(rowNames(c), kByRating);
+    // toolbar menus open in the pop-out's own overlay layer
+    QPointer<MenuPanel> panel = c->openSortMenu();
+    ASSERT_TRUE(panel);
+    QApplication::processEvents();
+    EXPECT_EQ(panel->parentWidget(), pop->overlay());
+    EXPECT_EQ(MenuPanel::openPanel(pop), panel.data());
+    EXPECT_EQ(MenuPanel::openPanel(window), nullptr);
+    QTest::keyClick(panel, Qt::Key_Escape);
+    ASSERT_TRUE(QTest::qWaitFor([&] { return !panel || !panel->isOpen(); }, 2000));
+    // the folder menu hook finds the main window from a widget in the pop-out
+    QList<MenuEntry> items;
+    FileMenuHooks::collect(items, vault->folder("Books"), "file-explorer-context-menu", nullptr, c);
+    const auto it = std::find_if(items.begin(), items.end(), [](const MenuEntry& m) { return m.title == "New base"; });
+    ASSERT_NE(it, items.end());
+    it->run();
+    EXPECT_TRUE(vault->file("Books/Untitled.base"));
+    QTest::qWait(700);
+    EXPECT_EQ(disk("Books.base"), fixtureBytes("Books.base"));
 }

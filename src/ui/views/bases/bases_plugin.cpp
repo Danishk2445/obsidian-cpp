@@ -221,7 +221,7 @@ void registerBases(MainWindow* window)
         FileMenuHooks::add([](QList<MenuEntry>& items, TAbstractFile* file, const QString& source, WorkspaceLeaf*, QWidget* origin) {
             if (source != u"file-explorer-context-menu" || !file || !file->isFolder() || !origin)
                 return;
-            QPointer<MainWindow> win = qobject_cast<MainWindow*>(origin->window());
+            QPointer<MainWindow> win = MainWindow::of(origin);
             const QString folder = file->path();
             items << MenuEntry{QStringLiteral("action-primary"), tr("New base"), QStringLiteral("layout-list"), [win, folder] {
                                    if (win)

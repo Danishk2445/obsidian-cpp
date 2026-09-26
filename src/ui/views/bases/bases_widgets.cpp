@@ -1,8 +1,6 @@
 #include "ui/views/bases/bases_widgets.h"
 
 #include "ui/overlay/overlay_layer.h"
-#include "ui/workspace/workspace.h"
-#include "ui/shell/main_window.h"
 #include "ui/views/bases/bases_render.h"
 #include "ui/views/bases/bases_style.h"
 
@@ -29,8 +27,9 @@ QWidget* overlayFor(QWidget* w)
 {
     if (!w)
         return nullptr;
-    if (auto* mw = qobject_cast<MainWindow*>(w->window()); mw && mw->overlay())
-        return mw->overlay();
+    // the layer of the anchor's window (the main window's or a pop-out's)
+    if (OverlayLayer* layer = OverlayLayer::of(w))
+        return layer;
     return w->window();
 }
 } // namespace

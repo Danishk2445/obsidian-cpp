@@ -64,7 +64,8 @@ const ViewTypeInfo* viewType(const QString& id)
 
 namespace {
 
-MainWindow* mainWindowOf(QWidget* w) { return w ? qobject_cast<MainWindow*>(w->window()) : nullptr; }
+// The main window of the base (also when it is in one of its pop-outs).
+MainWindow* mainWindowOf(QWidget* w) { return w ? MainWindow::of(w) : nullptr; }
 
 // The header (.bases-header): paints its bottom border in a .base tab.
 class HeaderWidget : public QWidget {
