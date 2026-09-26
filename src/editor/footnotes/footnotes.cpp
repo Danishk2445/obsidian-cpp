@@ -327,12 +327,17 @@ qreal SectionWidget::layout(qreal width)
 void SectionWidget::paint(QPainter* p, const QRectF& rect)
 {
     p->fillRect(QRectF(rect.left(), rect.top() + m_topGap, rect.width(), m_styles->hrThickness()), m_styles->hrColor());
+    // only the visible part of a long list (the layout clips the trailer to the viewport)
+    QRectF visible = rect;
+    if (p->hasClipping())
+        visible = visible.intersected(p->clipBoundingRect());
     p->save();
     p->translate(rect.left(), rect.top() + m_listTop);
     p->scale(m_scale, m_scale);
     DocLayout::PaintContext ctx;
     ctx.drawSelection = false;
-    ctx.clip = QRectF(0, 0, m_layout.contentWidth(), m_layout.totalHeight() + 1);
+    const qreal y0 = (visible.top() - rect.top() - m_listTop) / m_scale, y1 = (visible.bottom() - rect.top() - m_listTop) / m_scale;
+    ctx.clip = QRectF(0, std::max<qreal>(0, y0 - 1), m_layout.contentWidth(), std::max<qreal>(0, y1 - y0) + 2);
     ctx.rightEdge = m_layout.contentWidth();
     m_layout.paint(p, ctx);
     p->restore();

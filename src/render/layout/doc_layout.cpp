@@ -704,8 +704,16 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
     }
     if (m_trailer && m_trailerH > 0) {
         const double t = m_heights.total();
-        if (ctx.clip.bottom() >= t && ctx.clip.top() <= t + m_trailerH)
-            m_trailer->paint(p, QRectF(0, t, m_width, m_trailerH));
+        const QRectF r(0, t, m_width, m_trailerH);
+        if (ctx.clip.bottom() >= t && ctx.clip.top() <= t + m_trailerH) {
+            // clipped to what is visible, so a long trailer paints only that part (clipBoundingRect())
+            p->save();
+            p->setClipRect(QRectF(r.left() - 4, std::max(r.top(), ctx.clip.top()), r.width() + 8,
+                                  std::min(r.bottom(), ctx.clip.bottom()) - std::max(r.top(), ctx.clip.top())),
+                           Qt::IntersectClip);
+            m_trailer->paint(p, r);
+            p->restore();
+        }
     }
 }
 
