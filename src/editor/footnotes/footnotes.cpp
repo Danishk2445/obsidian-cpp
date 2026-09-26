@@ -170,7 +170,9 @@ std::optional<qsizetype> Index::refPosition(const QString& anchor) const
 
 bool isDefinitionLine(const md::SyntaxTree& tree, const Text& text, int line)
 {
-    if (tree.role(line) != md::LineRole::Paragraph || line >= text.lineCount())
+    // A definition's text starts after its "[^1]: " marker / continuation indent: most lines (top-level paragraphs,
+    // content column 0) are ruled out without looking at them.
+    if (tree.role(line) != md::LineRole::Paragraph || tree.contentColumn(line) == 0 || line >= text.lineCount())
         return false;
     // Cheap test first: a definition's first line starts with "[^", its continuation lines are indented.
     const QStringView v = text.lineView(line);
