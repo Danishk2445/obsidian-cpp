@@ -96,7 +96,7 @@ inline ThemeManager* testThemes()
 class NavigationEnv {
 public:
     // `prepare` may add/modify files in the scratch vault before it is loaded.
-    explicit NavigationEnv(const std::function<void(const QString& root)>& prepare = {}, bool copyFixture = true)
+    explicit NavigationEnv(const std::function<void(const QString& root)>& prepare = {}, bool copyFixture = true, bool frameless = false)
     {
         EXPECT_TRUE(tmp.isValid());
         qputenv("XDG_CONFIG_HOME", (tmp.path() + "/config").toUtf8());
@@ -126,7 +126,7 @@ public:
         bindVaultServices(session);
         vault->load();
 
-        window = new MainWindow(session, false);
+        window = new MainWindow(session, frameless); // frameless: the default "hidden" frame (window buttons in the tab row)
         window->setAttribute(Qt::WA_DeleteOnClose, false);
         registry = new ViewRegistry;
         registerCoreViews(*registry);

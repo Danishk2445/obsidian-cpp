@@ -897,6 +897,12 @@ void FileExplorerView::populateContextMenu(QMenu* menu, TAbstractFile* item)
                               if (self && resolve())
                                   self->openFile(static_cast<TFile*>(resolve()), Workspace::NewLeaf::SplitRight, false);
                           }};
+        // Obsidian's workspace "file-menu" handler: every file menu can open the file in a pop-out.
+        items << MenuItem{QStringLiteral("open"), tr("Open in new window"), QStringLiteral("picture-in-picture-2"),
+                          [self, resolve] {
+                              if (self && resolve())
+                                  self->openFile(static_cast<TFile*>(resolve()), Workspace::NewLeaf::Window, false);
+                          }};
     }
     if (!isRoot) {
         items << MenuItem{QStringLiteral("action"), tr("Make a copy"), QStringLiteral("files"),

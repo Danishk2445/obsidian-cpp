@@ -19,6 +19,13 @@ public:
     void setBlocking(QWidget* child, bool blocking);
     void refresh(); // recompute mask/visibility after children changed
 
+    // The layer of `w`'s window (the main window's or a pop-out's); null when that window has none.
+    static OverlayLayer* of(const QWidget* w);
+    // Obsidian opens modals and notices in the focused window: the layer of the active window when it
+    // is `layer`'s window or one of its pop-outs (windows whose dynamic property "ocOwnerWindow" is
+    // `layer`'s window), else `layer` itself.
+    static OverlayLayer* focused(OverlayLayer* layer);
+
 protected:
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void childEvent(QChildEvent* ev) override;
@@ -39,6 +46,7 @@ public:
     explicit NoticeManager(OverlayLayer* layer);
     Notice* show(const QString& message, int timeoutMs = 4500);
     void relayout();
+    static NoticeManager* of(const OverlayLayer* layer); // the layer's notices (null if none)
 
 private:
     OverlayLayer* m_layer;

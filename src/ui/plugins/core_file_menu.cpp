@@ -25,7 +25,7 @@ namespace oc {
 namespace {
 MainWindow* windowOf(QWidget* origin)
 {
-    return origin ? qobject_cast<MainWindow*>(origin->window()) : nullptr;
+    return origin ? MainWindow::of(origin) : nullptr;
 }
 
 void copied(MainWindow* w)
@@ -81,6 +81,12 @@ void installCoreFileMenu()
                 items << MenuEntry{u"system"_s, QObject::tr("Open in default app"), u"arrow-up-right"_s, [w, itemOf] {
                                        if (TAbstractFile* f = itemOf())
                                            openWithDefaultApp(w->session()->vault(), f);
+                                   }};
+                // Obsidian: openPopoutLeaf().openFile(file) (link, tab header, graph, canvas... menus).
+                items << MenuEntry{u"open"_s, QObject::tr("Open in new window"), u"picture-in-picture-2"_s, [w, itemOf] {
+                                       Workspace* ws = w ? w->workspace() : nullptr;
+                                       if (TAbstractFile* f = itemOf(); ws && f)
+                                           ws->openFile(static_cast<TFile*>(f), Workspace::NewLeaf::Window);
                                    }};
             }
             if (!isRoot) {

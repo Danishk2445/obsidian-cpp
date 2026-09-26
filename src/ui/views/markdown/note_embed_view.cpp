@@ -202,7 +202,7 @@ NoteEmbedWidget::NoteEmbedWidget(const EmbedContext& context, QWidget* parent)
 NoteEmbedWidget::~NoteEmbedWidget()
 {
     if (!m_hoverLink.isEmpty())
-        if (PagePreview* pp = PagePreview::of(qobject_cast<MainWindow*>(window())))
+        if (PagePreview* pp = PagePreview::of(MainWindow::of(window())))
             pp->onLinkUnhover(this);
 }
 
@@ -257,7 +257,7 @@ Workspace* NoteEmbedWidget::workspace() const
     for (QWidget* p = const_cast<NoteEmbedWidget*>(this); p; p = p->parentWidget()) {
         if (auto* v = qobject_cast<View*>(p); v && v->workspace())
             return v->workspace();
-        if (auto* mw = qobject_cast<MainWindow*>(p); mw && mw->workspace())
+        if (auto* mw = p->isWindow() ? MainWindow::of(p) : nullptr; mw && mw->workspace())
             return mw->workspace();
     }
     return nullptr;
@@ -274,7 +274,7 @@ void NoteEmbedWidget::activate(const NoteEmbedLayout::Hit& hit, Qt::KeyboardModi
             return;
         // a link followed from a hover preview closes the previews (like the preview's own links)
         if (popoverOf(this))
-            if (PagePreview* pp = PagePreview::of(qobject_cast<MainWindow*>(window())))
+            if (PagePreview* pp = PagePreview::of(MainWindow::of(window())))
                 pp->closeAll();
         MarkdownView::openLinkText(ws, linktext, kind, sourcePath, leaf);
     };
@@ -340,7 +340,7 @@ void NoteEmbedWidget::updateHover(const QPoint& pos)
     if (key == m_hoverLink)
         return;
     m_hoverLink = key;
-    PagePreview* pp = PagePreview::of(qobject_cast<MainWindow*>(window()));
+    PagePreview* pp = PagePreview::of(MainWindow::of(window()));
     if (!pp)
         return;
     if (key.isEmpty() || h.linkKind > 2) {

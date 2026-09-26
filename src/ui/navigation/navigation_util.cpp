@@ -71,7 +71,7 @@ void showNotice(OverlayLayer* layer, const QString& message)
 {
     if (!layer)
         return;
-    if (auto* w = qobject_cast<MainWindow*>(layer->window()); w && w->notices())
+    if (auto* w = MainWindow::of(layer); w && w->notices())
         w->notices()->show(message);
 }
 

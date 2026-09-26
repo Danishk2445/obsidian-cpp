@@ -41,6 +41,7 @@
 #include <QRegularExpression>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 namespace oc {
 
@@ -256,6 +257,7 @@ MarkdownView::MarkdownView(WorkspaceLeaf* leaf, QWidget* parent)
             clampSelectionToBody();
     });
     m_editor->installEventFilter(this);
+    m_editor->viewport()->installEventFilter(this); // Ctrl+wheel font size
 
     // Link resolution for rendering: unresolved-link styling and image embeds.
     if (LivePreviewDecorator* lp = m_editor->livePreview()) {
@@ -627,6 +629,23 @@ void MarkdownView::clampSelectionToBody()
 
 bool MarkdownView::eventFilter(QObject* obj, QEvent* ev)
 {
+    // Obsidian's "Quick font size adjustment": Ctrl+wheel changes baseFontSize by 1 (10...30), unless a
+    // plain scroll happened in the last 500 ms.
+    if (obj == m_editor->viewport() && ev->type() == QEvent::Wheel) {
+        auto* we = static_cast<QWheelEvent*>(ev);
+        VaultConfig* cfg = session() ? session()->vaultConfig() : nullptr;
+        if (cfg && cfg->flag(QStringLiteral("baseFontSizeAction"))) {
+            if (!(we->modifiers() & Qt::ControlModifier)) {
+                m_plainWheel.start();
+            } else if (!m_plainWheel.isValid() || m_plainWheel.elapsed() >= 500) {
+                if (const int dy = we->angleDelta().y(); dy != 0) {
+                    const int size = int(cfg->get(QStringLiteral("baseFontSize")).toDouble(16)) + (dy > 0 ? 1 : -1);
+                    cfg->set(QStringLiteral("baseFontSize"), std::clamp(size, 10, 30));
+                }
+                return true;
+            }
+        }
+    }
     // ↑ on the first line of the text goes to the properties (their last row / "Add property"),
     // else to the inline title (Obsidian's shiftFocusBefore).
     if (obj == m_editor && ev->type() == QEvent::KeyPress && m_doc && mode() != EditorView::Mode::Reading
@@ -889,7 +908,7 @@ void MarkdownView::paneMenuEntries(QList<MenuEntry>& items, const QString& sourc
     items << replace;
     items << MenuEntry{QStringLiteral("action"), tr("Export to PDF..."), QStringLiteral("file-down"), [self] {
                            if (self)
-                               openExportPdfModal(qobject_cast<MainWindow*>(self->window()), self);
+                               openExportPdfModal(MainWindow::of(self), self);
                        }};
 }
 
@@ -909,7 +928,12 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         navigateToSubpath(LinkResolver::splitSubpath(t).second);
         return;
     }
-    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), newLeaf);
+    // Obsidian's Keymap.isModEvent(): Mod(+click) a new tab, Mod+Alt a split, Mod+Alt+Shift a new window.
+    Workspace::NewLeaf mode = newLeaf ? Workspace::NewLeaf::Tab : Workspace::NewLeaf::No;
+    const Qt::KeyboardModifiers mods = QGuiApplication::keyboardModifiers();
+    if (newLeaf && (mods & (Qt::ControlModifier | Qt::MetaModifier)) && (mods & Qt::AltModifier))
+        mode = (mods & Qt::ShiftModifier) ? Workspace::NewLeaf::Window : Workspace::NewLeaf::SplitRight;
+    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), mode);
 }
 
 void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)

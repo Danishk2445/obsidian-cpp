@@ -8,12 +8,14 @@
 #include "ui/overlay/modal.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
+#include "ui/shell/popout_window.h"
 #include "ui/views/file_explorer/file_actions.h"
 #include "ui/views/markdown/inline_title.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/view.h"
 #include "ui/workspace/workspace.h"
 
+#include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -153,16 +155,16 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             ws()->closeActiveLeaf();
         return true;
     }, keys({"Mod+W"})));
-    // Obsidian closes the other unpinned leaves of the active leaf's container (here: the root split).
+    // Obsidian closes the other unpinned leaves of the active leaf's container (the root split, or the
+    // active leaf's pop-out window).
     r.add(cmd("workspace:close-others", QObject::tr("Close all other tabs"), "x", [ws](bool checking) {
         WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
         if (!a || a->isInSidedock())
             return false;
         QList<WorkspaceLeaf*> others;
-        ws()->iterateRootLeaves([&](WorkspaceLeaf* l) {
+        for (WorkspaceLeaf* l : ws()->containerLeaves(a))
             if (l != a && !l->isPinned())
                 others.push_back(l);
-        });
         if (!checking)
             ws()->closeLeaves(others);
         return !others.isEmpty();
@@ -251,13 +253,51 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             ws()->duplicateLeaf(l, Workspace::NewLeaf::SplitDown);
         return true;
     }));
+    // Obsidian's activeWindow.close(): the focused window, a pop-out (its tabs close) or the main window.
     r.add(cmd("workspace:close-window", QObject::tr("Close window"), "x", [w](bool checking) {
         if (!w)
             return false;
-        if (!checking)
-            w->close();
+        if (!checking) {
+            auto* popout = qobject_cast<PopoutWindow*>(QApplication::activeWindow());
+            if (popout && popout->mainWindow() == w)
+                popout->close();
+            else
+                w->close();
+        }
         return true;
     }, keys({"Mod+Shift+W"})));
+    // Pop-out windows (Obsidian's canPopoutWindow commands).
+    r.add(cmd("workspace:new-window", QObject::tr("New window"), "", [ws](bool checking) {
+        if (!ws())
+            return false;
+        if (!checking)
+            if (WorkspaceLeaf* leaf = ws()->openPopoutLeaf())
+                ws()->setActiveLeaf(leaf, true);
+        return true;
+    }));
+    r.add(cmd("workspace:open-in-new-window", QObject::tr("Open current tab in new window"), "maximize", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || !a->view())
+            return false;
+        if (!checking) {
+            // Obsidian: openPopoutLeaf().setViewState(leaf.getViewState(), {focus: true}).
+            QJsonObject state = a->viewState();
+            state.remove(QStringLiteral("pinned"));
+            if (WorkspaceLeaf* leaf = ws()->openPopoutLeaf()) {
+                leaf->setViewState(state, QJsonObject{{QStringLiteral("focus"), true}});
+                ws()->setActiveLeaf(leaf, true);
+            }
+        }
+        return true;
+    }));
+    r.add(cmd("workspace:move-to-new-window", QObject::tr("Move current tab to new window"), "maximize", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || !a->view())
+            return false;
+        if (!checking)
+            ws()->moveLeafToPopout(a);
+        return true;
+    }));
     r.add(cmd("workspace:edit-file-title", QObject::tr("Rename file"), "edit-3", [ws](bool checking) {
         WorkspaceLeaf* l = ws() ? ws()->activeRootLeaf() : nullptr;
         auto* mv = l ? qobject_cast<MarkdownView*>(l->view()) : nullptr;

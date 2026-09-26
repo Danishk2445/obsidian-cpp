@@ -4,6 +4,7 @@
 #include "ui/workspace/view.h"
 #include "ui/workspace/workspace.h"
 
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QTimer>
 
@@ -126,6 +127,7 @@ private:
     QMetaObject::Connection m_propsConn;
     EditorSuggest* m_suggest;
     VimController* m_vim = nullptr;
+    QElapsedTimer m_plainWheel; // last wheel scroll without Ctrl
     bool m_showBacklinks = false;
     bool m_backlinksDefaulted = false;
     BacklinkPane* m_backlinks = nullptr; // owned by the editor viewport (footer widget)

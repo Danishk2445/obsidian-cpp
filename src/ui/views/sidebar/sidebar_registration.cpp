@@ -170,7 +170,7 @@ bool bookmarkCurrentSection(MainWindow* w, EditorContext& ec, bool checking)
     return true;
 }
 
-MainWindow* windowOf(QWidget* origin) { return origin ? qobject_cast<MainWindow*>(origin->window()) : nullptr; }
+MainWindow* windowOf(QWidget* origin) { return origin ? MainWindow::of(origin) : nullptr; }
 
 // A linked view (backlinks, outgoing links, outline) of `leaf`'s note in a split of it (Obsidian's
 // splitLeafOrActive + setViewState({group: leaf})).

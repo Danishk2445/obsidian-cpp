@@ -158,7 +158,16 @@ Open parity questions:
 - ✅ Line numbers ("Show line number"): gutter in the text column (numbers in --text-faint at --font-ui-smaller,
   tabular, --file-folding-offset before the text), editing modes only; baseline-aligned with the line (Obsidian:
   top-aligned).
-- ⬜ Pop-out windows (open / move to new window), stacked tabs, always-on-top.
+- ✅ Pop-out windows: workspace.json "floating" split with "window" items (x / y / width / height / maximize /
+  zoom), restored on start; frameless like the main window (tab row = title bar + window buttons; no ribbon,
+  sidedocks or status bar) or native; own modals / notices / suggest / page previews; hotkeys, command palette
+  and quick switcher act on the focused window; the active leaf follows window focus; commands
+  workspace:move-to-new-window / open-in-new-window / new-window / close-window, editor:open-link-in-new-window;
+  "Open in new window" (file menus, bookmarks), "Move to new window" (tab menu); Mod+Alt+Shift+click on links;
+  tab drags between windows, out of every window = a new window at the drop point; closing a pop-out closes its
+  tabs (pinned too; undo reopens them), closing the main window keeps them for the next start. Wayland: no
+  window positions (saved as Qt reports them), tabs leave a window as a native drag.
+- ⬜ Stacked tabs, always-on-top, per-window zoom (round-tripped only).
 
 ## Settings (M7)
 - ✅ Modal: Obsidian 1.13's sidebar layout (search, Options / Core plugins / Community plugins groups), setting
@@ -170,9 +179,10 @@ Open parity questions:
   Quick switcher, Templates, Unique note creator, Greentext Guard
 - ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, properties in document,
-  always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
-  bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
+- ✅ Applied: line numbers, properties in document, backlinks in document, quick font size adjustment (Ctrl+wheel
+  changes baseFontSize by 1 in 10...30, not within 500 ms of a plain scroll).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, always focus new tabs, default file
+  to open, delete attachments with files, URI callbacks, tab title bar, native menus, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 

@@ -497,12 +497,16 @@ void EditorSuggest::show(const Context& ctx)
         close();
         return;
     }
+    // The popup lives in the editor's own window (the view may have moved to a pop-out window).
+    OverlayLayer* layer = OverlayLayer::of(m_view);
+    if (m_popup && m_popup->parentWidget() != layer) {
+        delete m_popup.data();
+        m_popup = nullptr;
+    }
     if (!m_popup) {
-        Workspace* ws = m_view->workspace();
-        MainWindow* w = ws ? ws->window() : nullptr;
-        if (!w || !w->overlay())
+        if (!layer)
             return;
-        m_popup = new SuggestPopup(w->overlay());
+        m_popup = new SuggestPopup(layer);
         connect(m_popup->list(), &SuggestionList::activated, this, [this](int index, Qt::KeyboardModifiers) { choose(index, QString()); });
     }
     m_popup->list()->setSuggestions(rows);

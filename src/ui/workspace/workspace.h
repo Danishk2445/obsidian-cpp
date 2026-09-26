@@ -4,6 +4,7 @@
 // sidedocks (each a split of tab groups), made of leaves hosting views. Serialized in the same shape as
 // Obsidian's workspace.json (stored in the clone's per-vault config dir, never in the vault):
 //   {"main": {...}, "left": {...}, "right": {...}, "left-ribbon": {"hiddenItems": {...}},
+//    "floating"?: {"id", "type":"floating", "children":[{"type":"window", ...}]},  (pop-outs, see below)
 //    "active": "<leaf id>", "lastOpenFiles": [...]}
 // Nodes: {"id","type":"split","direction":"vertical"|"horizontal","width"?,"collapsed"?,"children":[...]},
 //        {"id","type":"tabs","currentTab"?,"children":[...]}, {"id","type":"leaf","state":{"type","state","icon","title"}}
@@ -13,6 +14,7 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QRect>
 #include <QStringList>
 
 #include <functional>
@@ -22,6 +24,7 @@ class QWidget;
 namespace oc {
 
 class MainWindow;
+class PopoutWindow;
 class TFile;
 class VaultSession;
 class View;
@@ -100,7 +103,8 @@ public:
     // The widget tree (left sidedock | root split | right sidedock) placed in the main window.
     QWidget* widget() const;
 
-    // Active leaf: the focused leaf anywhere; activeRootLeaf(): most recent leaf in the root split.
+    // Active leaf: the focused leaf anywhere; activeRootLeaf(): most recent leaf in the root split (or in
+    // a pop-out window: Obsidian's getMostRecentLeaf()).
     WorkspaceLeaf* activeLeaf() const;
     WorkspaceLeaf* activeRootLeaf() const;
     void setActiveLeaf(WorkspaceLeaf* leaf, bool focus = true);
@@ -148,6 +152,29 @@ public:
     void closeLeaves(const QList<WorkspaceLeaf*>& leaves);
     int sideWidth(Side side) const;
     void setSideWidth(Side side, int px);
+
+    // ---- Pop-out windows — additive ---------------------------------------------------------------
+    // Obsidian's floating split: separate windows (workspace.json "floating": {"type": "floating",
+    // "children": [{"type": "window", "direction", "children", "x", "y", "width", "height", "maximize",
+    // "zoom"}]}) that each hold a root split of tab groups. Their leaves take part in iterateAllLeaves(),
+    // active-leaf tracking, activeRootLeaf() (Obsidian's getMostRecentLeaf(): the root split and the
+    // pop-outs), getLeaf() (Obsidian's getUnpinnedLeaf() stays in the active leaf's pop-out), the recent
+    // files and navigation history. getLeaf(NewLeaf::Window) = openPopoutLeaf(). A pop-out closes when its
+    // last leaf goes; closing it closes its leaves (pinned ones too, each recorded for undo); closing the
+    // main window keeps them in workspace.json for the next start.
+    // `geometry`: the frame position (the window system may ignore it: Wayland) and size; an invalid
+    // rect lets the window system place the window.
+    WorkspaceLeaf* openPopoutLeaf(const QRect& geometry = {}); // an empty leaf in a new pop-out
+    // Obsidian moveLeafToPopout(): the leaf (view, state and history kept) into a new pop-out, by default
+    // as large as the leaf (at least 600x600).
+    PopoutWindow* moveLeafToPopout(WorkspaceLeaf* leaf, const QRect& geometry = {});
+    QList<PopoutWindow*> popoutWindows() const;              // workspace.json order
+    PopoutWindow* popoutOf(const WorkspaceLeaf* leaf) const; // null: the main window (or not attached)
+    // Obsidian's leaf.getContainer(): the leaves of `leaf`'s pop-out, else of the root split.
+    QList<WorkspaceLeaf*> containerLeaves(const WorkspaceLeaf* leaf) const;
+    // The most recently active visible leaf of a pop-out, or of the root split for null.
+    WorkspaceLeaf* mostRecentLeafIn(const PopoutWindow* window) const;
+    void closePopout(PopoutWindow* window); // like its close button
 
 signals:
     void activeLeafChanged(oc::WorkspaceLeaf* leaf);

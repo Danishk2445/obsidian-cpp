@@ -633,6 +633,10 @@ void Application::openPath(MainWindow* w, const QString& path, const QString& mo
     Workspace* workspace = w ? w->workspace() : nullptr;
     if (!session || !session->vault() || !workspace)
         return;
+    // Files handed over by another launch (and --open) open in the main window, not in a pop-out.
+    if (workspace->popoutOf(workspace->activeLeaf()))
+        if (WorkspaceLeaf* mainLeaf = workspace->mostRecentLeafIn(nullptr))
+            workspace->setActiveLeaf(mainLeaf, false);
     TFile* f = session->vault()->file(path);
     if (!f && !path.contains(u'.'))
         f = session->vault()->file(path + u".md"_s); // obsidian://open?file=Note (no extension)
