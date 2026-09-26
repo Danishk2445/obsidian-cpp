@@ -1,5 +1,6 @@
 #include "editor/source_decorator.h"
 
+#include "editor/footnotes/footnotes.h"
 #include "markdown/doc_source.h"
 #include "render/services/code_highlighter.h"
 
@@ -49,6 +50,8 @@ StyleId SourceDecorator::quickLineStyle(int line)
         return StyleId::HrLine;
     case R::Html:
         return StyleId::HtmlBlock;
+    case R::Paragraph:
+        return footnotes::isDefinitionLine(tree, m_doc->text(), line) ? StyleId::FootnoteLine : StyleId::Normal;
     default:
         return StyleId::Normal;
     }
@@ -96,10 +99,21 @@ LineDecoration SourceDecorator::decorate(int line)
         case md::ContainerMarker::Kind::ListIndent:
             inList = true;
             break;
-        case md::ContainerMarker::Kind::FootnoteLabel:
-            d.marks.push_back({m.from, m.to, StyleId::FootnoteRef});
+        case md::ContainerMarker::Kind::FootnoteLabel: {
+            // "[^label]:" (.cm-hmd-footnote), its "[^" and "]:" faint; the line is a .HyperMD-footnote line
+            const int close = int(text.lineView(line).indexOf(u']', m.from + 2));
+            if (close > m.from + 2 && close + 2 <= m.to) {
+                d.marks.push_back({m.from, close + 2, StyleId::FootnoteMarker});
+                d.marks.push_back({m.from, m.from + 2, StyleId::Formatting});
+                d.marks.push_back({close, close + 2, StyleId::Formatting});
+            }
+            if (d.lineStyle == StyleId::Normal)
+                d.lineStyle = StyleId::FootnoteLine;
             break;
+        }
         case md::ContainerMarker::Kind::FootnoteIndent:
+            if (d.lineStyle == StyleId::Normal)
+                d.lineStyle = StyleId::FootnoteLine;
             break;
         }
     }

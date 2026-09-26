@@ -103,7 +103,7 @@ bool openLinkAtCursorInSplit(EditorView& e, MarkdownView& v)
     if (!lp || !e.document())
         return false;
     const auto hit = lp->linkAt(e.cursorPosition());
-    if (!hit)
+    if (!hit || !hit->anchor.isEmpty()) // footnote references aren't followed (Obsidian's clickable tokens)
         return false;
     if (int(hit->kind) == 4) { // tags go to the search as usual
         emit e.linkActivated(hit->target, int(hit->kind), false);
@@ -139,7 +139,7 @@ bool followLinkAtCursor(EditorView& e, bool newLeaf)
     if (!lp || !e.document())
         return false;
     const auto hit = lp->linkAt(e.cursorPosition());
-    if (!hit)
+    if (!hit || !hit->anchor.isEmpty()) // footnote references aren't followed (Obsidian's clickable tokens)
         return false;
     emit e.linkActivated(hit->target, int(hit->kind), newLeaf);
     return true;

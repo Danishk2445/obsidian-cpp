@@ -30,7 +30,7 @@ LineMetrics metricsFor(const QFont& font, qreal lineHeightFactor, const QColor& 
 
 const LineMetrics& StyleSheet::line(StyleId lineStyle) const
 {
-    const size_t i = size_t(lineStyle) <= size_t(StyleId::HtmlBlock) ? size_t(lineStyle) : 0;
+    const size_t i = size_t(lineStyle) <= size_t(LastLineStyle) ? size_t(lineStyle) : 0;
     return m_lines[i];
 }
 
@@ -75,6 +75,9 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     s->m_lines[size_t(StyleId::HrLine)] = metricsFor(monoFont, lh, faint);
     s->m_lines[size_t(StyleId::CommentBlock)] = metricsFor(textFont, lh, t.color(QStringLiteral("--code-comment"), faint));
     s->m_lines[size_t(StyleId::HtmlBlock)] = metricsFor(monoFont, lh, t.color(QStringLiteral("--code-tag"), text));
+    // .cm-s-obsidian .cm-line.HyperMD-footnote { font-size: var(--footnote-size) }
+    const qreal footnotePx = t.px(QStringLiteral("--footnote-size"), base, base * 0.875);
+    s->m_lines[size_t(StyleId::FootnoteLine)] = metricsFor(withPx(textFont, footnotePx), lh, text);
 
     // ---- marks ----
     auto fg = [&](StyleId id, const QColor& c) { s->m_specs[size_t(id)].format.setForeground(c); };
@@ -142,7 +145,6 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     }
     fg(StyleId::Comment, t.color(QStringLiteral("--code-comment"), faint));
     fg(StyleId::Html, t.color(QStringLiteral("--code-tag"), text));
-    fg(StyleId::FootnoteRef, muted);
     fg(StyleId::BlockId, faint);
     fg(StyleId::Escape, faint);
     {
@@ -214,6 +216,49 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
         f.setFontFamilies({t.monospaceFamily()});
         f.setProperty(QTextFormat::FontPixelSize, int(std::lround(codePx)));
     }
+
+    // ---- footnotes ----
+    // A run drawn smaller and raised by `raisePx` above the line's baseline. Qt draws AlignSuperScript runs at 2/3
+    // of the format's pixel size (so ask for 1.5x) and raises them by a percentage of the scaled font's height.
+    auto raised = [&](qreal childPx, qreal raisePx) {
+        QTextCharFormat f;
+        const int target = std::max(1, int(std::lround(childPx)));
+        const QFontMetricsF fm(withPx(textFont, target));
+        f.setVerticalAlignment(QTextCharFormat::AlignSuperScript);
+        f.setProperty(QTextFormat::FontPixelSize, (target * 3 + 1) / 2);
+        f.setSuperScriptBaseline(raisePx / std::max<qreal>(1, fm.ascent() + fm.descent()) * 100);
+        return f;
+    };
+    {
+        // .cm-s-obsidian span.cm-footref { font-size: var(--font-smallest); vertical-align: text-top; position: relative;
+        // top: -0.2em } -- text-top puts the top of the run's line box (line-height 1.5) at the top of the parent's
+        // font, then it moves up 0.2em more.
+        const qreal childPx = t.px(QStringLiteral("--font-smallest"), base, base * 0.8);
+        const QFontMetricsF parent(textFont), child(withPx(textFont, std::max(1, int(std::lround(childPx)))));
+        const qreal halfLeading = (childPx * lh - (child.ascent() + child.descent())) / 2;
+        const qreal raise = parent.ascent() - child.ascent() - halfLeading + 0.2 * childPx;
+        StyleSpec& inl = s->m_specs[size_t(StyleId::FootnoteInline)];
+        inl.format = raised(childPx, raise);
+        StyleSpec& ref = s->m_specs[size_t(StyleId::FootnoteRef)];
+        ref.format = raised(childPx, raise);
+        ref.format.setForeground(muted); // .cm-footref.cm-hmd-barelink
+    }
+    {
+        // .HyperMD-footnote span.cm-hmd-footnote { font-size: var(--font-smallest); position: relative; top: -0.3em;
+        // color: var(--text-muted) } on a --footnote-size line
+        const qreal childPx = t.px(QStringLiteral("--font-smallest"), footnotePx, footnotePx * 0.8);
+        StyleSpec& sp = s->m_specs[size_t(StyleId::FootnoteMarker)];
+        sp.format = raised(childPx, 0.3 * childPx);
+        sp.format.setForeground(muted);
+    }
+    {
+        // sup.footnote-ref > a.footnote-link { vertical-align: super; font-size: smaller; color: var(--link-color);
+        // text-decoration: none }
+        StyleSpec& sp = s->m_specs[size_t(StyleId::FootnoteLink)];
+        sp = s->m_specs[size_t(StyleId::Superscript)];
+        sp.format.setForeground(t.color(QStringLiteral("--link-color"), t.color(QStringLiteral("--text-accent"))));
+    }
+    fg(StyleId::FootnoteBackref, faint); // .footnote-backref { color: var(--text-faint) }
 
     // ---- block visuals ----
     s->m_listIndent = t.px(QStringLiteral("--list-indent"), base, base * 2.25);

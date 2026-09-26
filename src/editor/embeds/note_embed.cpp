@@ -764,7 +764,7 @@ NoteEmbedLayout::Hit NoteEmbedLayout::hitTest(const QPointF& pos, qreal scroll)
         }
     }
     const qsizetype docPos = dl.hitTest(pt);
-    if (const auto link = m_decorator->linkAt(docPos); link && link->to > link->from) {
+    if (const auto link = m_decorator->linkAt(docPos); link && link->to > link->from && link->anchor.isEmpty()) {
         for (const QRectF& r : dl.rangeRects(link->from, link->to)) {
             if (r.adjusted(-1, 0, 1, 0).contains(pt)) {
                 h.type = Hit::Type::Link;

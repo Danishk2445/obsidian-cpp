@@ -62,6 +62,9 @@ public:
     double scrollTop() const;         // doc y at the top of the viewport
     void setScrollTop(double y);
     void scrollToPos(qsizetype pos, bool center = false);
+    // Reading view's in-document anchors (footnotes: "fn-2" in the footnotes section, "fnref-2" / "fnref-2-1" at
+    // a reference): centres it in the viewport. False if the anchor doesn't exist.
+    bool scrollToAnchor(const QString& anchor);
     // Ephemeral state for navigation history: {"cursor": {from, to}, "scroll": topLine}
     QJsonObject ephemeralState() const;
     void setEphemeralState(const QJsonObject& state);
