@@ -77,6 +77,7 @@ public:
     const bases::ViewData& data() const;
     BaseLayout* layoutWidget() const { return m_layout; }
     bool isReady() const;
+    bool isIdle() const; // the data is up to date (nothing scheduled)
 
     TextIconButton* viewsButton() const { return m_viewsButton; }
     TextIconButton* resultsButton() const { return m_resultsButton; }

@@ -56,6 +56,8 @@ public:
 
     bool isScanning() const { return m_scanning; }
     bool isReady() const { return m_ready; } // data() reflects a complete scan
+    // Nothing pending: no scan, no queued file, no scheduled publish (data() is up to date).
+    bool isIdle() const { return m_ready && !m_scanning && m_queue.isEmpty() && !m_notifyTimer.isActive() && !m_scanTimer.isActive(); }
     const ViewData& data() const { return m_data; }
     int resultCount() const { return int(m_results.size()); }
     QList<EntryPtr> results() const { return m_results.values(); }

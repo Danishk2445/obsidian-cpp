@@ -11,6 +11,7 @@
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QFontInfo>
 #include <QFontMetricsF>
 #include <QJsonArray>
 #include <QKeyEvent>
@@ -506,19 +507,27 @@ void TableLayout::paintSummaryRow(QPainter& p, int y, const QList<EntryPtr>& ent
         QString name;
         const QString value = summaryText(m_columns[c], entries, &name);
         if (!name.isEmpty()) {
-            QFont nf = s.cellFont;
+            // the name is --font-smaller of the --font-ui-small content
             const QFont vf = s.uiSmall;
+            QFont nf = vf;
+            nf.setPixelSize(std::max(1, int(std::lround(QFontInfo(vf).pixelSize() * 0.875))));
             const int vw = int(std::ceil(QFontMetricsF(vf).horizontalAdvance(value)));
             const int nw = int(std::ceil(QFontMetricsF(nf).horizontalAdvance(name)));
-            int x = r.right() - s.cellPadX - vw;
+            // .summary-content: [name][6px gap][value], right-aligned, 8px end padding; the name
+            // (4px start padding inside a 2px cell padding) is elided first
+            const int valueX = r.left() + r.width() - s.cellPadX - vw;
             p.setFont(vf);
             p.setPen(s.muted);
-            p.drawText(QRect(x, y, vw + 1, h), Qt::AlignLeft | Qt::AlignVCenter, value);
-            x -= 6 + nw;
-            p.setFont(nf);
-            p.setPen(s.muted);
-            p.drawText(QRect(std::max(r.left() + 4, x), y, std::min(nw, r.width() - vw - 12) + 1, h), Qt::AlignLeft | Qt::AlignVCenter,
-                       QFontMetricsF(nf).elidedText(name, Qt::ElideRight, std::max(0, std::min(nw, r.width() - vw - 12))));
+            p.drawText(QRect(valueX, y, vw + 1, h), Qt::AlignLeft | Qt::AlignVCenter, value);
+            const int nameRight = valueX - 6;
+            const int nameLeft = std::max(r.left() + 6, nameRight - nw);
+            const int avail = nameRight - nameLeft;
+            if (avail > 0) {
+                p.setFont(nf);
+                p.setPen(s.muted);
+                p.drawText(QRect(nameLeft, y, avail + 1, h), Qt::AlignLeft | Qt::AlignVCenter,
+                           QFontMetricsF(nf).elidedText(name, Qt::ElideRight, avail));
+            }
         } else if (footer && c == m_hoverFooter) {
             p.setFont(s.uiSmaller);
             p.setPen(s.faint);

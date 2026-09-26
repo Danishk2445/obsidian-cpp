@@ -278,6 +278,9 @@ TEST(BasesFile, ErrorsUseObsidiansMessages)
     QString yamlError;
     EXPECT_FALSE(BaseFile::fromString(QStringLiteral("views: [\n"), &yamlError));
     EXPECT_FALSE(yamlError.isEmpty());
+    // the YAML library's problem and position ("... at line L, column C")
+    EXPECT_FALSE(BaseFile::fromString(QStringLiteral("views: [\n  - type: table\n"), &yamlError));
+    EXPECT_EQ(yamlError, QStringLiteral("Illegal block entry at line 2, column 3"));
 }
 
 TEST(BasesFile, PropertyIds)

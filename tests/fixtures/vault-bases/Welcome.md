@@ -1,0 +1,3 @@
+# Welcome
+
+Open [[Books.base]].

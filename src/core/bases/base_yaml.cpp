@@ -267,6 +267,17 @@ std::optional<YamlNode> parseYaml(const QString& text, QString* error)
     try {
         const YAML::Node root = YAML::Load(text.toStdString());
         return convert(root);
+    } catch (const YAML::Exception& e) {
+        // like the yaml library's messages: "<problem> at line L, column C"
+        if (error) {
+            QString msg = QString::fromStdString(e.msg);
+            if (!msg.isEmpty())
+                msg[0] = msg[0].toUpper();
+            if (!e.mark.is_null())
+                msg += QStringLiteral(" at line %1, column %2").arg(e.mark.line + 1).arg(e.mark.column + 1);
+            *error = msg;
+        }
+        return std::nullopt;
     } catch (const std::exception& e) {
         if (error)
             *error = QString::fromUtf8(e.what());

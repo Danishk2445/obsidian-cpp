@@ -213,7 +213,7 @@ void BasesController::setBase(const BaseFile& base)
     m_error.clear();
     m_errorLabel->hide();
     m_header->show();
-    if (!m_base.view(m_viewName))
+    if (m_viewName.isEmpty() || !m_base.view(m_viewName))
         m_viewName = m_base.views.isEmpty() ? QString() : m_base.views.first().name;
     apply(true);
 }
@@ -236,7 +236,7 @@ void BasesController::editBase(const std::function<void(BaseFile&)>& fn)
     BaseFile copy = m_base;
     fn(copy);
     m_base = copy;
-    if (!m_base.view(m_viewName))
+    if (m_viewName.isEmpty() || !m_base.view(m_viewName))
         m_viewName = m_base.views.isEmpty() ? QString() : m_base.views.first().name;
     apply(true);
     emit baseEdited(m_base);
@@ -278,6 +278,8 @@ void BasesController::setReadOnly(bool ro)
 const ViewData& BasesController::data() const { return m_runner->data(); }
 
 bool BasesController::isReady() const { return m_runner->isReady(); }
+
+bool BasesController::isIdle() const { return m_runner->isIdle(); }
 
 void BasesController::apply(bool rerunQuery)
 {
