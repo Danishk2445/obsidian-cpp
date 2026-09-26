@@ -1168,7 +1168,8 @@ private:
             opts.append({o.value, o.display});
         m_operator->setOptions(opts);
         m_operator->setValue(cur);
-        if (m_operator->value() != cur && !opts.isEmpty())
+        // the type's first operator when the current one doesn't apply (Obsidian: operators[0])
+        if ((m_operator->currentIndex() < 0 || m_operator->value() != cur) && !opts.isEmpty())
             m_operator->setValue(opts.first().first);
         updateValueWidget();
     }
