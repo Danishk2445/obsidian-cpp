@@ -282,3 +282,19 @@ Open parity questions:
   renders it); a block element opened in one HTML block and closed in another (`<div>` … blank line … `</div>`) is
   rendered per block in both modes (Obsidian's Live Preview makes it one widget); remote images show their alt text;
   no hover "</>" edit button (click the block to edit); iframes, audio/video tags and inline SVG aren't rendered.
+
+## Footnotes
+- ✅ Editor (Live Preview / Source): `[^1]` and `^[...]` smaller and raised (.cm-footref: label muted, `[^` `]`
+  faint), definition lines at --footnote-size with the `[^1]:` marker smallest / raised / muted; Live Preview hides
+  the marker's `[^` and `]:` while the selection is away from it (Obsidian's HyperMD token rules).
+- ✅ Reading view, PDF export, hover previews: references become `[1]` superscript links numbered in the order of
+  their first reference (inline footnotes in the same sequence, the k-th repeat `[1-k]`), a reference without a
+  definition becomes its lowercased label as plain text, definitions leave the flow (unreferenced ones disappear),
+  and a footnotes section follows the last line: `<hr>` and the ordered list of contents (Markdown, --footnote-size)
+  each ending in one faint `↩︎` per reference. Clicking a reference scrolls its footnote to the middle of the view,
+  `↩︎` scrolls back; hovering a reference previews `#[^id]` (the definition's content). Callout bodies and table cells
+  use the note's numbering.
+- Differences: Source mode styles definitions only (references stay plain, like the rest of its inline syntax); a
+  repeated reference inside a callout body reads `[n]` instead of `[n-k]`; inline footnotes have no hover preview;
+  no highlight flash on the target; in Live Preview a reference in a rendered table cell keeps its styled source
+  (Obsidian renders cells on their own, where the definition is missing, so it shows the bare label like our callouts).

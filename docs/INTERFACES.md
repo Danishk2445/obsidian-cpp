@@ -112,6 +112,16 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `StyleSheet::tableBorderColor()` / `tableHeaderBackground()`. Contiguous pills (box marks) merge only within one
   mark. `src/editor/html/*` (not frozen): `html_parse.h` (tag / style parsing, Obsidian's inline / block / excluded
   element lists), `html_inline.h` (inline elements as decorations, `anchorAt`), `html_block.h` (`HtmlBlockWidget`).
+- Render layer, additive (footnotes): `LineDecorator::trailer()` — a block after the last line (Reading view's
+  footnotes section), queried on every text / decoration change; `DocLayout::trailer()` / `trailerTop()` /
+  `trailerHeight()` (`totalHeight()` includes it, `hitTest()` maps it to the end of the text, `blockAt()` reports
+  it with fromLine == toLine == lineCount(), its paint is clipped to the visible part); `BlockWidget::anchorY(anchor)`;
+  line style `StyleId::FootnoteLine` (inserted after `HtmlBlock`: mark ids shifted by one; `LastLineStyle`) and marks
+  `FootnoteMarker`, `FootnoteInline`, `FootnoteLink`, `FootnoteBackref` (`FootnoteRef` is now `.cm-footref`: smaller,
+  raised, muted). `EditorView::scrollToAnchor("fn-2" | "fnref-2-1")`. `LivePreviewDecorator`: `LinkHit::anchor`
+  (footnote references: a click scrolls in Reading view, callers don't follow them), `footnoteIndex()`,
+  `setSharedFootnotes()`, `setFootnoteMode(Document | Section | Definition)`, `footnoteRefPosition()`.
+  `src/editor/footnotes/footnotes.h` (not frozen): `footnotes::Index` (Obsidian's numbering), `SectionWidget`.
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,
