@@ -550,6 +550,27 @@ TEST_F(PopoutTest, TabMenuMovesToNewWindowAndSurvivesItsWindowClosing)
     EXPECT_FALSE(guard);
     EXPECT_TRUE(m_ws->popoutWindows().isEmpty());
     EXPECT_FALSE(QApplication::activePopupWidget());
+
+    // The tab list's "Close all" closes the window too.
+    WorkspaceLeaf* y = m_ws->openPopoutLeaf(QRect(1300, 40, 700, 500));
+    y->setViewState(graph("Y"));
+    flush();
+    QPointer<PopoutWindow> guard2 = m_ws->popoutWindows().value(0);
+    bool closedAll = false;
+    QTimer::singleShot(50, [&] {
+        auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+        ASSERT_TRUE(menu);
+        for (QAction* act : menu->actions())
+            if (act->text() == "Close all" && !closedAll) {
+                closedAll = true;
+                act->trigger();
+            }
+    });
+    winTabs()->w->header()->tabListButton()->click();
+    flush();
+    EXPECT_TRUE(closedAll);
+    EXPECT_FALSE(guard2);
+    EXPECT_FALSE(QApplication::activePopupWidget());
 }
 
 TEST_F(PopoutTest, ClosingAWindowWithAnOpenModal)

@@ -946,7 +946,7 @@ void TabHeaderBar::showTabList()
     if (!m_group)
         return;
     WorkspaceImpl* dd = d;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this); // "Close all" may close this tab group, or the pop-out window it is in
     int unpinned = 0;
     for (const WorkspaceLeaf* l : std::as_const(m_group->leaves))
         unpinned += l->isPinned() ? 0 : 1;
