@@ -39,6 +39,10 @@ struct EmbedRequest {
     int width = -1;    // "|300" / "|300x200" of the link (-1 = none)
     int height = -1;
     Display display = Display::Inline;
+    // (additive) Code blocks rendered by a provider (see EmbedRegistry::registerCodeBlockLanguage):
+    // the fence's language and content; absPath is empty.
+    QString language;
+    QString source;
 
     // Identity of the embedded content (file + subpath + display) for pooling hosted widgets.
     QString key() const;
@@ -83,8 +87,17 @@ public:
     bool isEmpty() const { return m_providers.isEmpty(); }
 
     // The rendering of `absPath` changed (file modified, a video's dimensions became known...):
-    // views showing embeds of it re-decorate those lines.
+    // views showing embeds of it re-decorate those lines. Code block embeds have an empty absPath.
     void notifyChanged(const QString& absPath);
+
+    // (additive) Fenced code blocks a provider renders (Obsidian's registerCodeBlockPostProcessor, e.g.
+    // Bases' ```base): while the cursor is outside the fence, Live Preview and Reading show the
+    // provider's embed (EmbedRequest::language / source) in place of the code.
+    void registerCodeBlockLanguage(const QString& language, std::shared_ptr<EmbedProvider> provider); // lowercase
+    void unregisterCodeBlockLanguage(const QString& language);
+    std::shared_ptr<EmbedProvider> codeBlockProvider(const QString& language) const;
+    bool isCodeBlockLanguageRegistered(const QString& language) const { return m_codeBlocks.contains(language.toLower()); }
+    bool isEmptyOfCodeBlocks() const { return m_codeBlocks.isEmpty(); }
 
     // Opening an embedded file from its embed (Obsidian's link context menu): mode "" = the current
     // tab, "tab" = a new tab, "split" = to the right. `from` is the embed's widget (its ancestors tell
@@ -103,6 +116,7 @@ signals:
 private:
     EmbedRegistry() = default;
     QHash<QString, std::shared_ptr<EmbedProvider>> m_providers;
+    QHash<QString, std::shared_ptr<EmbedProvider>> m_codeBlocks;
     Opener m_opener;
 };
 
@@ -120,6 +134,10 @@ std::shared_ptr<InlineWidget> makeEmbedWidget(const QString& absPath, const QStr
 // the caller.
 std::shared_ptr<InlineWidget> makeLinkEmbedWidget(const std::function<QString(const QString& linkpath)>& resolve, const QString& target,
                                                   const QString& subpath, int width, int height, qreal maxWidth);
+
+// (additive) The inline widget for a fenced code block of a registered language (`source` = the fence's
+// content), or nullptr when no provider renders the language.
+std::shared_ptr<InlineWidget> makeCodeBlockEmbedWidget(const QString& language, const QString& source, qreal maxWidth);
 
 // While alive, embeds are laid out and painted for print (PDF export; Obsidian's @media print rules):
 // providers drop their actions and max-heights and render with the export's theme / styles (light).

@@ -147,6 +147,38 @@ QList<QPair<int, int>> LivePreviewDecorator::affectedLines(const Selection& a, c
     return out;
 }
 
+bool LivePreviewDecorator::codeBlockEmbed(int line, int leaf, md::LineRole role, LineDecoration& d)
+{
+    // Fenced code blocks of a registered language (EmbedRegistry::registerCodeBlockLanguage) render
+    // as the provider's embed on the opening line, the other lines hidden, unless being edited.
+    if ((role != LineRole::FenceOpen && role != LineRole::FenceBody && role != LineRole::FenceClose) || leaf < 0
+        || EmbedRegistry::instance().isEmptyOfCodeBlocks())
+        return false;
+    const md::SyntaxTree& tree = m_doc->syntax();
+    if (tree.node(leaf).type != NodeType::FencedCode)
+        return false;
+    const md::FenceInfo fi = tree.fence(leaf);
+    if (fi.language.isEmpty() || !EmbedRegistry::instance().isCodeBlockLanguageRegistered(fi.language))
+        return false;
+    const Text& text = m_doc->text();
+    const md::BlockNode& n = tree.node(leaf);
+    if (touches(text.lineStart(n.fromLine), text.lineEnd(n.toLine - 1)))
+        return false;
+    if (line != n.fromLine) {
+        d.hidden = true;
+        return true;
+    }
+    QString source;
+    for (int l = n.fromLine + 1; l < n.toLine - (fi.closed ? 1 : 0); ++l)
+        source += text.lineView(l).mid(std::min(tree.contentColumn(l), text.lineLength(l))) + u'\n';
+    std::shared_ptr<InlineWidget> w = makeCodeBlockEmbedWidget(fi.language, source, m_contentWidth);
+    if (!w)
+        return false;
+    d.lineStyle = StyleId::Normal;
+    d.replaces.push_back({0, int(text.lineLength(line)), Replace::Kind::Widget, {}, StyleId::Normal, std::move(w)});
+    return true;
+}
+
 LineDecoration LivePreviewDecorator::decorate(int line)
 {
     LineDecoration d;
@@ -160,6 +192,8 @@ LineDecoration LivePreviewDecorator::decorate(int line)
     const bool active = lineActive(line);
     const int leaf = tree.leafAt(line);
     d.lineStyle = quickLineStyle(line);
+    if (codeBlockEmbed(line, leaf, role, d))
+        return d; // a ```base fence (EmbedRegistry code block languages) shown as its embed
 
     // ---- container markers -----------------------------------------------------------------------
     bool inList = false;
