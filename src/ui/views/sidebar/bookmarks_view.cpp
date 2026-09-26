@@ -578,7 +578,7 @@ void BookmarksView::open(Bookmark* item, Workspace::NewLeaf mode)
     if (!item || !ws || !s)
         return;
     if (item->type == u"file") {
-        MarkdownView::openLinkText(ws, item->path + item->subpath, 0, QString(), mode != Workspace::NewLeaf::No);
+        MarkdownView::openLinkText(ws, item->path + item->subpath, 0, QString(), mode);
     } else if (item->type == u"folder") {
         TAbstractFile* f = s->vault() ? s->vault()->item(item->path) : nullptr;
         WorkspaceLeaf* l = ws->leavesOfType(QStringLiteral("file-explorer")).value(0);
@@ -656,14 +656,19 @@ void BookmarksView::populateContextMenu(QMenu* menu, TreeList::Node* node)
         return;
     auto openAll = [self, alive](QList<Bookmark*> list, Workspace::NewLeaf mode) {
         for (Bookmark* x : list)
-            if (alive(x) && (x->type == u"file" || x->type == u"graph"))
+            if (alive(x) && (x->type == u"file" || x->type == u"graph")) {
                 self->open(x, mode);
+                if (mode == Workspace::NewLeaf::Window)
+                    mode = Workspace::NewLeaf::Tab; // Obsidian: the others as tabs of that window
+            }
     };
     auto openItems = [&](const QList<Bookmark*>& list) {
         items << MenuEntry{QStringLiteral("open"), tr("Open in new tab"), QStringLiteral("file-plus"),
                            [openAll, list] { openAll(list, Workspace::NewLeaf::Tab); }};
         items << MenuEntry{QStringLiteral("open"), tr("Open to the right"), QStringLiteral("separator-vertical"),
                            [openAll, list] { openAll(list, Workspace::NewLeaf::SplitRight); }};
+        items << MenuEntry{QStringLiteral("open"), tr("Open in new window"), QStringLiteral("picture-in-picture-2"),
+                           [openAll, list] { openAll(list, Workspace::NewLeaf::Window); }};
     };
     const QList<TreeList::Node*> selection = m_tree->selectedNodes();
     if (selection.size() > 1 && selection.contains(node)) {

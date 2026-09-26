@@ -12,6 +12,7 @@
 #include "editor/editor_view.h"
 #include "ui/overlay/modal.h"
 #include "ui/shell/popout_window.h"
+#include "ui/views/markdown/editor_suggest.h"
 #include "ui/views/markdown/page_preview.h"
 
 #include <QApplication>
@@ -783,6 +784,40 @@ TEST(PopoutSession, PagePreviewShowsInTheHoveredWindow)
     EXPECT_EQ(pop->window(), p);
     EXPECT_EQ(pop->parentWidget(), p->overlay());
     pp->closeAll();
+}
+
+TEST(PopoutSession, EditorSuggestFollowsTheViewIntoAPopout)
+{
+    NavigationEnv env;
+    env.openNote("Lists.md");
+    MarkdownView* mv = env.activeMarkdown();
+    ASSERT_TRUE(mv);
+    EditorView* e = mv->editor();
+    EditorSuggest* s = mv->editorSuggest();
+    auto typeAtEnd = [e](const QString& text) {
+        e->setCursorPosition(e->document()->text().length());
+        for (const QChar c : text)
+            e->insertText(QString(c));
+    };
+    e->setFocus();
+    typeAtEnd("\n[[Form");
+    ASSERT_TRUE(QTest::qWaitFor([&] { return s->isOpen(); }, 3000));
+    EXPECT_EQ(s->popup()->parentWidget(), env.window->ownOverlay());
+    QTest::keyClick(e, Qt::Key_Escape);
+    ASSERT_FALSE(s->isOpen());
+    // The same view in a pop-out: its "[[" popup shows in the pop-out's overlay.
+    ASSERT_TRUE(env.commands->execute("workspace:move-to-new-window"));
+    flush();
+    PopoutWindow* p = onlyPopout(env);
+    ASSERT_TRUE(p);
+    activate(p);
+    e->setFocus();
+    typeAtEnd(" [[Mat");
+    ASSERT_TRUE(QTest::qWaitFor([&] { return s->isOpen(); }, 3000));
+    EXPECT_EQ(s->popup()->parentWidget(), p->overlay());
+    EXPECT_TRUE(s->popup()->isVisible());
+    EXPECT_TRUE(p->rect().contains(s->popup()->geometry()));
+    QTest::keyClick(e, Qt::Key_Escape);
 }
 
 TEST(PopoutSession, SingleInstanceHandoffOpensInTheMainWindow)
