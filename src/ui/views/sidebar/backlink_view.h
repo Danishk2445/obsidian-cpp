@@ -69,12 +69,22 @@ public:
     bool linkUnlinkedMention(const QString& sourcePath, int matchIndex);
 
     void setLeafActive(bool active);
+    // Backlinks at the bottom of a note (.embedded-backlinks): natural height, no pane padding, header
+    // buttons at the right.
+    void setEmbedded(bool on);
+    bool isEmbedded() const { return m_embedded; }
+
+protected:
+    void paintEvent(QPaintEvent* e) override;
+
+public:
 
 signals:
     void stateChanged();
     void resultsChanged();
 
 private:
+    bool m_embedded = false;
     struct Result {
         QString path;
         std::shared_ptr<const QString> content;

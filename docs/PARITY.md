@@ -120,7 +120,10 @@ Open parity questions:
   inline rename, remove, "Bookmark..." modal, the bookmarks:* commands, file-menu / editor-menu items, folds.
 - ✅ All properties: names with counts and type icons (types.json + reserved), orders, filter, click → ["name"].
 - ✅ All properties' context menu: property type, rename (F2; merges into an existing name after asking), delete.
-- ⬜ Backlinks in document (needs an EditorView bottom widget); URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
+- ✅ Backlinks in document: the backlinks pane below the text (border, header buttons at the right, natural height),
+  per view ("backlinks" / "backlinkOpts" state), backlink:toggle-backlinks-in-document, the Backlinks option
+  for new views.
+- ⬜ URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
   saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
@@ -167,9 +170,10 @@ Open parity questions:
   Quick switcher, Templates, Unique note creator, Greentext Guard
 - ✅ Hotkeys: filter (name/id), filter by pressed chord, pills (Conflicts N, All, Assigned, Assigned by me,
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, properties in document,
-  always focus new tabs, default file to open, delete attachments with files, URI callbacks, tab title
-  bar, native menus, quick font size adjustment, backlinks in document, editing-mode status bar toggle
+- ✅ Applied: line numbers, properties in document, backlinks in document, quick font size adjustment (Ctrl+wheel
+  changes baseFontSize by 1 in 10...30, not within 500 ms of a plain scroll).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, always focus new tabs, default file
+  to open, delete attachments with files, URI callbacks, tab title bar, native menus, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 
@@ -259,3 +263,22 @@ Open parity questions:
   mode, settings tab, `![[x.canvas]]` embeds, canvases as link sources (graph, backlinks), rename follow-ups.
 - Differences: link cards show the URL (no web view); "Export as image" without tiling / logo options; global search
   doesn't search canvases; cards are sized to media only on creation.
+
+## Raw HTML
+- ✅ Inline HTML in Live Preview, Reading view, table cells, callouts and PDF export (`src/editor/html`): tags paired
+  per paragraph and hidden, content formatted — `b strong i em cite dfn var u ins s strike del mark code kbd tt samp
+  sub sup small big`, `a href` (follows like a link), `span`/`font`/any element with `style` colour, background,
+  weight, style, decoration, size and `<font color size>`; `<br>` breaks the line; `<img src>` of a vault file
+  renders as an image. Obsidian's never-rendered tags (script style link meta object embed webview) stay source in
+  Live Preview; Reading view drops script/style with their content and stray / unknown tags like a browser.
+- ✅ Live Preview reveal like Obsidian's HTML widget: the outermost element shows its source while the selection
+  touches it (whole lines when it is alone on them); an element that is never closed stays source.
+- ✅ Top-level HTML blocks (`<p align=center>`, `<div>`, `<table>`, `<details>`, `<img>` alone on a line...) render
+  as a block (QTextDocument, sanitized, theme styles for tables / kbd / code / mark / headings / links), revealed in
+  Live Preview while the selection is inside; `<details>` opens / closes on its summary; `<a href>` inside follows.
+  Blocks rendering nothing (`<div align=center>` alone, comments, script) keep their source in Live Preview and take
+  no room in Reading view.
+- Differences: markdown inside inline HTML renders (Obsidian's Live Preview widget shows it raw; its Reading view
+  renders it); a block element opened in one HTML block and closed in another (`<div>` … blank line … `</div>`) is
+  rendered per block in both modes (Obsidian's Live Preview makes it one widget); remote images show their alt text;
+  no hover "</>" edit button (click the block to edit); iframes, audio/video tags and inline SVG aren't rendered.

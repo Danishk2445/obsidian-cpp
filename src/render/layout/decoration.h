@@ -31,6 +31,7 @@ struct Mark {
     int from = 0;
     int to = 0;
     StyleId style = StyleId::Normal;
+    quint16 custom = 0; // > 0: 1-based index into LineDecoration::customStyles, used instead of `style`
 };
 
 // Replacement of columns [from, to) in the display: hidden, substituted by text (atomic), or by a widget.
@@ -64,6 +65,19 @@ struct LineDecoration {
     qreal fixedHeight = -1;  // >= 0: the line's unit is exactly this tall (reading view blank lines)
     bool hrRule = false;     // draw a horizontal rule across the line (live preview)
     QList<int> guideColumns; // indentation guide positions (columns) for list lines
+    // Styles that aren't theme constants (raw HTML `style="color: …"`), referenced by Mark::custom.
+    QList<StyleSpec> customStyles;
+
+    // Appends a custom style; returns the value for Mark::custom.
+    quint16 addCustomStyle(const StyleSpec& spec)
+    {
+        customStyles.push_back(spec);
+        return quint16(customStyles.size());
+    }
+    const StyleSpec& markSpec(const Mark& m, const StyleSheet& styles) const
+    {
+        return m.custom > 0 && m.custom <= customStyles.size() ? customStyles[m.custom - 1] : styles.spec(m.style);
+    }
 
     quint64 signature() const;
 };

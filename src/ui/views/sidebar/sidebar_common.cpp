@@ -87,6 +87,12 @@ NavHeader::NavHeader(QWidget* parent)
     });
 }
 
+void NavHeader::setEmbedded(bool on)
+{
+    m_layout->setContentsMargins(on ? QMargins(0, 12, 0, 0) : QMargins(8, 8, 8, 8));
+    m_row->setStretch(m_row->count() - 1, on ? 0 : 1); // right-aligned instead of centered
+}
+
 NavActionButton* NavHeader::addButton(const QString& icon, const QString& tooltip, std::function<void()> onClick)
 {
     auto* b = new NavActionButton(icon, tooltip, this);

@@ -2,6 +2,7 @@
 #include "app_test_support.h"
 
 #include "core/commands/command_registry.h"
+#include "core/config/vault_config.h"
 #include "ui/overlay/text_prompt_modal.h"
 #include "ui/plugins/core_file_menu.h"
 #include "ui/plugins/pdf_export_ui.h"
@@ -20,6 +21,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTimer>
+#include <QWheelEvent>
 
 using namespace oc;
 using namespace oc::test;
@@ -209,4 +211,33 @@ TEST_F(PaneMenuTest, ClosingTheTabWhileItsMenuIsOpen)
     EXPECT_FALSE(editor);
     EXPECT_FALSE(leaf);
     EXPECT_FALSE(QApplication::activePopupWidget());
+}
+
+TEST_F(PaneMenuTest, CtrlWheelChangesFontSize)
+{
+    MarkdownView* mv = open("Note.md");
+    ASSERT_TRUE(mv);
+    VaultConfig* cfg = session->vaultConfig();
+    auto wheel = [&](int dy, Qt::KeyboardModifiers mods) {
+        QWidget* vp = mv->editor()->viewport();
+        const QPointF pos(20, 20);
+        QWheelEvent e(pos, vp->mapToGlobal(pos), QPoint(), QPoint(0, dy), Qt::NoButton, mods, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(vp, &e);
+    };
+    wheel(120, Qt::ControlModifier); // off by default (Obsidian's baseFontSizeAction: false)
+    EXPECT_EQ(cfg->get("baseFontSize").toInt(), 16);
+    cfg->set("baseFontSizeAction", true);
+    wheel(120, Qt::ControlModifier);
+    EXPECT_EQ(cfg->get("baseFontSize").toInt(), 17);
+    wheel(-120, Qt::ControlModifier);
+    wheel(-120, Qt::ControlModifier);
+    EXPECT_EQ(cfg->get("baseFontSize").toInt(), 15);
+    // Ctrl pressed right after scrolling doesn't resize
+    wheel(-120, Qt::NoModifier);
+    wheel(120, Qt::ControlModifier);
+    EXPECT_EQ(cfg->get("baseFontSize").toInt(), 15);
+    cfg->set("baseFontSize", 30);
+    QTest::qWait(520);
+    wheel(120, Qt::ControlModifier);
+    EXPECT_EQ(cfg->get("baseFontSize").toInt(), 30); // clamped to 10...30
 }

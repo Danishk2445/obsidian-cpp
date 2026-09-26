@@ -22,8 +22,8 @@ class ViewRegistry;
 // View types "backlink", "outgoing-link", "tag", "outline", "bookmarks", "all-properties".
 void registerSidebarViews(ViewRegistry& registry);
 
-// backlink:open, backlink:open-backlinks, backlink:toggle-backlinks-in-document (not available: no
-// backlinks-in-document yet), outgoing-links:open, outgoing-links:open-for-current, tag-pane:open,
+// backlink:open, backlink:open-backlinks, backlink:toggle-backlinks-in-document (the active note's
+// embedded backlinks), outgoing-links:open, outgoing-links:open-for-current, tag-pane:open,
 // outline:open, outline:open-for-current, bookmarks:open, bookmarks:bookmark-current-view,
 // bookmarks:bookmark-current-search, bookmarks:unbookmark-current-view,
 // bookmarks:bookmark-current-section, bookmarks:bookmark-current-heading, bookmarks:bookmark-all-tabs,
