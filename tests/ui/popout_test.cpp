@@ -6,6 +6,7 @@
 #include "ui/navigation_test_support.h"
 #include "ui/workspace_test_support.h"
 
+#include "app/scenario_runner.h"
 #include "core/config/clone_paths.h"
 #include "core/config/json_file.h"
 #include "editor/editor_view.h"
@@ -818,3 +819,78 @@ TEST(PopoutSession, ClosingTheMainWindowKeepsThePopoutsForTheNextStart)
     flush();
     EXPECT_FALSE(p);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Headless review: the app's ScenarioRunner (--script) grabs a pop-out with "screenshot-popout"
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+// Runs `lines` through the app's ScenarioRunner in-process until `done` exists. The script ends with a
+// long wait: finishing would QApplication::exit(), which ends every later event loop of this process.
+bool runScenario(NavigationEnv& env, const QString& lines, const QString& done)
+{
+    const QString path = env.tmp.path() + "/scenario.txt";
+    if (!writeFile(path, (lines + "\nwait 600000\n").toUtf8()))
+        return false;
+    auto* runner = new ScenarioRunner(env.window, path);
+    runner->start();
+    const bool ok = QTest::qWaitFor([&] { return QFileInfo::exists(done); }, 30000);
+    delete runner;
+    return ok;
+}
+
+// A pop-out with two tabs (Welcome, Formatting), made like a user would.
+const char* const kTwoTabPopout = "open Welcome.md live\n"
+                                  "command workspace:move-to-new-window\n"
+                                  "command workspace:new-tab\n"
+                                  "open Formatting.md live\n";
+
+QString popoutShotDir() { return QString::fromLocal8Bit(qgetenv("OC_SHOT_DIR")); }
+} // namespace
+
+TEST(PopoutSession, ScenarioScreenshotOfAPopout)
+{
+    NavigationEnv env;
+    const QString out = env.tmp.path() + "/popout.png";
+    ASSERT_TRUE(runScenario(env, QString::fromLatin1(kTwoTabPopout) + "screenshot-popout " + out, out));
+    PopoutWindow* p = onlyPopout(env);
+    ASSERT_TRUE(p);
+    EXPECT_EQ(describe(WorkspaceTabs::impl(env.workspace)->windows[0]), "V[T(Welcome,Formatting*)]");
+    const QImage shot(out);
+    EXPECT_EQ(shot.size(), p->size() * p->devicePixelRatio());
+}
+
+class PopoutShots : public ::testing::TestWithParam<bool> {
+protected:
+    void SetUp() override
+    {
+        if (popoutShotDir().isEmpty())
+            GTEST_SKIP() << "set OC_SHOT_DIR to write screenshots";
+        ThemeManager* tm = testThemes();
+        tm->setMode(GetParam() ? ThemeManager::Mode::Dark : ThemeManager::Mode::Light);
+        tm->apply();
+    }
+    void TearDown() override
+    {
+        testThemes()->setMode(ThemeManager::Mode::Dark);
+        testThemes()->apply();
+    }
+};
+
+// popout-{dark,light}.png: a frameless ("hidden" frame) pop-out with two tabs; popout-main-*.png: the main
+// window it came from.
+TEST_P(PopoutShots, TwoTabPopout)
+{
+    NavigationEnv env({}, true, true);
+    env.window->resize(1400, 850);
+    QCursor::setPos(-10000, -10000); // nothing hovered
+    const QString suffix = GetParam() ? "dark" : "light";
+    const QString out = popoutShotDir() + "/popout-" + suffix + ".png";
+    QFile::remove(out);
+    ASSERT_TRUE(runScenario(env, QString::fromLatin1(kTwoTabPopout) + "screenshot-popout " + out, out));
+    env.window->repaint();
+    EXPECT_TRUE(env.window->grab().save(popoutShotDir() + "/popout-main-" + suffix + ".png"));
+}
+
+INSTANTIATE_TEST_SUITE_P(Themes, PopoutShots, ::testing::Values(true, false),
+                         [](const ::testing::TestParamInfo<bool>& info) { return std::string(info.param ? "Dark" : "Light"); });

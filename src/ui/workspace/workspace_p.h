@@ -300,6 +300,10 @@ struct Workspace::Impl {
     QWidget* topForWindowHandle(const QObject* window) const;
     bool nativeDragging = false;
     QObject* nativeDrop = nullptr;
+    struct NativeDropAt {
+        QPointer<QWidget> top; // the window it was dropped in
+        QPoint globalPos;
+    } nativeDropAt;
     QList<QPointer<PopoutWindow>> pendingDisposal; // pop-outs emptied during a native drag
     void disposePopout(PopoutWindow* p);
 

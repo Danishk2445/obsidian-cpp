@@ -1537,10 +1537,16 @@ protected:
         if (!leaf)
             return false;
         // QWindow coordinates are the top-level widget's.
-        const WorkspaceImpl::DropTarget target = d->dropTargetAt(leaf, top->mapToGlobal(de->position().toPoint()), top);
+        const QPoint global = top->mapToGlobal(de->position().toPoint());
+        const WorkspaceImpl::DropTarget target = d->dropTargetAt(leaf, global, top);
         if (type == QEvent::Drop) {
             d->hideOverlays();
-            d->applyDrop(leaf, target);
+            if (d->nativeDragging) {
+                // Applied once QDrag::exec() returned: nothing is deleted under the drag's event loop.
+                d->nativeDropAt = {top, global};
+            } else {
+                d->applyDrop(leaf, target);
+            }
         } else {
             d->showDragFeedback(target, top, nullptr);
         }
@@ -1925,6 +1931,7 @@ void Workspace::Impl::startNativeDrag()
     qd->setHotSpot(QPoint(8, 8));
     QPointer<Workspace> alive = q;
     nativeDragging = true;
+    nativeDropAt = {};
     const Qt::DropAction result = qd->exec(Qt::MoveAction, Qt::MoveAction);
     if (!alive)
         return;
@@ -1934,6 +1941,11 @@ void Workspace::Impl::startNativeDrag()
         if (p)
             p->deleteLater();
     delete qd.data();
+    const auto [dropTop, dropGlobal] = std::exchange(nativeDropAt, {});
+    if (dropTop && leaf && leaf->m_tabs && !destroying) {
+        applyDrop(leaf, dropTargetAt(leaf, dropGlobal, dropTop)); // dropped in one of our windows
+        return;
+    }
     if (result == Qt::IgnoreAction && leaf && leaf->m_tabs && !destroying) {
         // Released outside every window (the window system can't tell where: it places the window).
         DropTarget t;
