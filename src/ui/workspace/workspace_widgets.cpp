@@ -13,6 +13,7 @@
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/shell/main_window.h"
+#include "ui/shell/popout_window.h"
 #include "ui/shell/ribbon.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/workspace/placeholder_views.h"
@@ -23,15 +24,19 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QDrag>
+#include <QDropEvent>
 #include <QHBoxLayout>
 #include <QHelpEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QToolTip>
 #include <QWheelEvent>
+#include <QWindow>
 
 #include <cmath>
 
@@ -46,6 +51,7 @@ constexpr double kMinTabBox = 6;    // root tabs: min-width 0 + padding 0 3px; t
 constexpr int kDragThreshold = 6;
 constexpr int kMinPaneSize = 200; // Obsidian's minimum pane size while resizing
 constexpr int kMinSideWidth = 200;
+constexpr int kMinPopoutSizeForDrop = 600; // Obsidian's WorkspaceWindow: at least 600x600
 
 QColor tok(const ThemePtr& t, const char* name) { return t->color(QLatin1String(name)); }
 
@@ -599,7 +605,7 @@ void TabHeaderBar::paintRootTab(QPainter& p, int index, const TabGeom& g)
         return;
     const bool active = index == m_group->currentTab;
     const bool hovered = index == m_hoverTab;
-    const bool focused = d->windowFocused();
+    const bool focused = d->windowFocused(this);
     const bool groupActive = d->isGroupActive(m_group);
     const qreal dpr = devicePixelRatioF();
 
@@ -719,7 +725,7 @@ void TabHeaderBar::paintEvent(QPaintEvent*)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
-    const bool focused = d->windowFocused();
+    const bool focused = d->windowFocused(this);
     // .workspace-tabs.mod-top uses the title bar colors (brighter while the window is focused).
     const QColor bg = m_top ? (focused ? tok(t, "--titlebar-background-focused") : tok(t, "--titlebar-background"))
                             : tok(t, "--tab-container-background");
@@ -921,6 +927,11 @@ void TabHeaderBar::showTabMenu(int index, const QPoint& globalPos)
                                        leaf->setPinned(!leaf->isPinned());
                                }};
     }
+    // Obsidian's ItemView.onTabMenu(): every tab (sidebar ones too) can move to a new window.
+    items << MenuEntry{QStringLiteral("open"), tr("Move to new window"), QStringLiteral("picture-in-picture"), [dd, leaf] {
+                           if (leaf)
+                               dd->q->moveLeafToPopout(leaf);
+                       }};
     if (View* v = leaf->view())
         v->paneMenuEntries(items, QStringLiteral("tab-header"));
     QMenu& menu = *ownedMenu(this); // Close / Delete file may destroy this tab bar
@@ -1187,7 +1198,7 @@ void ViewHeader::refresh()
         m_title->setParts({}, v ? v->displayText() : QString());
     }
     // .is-focused .workspace-leaf.mod-active .view-header-title { color: --text-normal }
-    m_title->setActive(d->active == m_leaf && d->windowFocused());
+    m_title->setActive(d->active == m_leaf && d->windowFocused(this));
 }
 
 void ViewHeader::refreshActions()
@@ -1215,7 +1226,7 @@ void ViewHeader::paintEvent(QPaintEvent*)
 {
     const ThemePtr t = currentTheme();
     QPainter p(this);
-    const bool focusedActive = d->active == m_leaf && d->windowFocused();
+    const bool focusedActive = d->active == m_leaf && d->windowFocused(this);
     p.fillRect(rect(), focusedActive ? tok(t, "--file-header-background-focused") : tok(t, "--file-header-background"));
 }
 
@@ -1482,26 +1493,190 @@ void DropOverlay::paintEvent(QPaintEvent*)
 // ---------------------------------------------------------------------------------------------
 // Workspace::Impl — drag & drop
 // ---------------------------------------------------------------------------------------------
+// Tab drags follow the mouse inside the application (no QDrag) across all of its windows: the target
+// is found from the global pointer position, and a release outside every window moves the tab to a
+// new pop-out there (Obsidian). On Wayland windows don't know where they are on screen, so the drag
+// stays in the window it started in and turns into a native drag (QDrag) once the pointer leaves it;
+// our windows accept it through NativeTabDrop, an event filter on their QWindow.
 
-DropOverlay* Workspace::Impl::ensureOverlay()
+namespace {
+const char* const kLeafMime = "application/x-obsidian-cpp-leaf";
+
+bool globalPositionsRelateWindows()
 {
-    QWidget* top = widget ? widget->window() : nullptr;
-    if (!top)
-        return nullptr;
-    if (!overlay || overlay->parentWidget() != top) {
-        delete overlay.data();
-        overlay = new DropOverlay(top);
-    }
-    overlay->setGeometry(top->rect());
-    overlay->raise();
-    overlay->show();
-    return overlay;
+    static const bool reliable = !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+    return reliable;
 }
 
-Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* dragged, const QPoint& globalPos) const
+class NativeTabDrop : public QObject {
+public:
+    NativeTabDrop(WorkspaceImpl* d, QObject* parent)
+        : QObject(parent)
+        , d(d)
+    {
+    }
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* ev) override
+    {
+        const QEvent::Type type = ev->type();
+        if (type != QEvent::DragEnter && type != QEvent::DragMove && type != QEvent::DragLeave && type != QEvent::Drop)
+            return false;
+        QWidget* top = d->destroying ? nullptr : d->topForWindowHandle(obj);
+        if (!top)
+            return false;
+        if (type == QEvent::DragLeave) {
+            if (d->nativeDragging)
+                d->showDragFeedback({}, nullptr, nullptr);
+            return false;
+        }
+        auto* de = static_cast<QDropEvent*>(ev);
+        if (!de->mimeData() || !de->mimeData()->hasFormat(QString::fromLatin1(kLeafMime)))
+            return false;
+        WorkspaceLeaf* leaf = d->leafById(QString::fromUtf8(de->mimeData()->data(QString::fromLatin1(kLeafMime))));
+        if (!leaf)
+            return false;
+        // QWindow coordinates are the top-level widget's.
+        const WorkspaceImpl::DropTarget target = d->dropTargetAt(leaf, top->mapToGlobal(de->position().toPoint()), top);
+        if (type == QEvent::Drop) {
+            d->hideOverlays();
+            d->applyDrop(leaf, target);
+        } else {
+            d->showDragFeedback(target, top, nullptr);
+        }
+        // Accepted anywhere in our windows: only a release outside all of them opens a new window.
+        de->setDropAction(Qt::MoveAction);
+        de->accept();
+        return true;
+    }
+
+private:
+    WorkspaceImpl* d;
+};
+} // namespace
+
+DropOverlay* Workspace::Impl::ensureOverlay() { return ensureOverlay(mainTop()); }
+
+DropOverlay* Workspace::Impl::ensureOverlay(QWidget* top)
+{
+    if (!top)
+        return nullptr;
+    QPointer<DropOverlay>* slot = nullptr;
+    if (top == mainTop())
+        slot = &overlay;
+    else if (WorkspaceSplit* win = windowSplit(top))
+        slot = &win->dropOverlay;
+    if (!slot)
+        return nullptr;
+    if (!*slot || (*slot)->parentWidget() != top) {
+        delete slot->data();
+        *slot = new DropOverlay(top);
+    }
+    DropOverlay* o = *slot;
+    o->setGeometry(top->rect());
+    o->raise();
+    o->show();
+    return o;
+}
+
+void Workspace::Impl::hideOverlays()
+{
+    auto clear = [](DropOverlay* o) {
+        if (!o)
+            return;
+        o->setTarget({});
+        o->setGhost({}, {});
+        o->hide();
+    };
+    clear(overlay);
+    for (WorkspaceSplit* win : std::as_const(windows))
+        clear(win->dropOverlay);
+    drag.ghostTop = nullptr;
+}
+
+void Workspace::Impl::showDragFeedback(const DropTarget& target, QWidget* top, const QPoint* ghostGlobal)
+{
+    QWidget* highlightTop = target.host ? target.host->window() : nullptr;
+    QList<QPair<QWidget*, DropOverlay*>> all{{mainTop(), overlay}};
+    for (WorkspaceSplit* win : std::as_const(windows))
+        all.push_back({win->popout, win->dropOverlay});
+    for (const auto& [w, o] : all) {
+        if (!w || w == top || w == highlightTop || !o)
+            continue;
+        o->setTarget({});
+        o->setGhost({}, {});
+        o->hide();
+    }
+    if (highlightTop && highlightTop != top)
+        if (DropOverlay* o = ensureOverlay(highlightTop)) // (the ghost shows in `top`)
+            o->setTarget(QRect(target.host->mapTo(highlightTop, target.rect.topLeft()), target.rect.size()));
+    DropOverlay* o = top ? ensureOverlay(top) : nullptr;
+    if (!o)
+        return;
+    o->setTarget(highlightTop == top ? QRect(target.host->mapTo(top, target.rect.topLeft()), target.rect.size()) : QRect());
+    if (ghostGlobal) {
+        if (drag.ghostTop != top) {
+            o->setGhost(drag.ghost, o->mapFromGlobal(*ghostGlobal));
+            drag.ghostTop = top;
+        } else {
+            o->moveGhost(o->mapFromGlobal(*ghostGlobal));
+        }
+    }
+}
+
+QWidget* Workspace::Impl::topForWindowHandle(const QObject* window) const
+{
+    if (!window)
+        return nullptr;
+    if (QWidget* m = mainTop(); m && m->windowHandle() == window)
+        return m;
+    for (const WorkspaceSplit* win : windows)
+        if (win->popout && win->popout->windowHandle() == window)
+            return win->popout;
+    return nullptr;
+}
+
+QWidget* Workspace::Impl::windowAt(const QPoint& globalPos) const
+{
+    QList<QWidget*> ours;
+    if (QWidget* m = mainTop(); m && m->isVisible())
+        ours.push_back(m);
+    for (const WorkspaceSplit* win : windows)
+        if (win->popout && win->popout->isVisible() && !win->popout->isMinimized())
+            ours.push_back(win->popout);
+    // The window system knows the stacking order (X11, Windows, macOS)...
+    if (QWidget* at = QApplication::topLevelAt(globalPos); at && ours.contains(at->window()))
+        return at->window();
+    // ...else prefer the focused window, then the one the drag started in.
+    auto contains = [&](const QWidget* w) { return w && ours.contains(w) && w->frameGeometry().contains(globalPos); };
+    if (QWidget* a = QApplication::activeWindow(); contains(a))
+        return a;
+    if (contains(drag.source))
+        return drag.source;
+    for (QWidget* w : std::as_const(ours))
+        if (contains(w))
+            return w;
+    return nullptr;
+}
+
+Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* dragged, const QPoint& globalPos, QWidget* in) const
 {
     DropTarget t;
     if (!widget || !root)
+        return t;
+    QWidget* top = in ? in : windowAt(globalPos);
+    if (!top) {
+        // Outside every window: Obsidian moves the tab to a new window at the drop point.
+        t.kind = DropTarget::Kind::NewWindow;
+        t.globalPos = globalPos;
+        return t;
+    }
+    if (WorkspaceSplit* win = windowSplit(top)) {
+        if (!win->w || !win->w->rect().contains(win->w->mapFromGlobal(globalPos)))
+            return t;
+        return dropTargetInArea(dragged, win, win->w, globalPos);
+    }
+    if (top != mainTop())
         return t;
     // Obsidian's getDropLocation(): the ribbon (with the left sidebar toggle) drops into the left
     // sidedock, the right sidebar toggle into the right one; a collapsed sidedock highlights its toggle.
@@ -1517,6 +1692,7 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* d
                 return t; // its only tab: nothing would change
             t.kind = DropTarget::Kind::Side;
             t.side = side;
+            t.host = widget;
             if (side->collapsed) {
                 QWidget* toggle = overRibbon ? static_cast<QWidget*>(r->sidebarToggle()) : rightToggle;
                 t.rect = QRect(widget->mapFromGlobal(toggle->mapToGlobal(QPoint(0, 0))), toggle->size());
@@ -1540,10 +1716,19 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* d
     }
     if (!area)
         return t;
+    return dropTargetInArea(dragged, area, widget, globalPos);
+}
+
+Workspace::Impl::DropTarget Workspace::Impl::dropTargetInArea(const WorkspaceLeaf* dragged, WorkspaceSplit* area, QWidget* host,
+                                                              const QPoint& globalPos) const
+{
+    DropTarget t;
+    t.host = host;
+    const QPoint p = host->mapFromGlobal(globalPos);
     if (area->children.isEmpty()) {
         t.kind = DropTarget::Kind::Side;
         t.side = area;
-        t.rect = area->w->geometry();
+        t.rect = area->w == host ? host->rect() : area->w->geometry();
         return t;
     }
     WorkspaceTabs* tabs = nullptr;
@@ -1551,16 +1736,16 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetAt(const WorkspaceLeaf* d
     forEachTabs(area, [&](WorkspaceTabs* tb) {
         if (tabs || !tb->w->isVisible())
             return;
-        const QRect r(tb->w->mapTo(widget, QPoint(0, 0)), tb->w->size());
+        const QRect r(tb->w->mapTo(host, QPoint(0, 0)), tb->w->size());
         if (r.contains(p)) {
             tabs = tb;
             R = r;
         }
     });
     if (!tabs)
-        return t;
+        return {};
     if (tabs->leaves.size() == 1 && tabs->leaves.first() == dragged)
-        return t; // Obsidian shows nothing when hovering the dragged tab's own single-tab group
+        return {}; // Obsidian shows nothing when hovering the dragged tab's own single-tab group
     // Obsidian's getDropDirection().
     const bool inSidedock = area->isSidedock();
     const double fx = p.x() - R.x(), fy = p.y() - R.y();
@@ -1622,7 +1807,14 @@ bool Workspace::Impl::applyDrop(WorkspaceLeaf* leaf, const DropTarget& target)
     if (!leaf || !leaf->m_tabs || !target.isValid())
         return false;
     bool focus = true;
-    if (target.kind == DropTarget::Kind::Side) {
+    if (target.kind == DropTarget::Kind::NewWindow) {
+        // Obsidian: a pop-out at the drop point, as large as the leaf (at least 600x600).
+        const LeafWidget* lw = leafWidget(leaf);
+        const QSize s = lw && lw->isVisible() ? lw->size() : QSize(800, 600);
+        const QSize size(std::max(s.width(), kMinPopoutSizeForDrop), std::max(s.height(), kMinPopoutSizeForDrop));
+        if (!moveToWindow(leaf, QRect(target.globalPos, size), true))
+            return false;
+    } else if (target.kind == DropTarget::Kind::Side) {
         moveLeafToSide(leaf, target.side);
         focus = !target.side->collapsed;
     } else if (target.edge == DropEdge::Center) {
@@ -1642,9 +1834,11 @@ void Workspace::Impl::beginDrag(WorkspaceLeaf* leaf, const QPoint& globalPos)
     drag.leaf = leaf;
     drag.active = true;
     drag.target = {};
+    drag.source = topOf(leaf);
+    drag.ghostTop = nullptr;
     QApplication::setOverrideCursor(Qt::ClosedHandCursor); // body.is-grabbing
-    if (DropOverlay* o = ensureOverlay())
-        o->setGhost(makeGhost(leaf, o->devicePixelRatioF()), o->mapFromGlobal(globalPos));
+    const qreal dpr = drag.source ? drag.source->devicePixelRatioF() : qApp->devicePixelRatio();
+    drag.ghost = makeGhost(leaf, dpr);
     updateDrag(globalPos);
 }
 
@@ -1652,16 +1846,22 @@ void Workspace::Impl::updateDrag(const QPoint& globalPos)
 {
     if (!drag.active || !drag.leaf)
         return;
-    drag.target = dropTargetAt(drag.leaf, globalPos);
-    if (overlay) {
-        QRect r;
-        if (drag.target.isValid()) {
-            QWidget* top = overlay->parentWidget();
-            r = QRect(widget->mapTo(top, drag.target.rect.topLeft()), drag.target.rect.size());
+    QWidget* in = nullptr;
+    if (!globalPositionsRelateWindows()) {
+        QWidget* src = drag.source;
+        if (src && !src->rect().contains(src->mapFromGlobal(globalPos))) {
+            startNativeDrag(); // left its window: the window system carries the tab from here
+            return;
         }
-        overlay->setTarget(r);
-        overlay->moveGhost(overlay->mapFromGlobal(globalPos));
+        in = src;
     }
+    drag.target = dropTargetAt(drag.leaf, globalPos, in);
+    // The highlight shows in the target's window, the ghost in the window under the pointer (outside
+    // every window: the one the drag started in).
+    QWidget* ghostTop = drag.target.host ? drag.target.host->window() : (in ? in : windowAt(globalPos));
+    if (!ghostTop)
+        ghostTop = drag.source;
+    showDragFeedback(drag.target, ghostTop, &globalPos);
 }
 
 void Workspace::Impl::endDrag(const QPoint& globalPos, bool commit)
@@ -1670,18 +1870,77 @@ void Workspace::Impl::endDrag(const QPoint& globalPos, bool commit)
         return;
     drag.active = false;
     QApplication::restoreOverrideCursor();
-    if (overlay) {
-        overlay->setTarget({});
-        overlay->setGhost({}, {});
-        overlay->hide();
-    }
+    hideOverlays();
     QPointer<WorkspaceLeaf> leaf = drag.leaf;
+    QWidget* in = globalPositionsRelateWindows() ? nullptr : drag.source.data();
     drag.leaf = nullptr;
     drag.target = {};
+    drag.source = nullptr;
+    drag.ghost = {};
     if (!commit || !leaf || destroying)
         return;
-    const DropTarget t = dropTargetAt(leaf, globalPos);
+    const DropTarget t = dropTargetAt(leaf, globalPos, in);
     applyDrop(leaf, t);
+}
+
+void Workspace::Impl::installNativeDrop()
+{
+    if (!nativeDrop)
+        nativeDrop = new NativeTabDrop(this, q);
+    QList<QWidget*> tops{mainTop()};
+    for (const WorkspaceSplit* win : std::as_const(windows))
+        tops.push_back(win->popout);
+    for (QWidget* top : std::as_const(tops)) {
+        if (!top)
+            continue;
+        top->setAcceptDrops(true);
+        if (QWindow* handle = top->windowHandle()) {
+            handle->removeEventFilter(nativeDrop);
+            handle->installEventFilter(nativeDrop);
+        }
+    }
+}
+
+void Workspace::Impl::startNativeDrag()
+{
+    QPointer<WorkspaceLeaf> leaf = drag.leaf;
+    QWidget* source = drag.source;
+    const QPixmap ghost = drag.ghost;
+    // The in-app drag ends here.
+    drag.active = false;
+    QApplication::restoreOverrideCursor();
+    hideOverlays();
+    drag.leaf = nullptr;
+    drag.target = {};
+    drag.source = nullptr;
+    drag.ghost = {};
+    if (!leaf || !source || destroying || nativeDragging)
+        return;
+    installNativeDrop();
+    auto* mime = new QMimeData;
+    mime->setData(QString::fromLatin1(kLeafMime), leaf->id().toUtf8());
+    QPointer<QDrag> qd = new QDrag(q); // parented to the workspace: the source window may go meanwhile
+    qd->setMimeData(mime);
+    qd->setPixmap(ghost);
+    qd->setHotSpot(QPoint(8, 8));
+    QPointer<Workspace> alive = q;
+    nativeDragging = true;
+    const Qt::DropAction result = qd->exec(Qt::MoveAction, Qt::MoveAction);
+    if (!alive)
+        return;
+    nativeDragging = false;
+    hideOverlays();
+    for (const QPointer<PopoutWindow>& p : std::exchange(pendingDisposal, {}))
+        if (p)
+            p->deleteLater();
+    delete qd.data();
+    if (result == Qt::IgnoreAction && leaf && leaf->m_tabs && !destroying) {
+        // Released outside every window (the window system can't tell where: it places the window).
+        DropTarget t;
+        t.kind = DropTarget::Kind::NewWindow;
+        t.globalPos = QCursor::pos();
+        applyDrop(leaf, t);
+    }
 }
 
 } // namespace oc

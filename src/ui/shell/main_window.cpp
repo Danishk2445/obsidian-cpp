@@ -79,6 +79,25 @@ MainWindow::~MainWindow()
     delete m_workspace.data();
 }
 
+OverlayLayer* MainWindow::overlay() const { return OverlayLayer::focused(m_overlay); }
+
+NoticeManager* MainWindow::notices() const
+{
+    OverlayLayer* layer = overlay();
+    NoticeManager* n = layer != m_overlay ? NoticeManager::of(layer) : nullptr;
+    return n ? n : m_notices;
+}
+
+MainWindow* MainWindow::of(const QWidget* w)
+{
+    QWidget* top = w ? w->window() : nullptr;
+    if (!top)
+        return nullptr;
+    if (auto* mw = qobject_cast<MainWindow*>(top))
+        return mw;
+    return qobject_cast<MainWindow*>(top->property("ocOwnerWindow").value<QObject*>());
+}
+
 void MainWindow::setWorkspace(Workspace* workspace)
 {
     if (m_workspace == workspace)

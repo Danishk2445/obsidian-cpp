@@ -202,8 +202,8 @@ bool HotkeyDispatcher::tryDispatch(QObject* target, QKeyEvent* ke, bool execute)
     auto* w = qobject_cast<QWidget*>(target);
     if (!w)
         return false;
-    if (m_window && w->window() != m_window)
-        return false;
+    if (m_window && w->window() != m_window && w->window()->property("ocOwnerWindow").value<QObject*>() != m_window)
+        return false; // another top-level window (its pop-outs name it as their "ocOwnerWindow")
     if (insideCapturingOverlay(w))
         return false;
     // An open editor suggest popup owns the navigation keys of its editor.

@@ -11,6 +11,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPixmap>
 #include <QPointer>
 #include <QTimer>
 #include <QVariantAnimation>
@@ -25,6 +26,7 @@ namespace oc {
 class DropOverlay;
 class IconButton;
 class LeafWidget;
+class PopoutWindow;
 class SplitWidget;
 class TabGroupWidget;
 class TabHeaderBar;
@@ -95,13 +97,16 @@ using WorkspaceImpl = WorkspaceTabs::Impl;
 
 class WorkspaceSplit final : public WorkspaceItem {
 public:
-    enum class Role { Nested, Root, Left, Right };
+    // Window: the root split of a pop-out window (Obsidian's WorkspaceWindow, a "window" child of the
+    // floating split).
+    enum class Role { Nested, Root, Left, Right, Window };
     // vertical = children side by side (Obsidian's "vertical" direction), else stacked.
     WorkspaceSplit(WorkspaceImpl* d, Role role, bool vertical);
     ~WorkspaceSplit() override;
 
     QWidget* widget() const override;
     bool isSidedock() const { return role == Role::Left || role == Role::Right; }
+    bool isWindow() const { return role == Role::Window; }
 
     Role role;
     bool vertical;
@@ -109,6 +114,14 @@ public:
     int width = 300;        // sidedocks only
     bool collapsed = false; // sidedocks only
     QPointer<SplitWidget> w; // see WorkspaceTabs::w
+    // Windows only: the pop-out showing this split and the geometry it was opened / restored with
+    // (workspace.json "x", "y", "width", "height", "maximize", "zoom").
+    QPointer<PopoutWindow> popout;
+    QPointer<DropOverlay> dropOverlay;
+    QRect geometry;          // invalid size: default; hasPosition: x / y were given
+    bool hasPosition = false;
+    bool maximize = false;
+    double zoom = 0;         // round-tripped (the clone has no per-window zoom)
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -123,6 +136,12 @@ struct Workspace::Impl {
     WorkspaceSplit* root = nullptr;
     WorkspaceSplit* left = nullptr;
     WorkspaceSplit* right = nullptr;
+    // Pop-out windows: the children of Obsidian's floating split (its id and unknown keys are kept).
+    QList<WorkspaceSplit*> windows;
+    QString floatingId;
+    QJsonObject floatingExtra;
+    bool quitting = false;                   // the main window is closing: pop-outs keep their leaves
+    WorkspaceSplit* closingWindow = nullptr; // closeWindow() in progress
     QPointer<WorkspaceWidget> widget;
     QPointer<DropOverlay> overlay;
     QPointer<WorkspaceLeaf> active;
@@ -164,7 +183,10 @@ struct Workspace::Impl {
     MainWindow* window() const { return q->m_window; }
     bool frameless() const;
     int topRightReserve() const;
-    bool windowFocused() const;
+    bool windowFocused() const;              // the main window
+    bool windowFocused(const QWidget* w) const; // w's window (a pop-out's widgets use their own)
+    QList<WorkspaceSplit*> tops() const;      // root, left, right, then the windows (iterateAllLeaves order)
+    QList<WorkspaceSplit*> mainAreas() const; // root, then the windows
 
     // ---- creation / views ---------------------------------------------------------------------
     WorkspaceLeaf* createLeaf(const QString& id = {}); // with an empty view
@@ -198,6 +220,26 @@ struct Workspace::Impl {
     WorkspaceLeaf* leafById(const QString& id) const;
     WorkspaceTabs* tabsById(const WorkspaceItem* under, const QString& id) const;
     bool isGroupActive(const WorkspaceTabs* tabs) const;
+    WorkspaceSplit* windowOf(const WorkspaceLeaf* leaf) const;    // the leaf's pop-out split, else null
+    WorkspaceSplit* windowSplit(const QWidget* topLevel) const;   // the pop-out split shown by a window
+    WorkspaceSplit* containerOf(const WorkspaceLeaf* leaf) const; // Obsidian getContainer(): its window, else root
+    bool isMainLeaf(const WorkspaceLeaf* leaf) const;             // in the root split or a pop-out
+    // Obsidian's getMostRecentLeaf(): over the root split and the pop-outs (but `except`).
+    WorkspaceLeaf* mostRecentMainLeaf(const WorkspaceSplit* except = nullptr) const;
+    QWidget* mainTop() const; // the main window (the workspace widget's top level)
+    QWidget* topOf(const WorkspaceLeaf* leaf) const; // the window showing the leaf
+
+    // ---- pop-out windows ----------------------------------------------------------------------
+    // A new, empty window split and its PopoutWindow (shown). `geometry` as in Workspace::openPopoutLeaf.
+    WorkspaceSplit* openWindow(const QRect& geometry, bool hasPosition);
+    void showWindow(WorkspaceSplit* win); // creates / shows its PopoutWindow with the stored geometry
+    void closeWindow(WorkspaceSplit* win);  // Obsidian WorkspaceWindow.close(): its leaves are closed
+    void removeWindow(WorkspaceSplit* win); // drops an emptied window and its PopoutWindow
+    PopoutWindow* moveToWindow(WorkspaceLeaf* leaf, const QRect& geometry, bool hasPosition);
+    void onWindowActivated(QWidget* top); // Obsidian WorkspaceContainer.onFocus()
+    void updateWindowTitles();
+    void focusWindowOf(const WorkspaceLeaf* leaf); // raise + activate the leaf's window (Obsidian focusLeaf)
+    void mainWindowClosing();
 
     // ---- operations (UI, commands and tests) ----------------------------------------------------
     void selectTab(WorkspaceTabs* tabs, int index);
@@ -216,26 +258,50 @@ struct Workspace::Impl {
 
     // ---- drag & drop --------------------------------------------------------------------------
     struct DropTarget {
-        enum class Kind { None, Tabs, Side };
+        // NewWindow: released outside every window — Obsidian moves the tab to a new pop-out there.
+        enum class Kind { None, Tabs, Side, NewWindow };
         Kind kind = Kind::None;
         WorkspaceTabs* tabs = nullptr;
         WorkspaceSplit* side = nullptr;
         DropEdge edge = DropEdge::Center;
         int index = -1;
-        QRect rect; // highlight, in workspace-widget coordinates
+        QRect rect;             // highlight, in `host` coordinates
+        QWidget* host = nullptr; // the workspace widget (main window) or a pop-out's root split widget
+        QPoint globalPos;        // NewWindow: the drop point
         bool isValid() const { return kind != Kind::None; }
     };
-    DropTarget dropTargetAt(const WorkspaceLeaf* dragged, const QPoint& globalPos) const;
+    // `in`: only look inside that top-level window (drops delivered to a window; Wayland, where global
+    // positions don't relate windows to each other).
+    DropTarget dropTargetAt(const WorkspaceLeaf* dragged, const QPoint& globalPos, QWidget* in = nullptr) const;
+    DropTarget dropTargetInArea(const WorkspaceLeaf* dragged, WorkspaceSplit* area, QWidget* host, const QPoint& globalPos) const;
+    QWidget* windowAt(const QPoint& globalPos) const; // our top-level window under a global point (or null)
     bool applyDrop(WorkspaceLeaf* leaf, const DropTarget& target);
     struct DragState {
         QPointer<WorkspaceLeaf> leaf;
         bool active = false;
         DropTarget target;
+        QPointer<QWidget> source;   // the window the drag started in
+        QPixmap ghost;
+        QPointer<QWidget> ghostTop; // the window showing the ghost
     } drag;
     void beginDrag(WorkspaceLeaf* leaf, const QPoint& globalPos);
     void updateDrag(const QPoint& globalPos);
     void endDrag(const QPoint& globalPos, bool commit);
-    DropOverlay* ensureOverlay();
+    DropOverlay* ensureOverlay();                // the main window's
+    DropOverlay* ensureOverlay(QWidget* top);    // that window's
+    void hideOverlays();
+    // Drag feedback in `top` (target highlight; the ghost at `ghostGlobal` unless null); the other
+    // windows' overlays are cleared.
+    void showDragFeedback(const DropTarget& target, QWidget* top, const QPoint* ghostGlobal);
+    // Wayland: windows can't relate global positions, so a tab leaving its window continues as a
+    // native drag (QDrag) that our windows accept through an event filter on their QWindow.
+    void startNativeDrag();
+    void installNativeDrop();
+    QWidget* topForWindowHandle(const QObject* window) const;
+    bool nativeDragging = false;
+    QObject* nativeDrop = nullptr;
+    QList<QPointer<PopoutWindow>> pendingDisposal; // pop-outs emptied during a native drag
+    void disposePopout(PopoutWindow* p);
 
     // ---- notifications ------------------------------------------------------------------------
     void beginBatch() { ++batchDepth; }

@@ -2,6 +2,7 @@
 
 #include "render/theme/theme.h"
 
+#include <QApplication>
 #include <QChildEvent>
 #include <QEvent>
 #include <QMouseEvent>
@@ -37,6 +38,22 @@ OverlayLayer::~OverlayLayer()
     m_refreshTimer.stop();
     while (QWidget* w = findChild<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
         delete w;
+}
+
+OverlayLayer* OverlayLayer::of(const QWidget* w)
+{
+    const QWidget* top = w ? w->window() : nullptr;
+    return top ? top->findChild<OverlayLayer*>(QString(), Qt::FindDirectChildrenOnly) : nullptr;
+}
+
+OverlayLayer* OverlayLayer::focused(OverlayLayer* layer)
+{
+    QWidget* home = layer ? layer->window() : nullptr;
+    QWidget* active = QApplication::activeWindow();
+    if (!home || !active || active == home || active->property("ocOwnerWindow").value<QObject*>() != home)
+        return layer;
+    OverlayLayer* l = of(active);
+    return l ? l : layer;
 }
 
 void OverlayLayer::setBlocking(QWidget* child, bool blocking)
@@ -112,6 +129,11 @@ NoticeManager::NoticeManager(OverlayLayer* layer)
     , m_layer(layer)
 {
     layer->installEventFilter(this);
+}
+
+NoticeManager* NoticeManager::of(const OverlayLayer* layer)
+{
+    return layer ? layer->findChild<NoticeManager*>(QString(), Qt::FindDirectChildrenOnly) : nullptr;
 }
 
 Notice* NoticeManager::show(const QString& message, int timeoutMs)
