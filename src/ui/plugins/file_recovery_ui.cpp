@@ -877,7 +877,9 @@ void FileRecoveryPanel::focusInput()
 
 void FileRecoveryPanel::updateSuggestions()
 {
-    if (m_paths.isEmpty() || !m_window || !m_window->overlay()) {
+    // The popup goes in the layer of the window this panel is in (the main window or a pop-out).
+    OverlayLayer* layer = OverlayLayer::of(m_input);
+    if (m_paths.isEmpty() || !m_window || !layer) {
         hidePopup();
         return;
     }
@@ -899,13 +901,13 @@ void FileRecoveryPanel::updateSuggestions()
         return;
     }
     if (!m_popup) {
-        m_popup = new SuggestPopup(m_window->overlay());
+        m_popup = new SuggestPopup(layer);
         m_popup->list()->setSuggestions({});
         connect(m_popup->list(), &SuggestionList::activated, this, [this](int i, Qt::KeyboardModifiers) { chooseSuggestion(i); });
     }
     m_popup->list()->setSuggestions(items);
     m_popup->list()->setSelectedIndex(0);
-    const QRect anchor(m_input->mapTo(m_window->overlay(), QPoint(0, 0)), m_input->size());
+    const QRect anchor(m_input->mapTo(m_popup->parentWidget(), QPoint(0, 0)), m_input->size());
     m_popup->showAt(anchor.adjusted(0, 0, 0, 4));
 }
 
