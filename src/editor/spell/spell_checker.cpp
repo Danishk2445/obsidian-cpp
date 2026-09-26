@@ -166,20 +166,28 @@ void SpellChecker::decorateLine(const md::DocSource& doc, int line, LineDecorati
                 return true;
         return false;
     };
+    // Every segment with a letter is a word candidate: Qt doesn't flag the end of a word that starts with '_' as
+    // EndOfItem. '_' stays inside words ("too_" of "_italic too_", "snake_case"), so each part is checked on its
+    // own. Like Chromium with an en-US dictionary, words in other scripts (CJK, Arabic, Cyrillic...) aren't.
     QTextBoundaryFinder bf(QTextBoundaryFinder::Word, s);
     int start = 0;
     while (bf.toNextBoundary() >= 0) {
         const int end = int(bf.position());
-        if (bf.boundaryReasons() & QTextBoundaryFinder::EndOfItem) {
-            const QString word = s.mid(start, end - start);
-            bool hasLetter = false, hasDigit = false;
+        for (int a = start; a < end;) {
+            int b = a;
+            while (b < end && s[b] != u'_')
+                ++b;
+            const QString word = s.mid(a, b - a);
+            bool hasLetter = false, hasDigit = false, otherScript = false;
             for (QChar c : word) {
                 hasLetter |= c.isLetter();
                 hasDigit |= c.isDigit();
+                otherScript |= c.isLetter() && c.script() != QChar::Script_Latin;
             }
-            if (hasLetter && !hasDigit && word.size() > 1 && !skipped(start, end) && !(word.size() > 1 && word == word.toUpper())
+            if (hasLetter && !hasDigit && !otherScript && word.size() > 1 && !skipped(a, b) && word != word.toUpper()
                 && isMisspelled(word))
-                d.marks.push_back({start, end, StyleId::SpellError});
+                d.marks.push_back({a, b, StyleId::SpellError});
+            a = b + 1;
         }
         start = end;
     }
