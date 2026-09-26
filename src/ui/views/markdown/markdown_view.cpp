@@ -908,7 +908,7 @@ void MarkdownView::paneMenuEntries(QList<MenuEntry>& items, const QString& sourc
     items << replace;
     items << MenuEntry{QStringLiteral("action"), tr("Export to PDF..."), QStringLiteral("file-down"), [self] {
                            if (self)
-                               openExportPdfModal(qobject_cast<MainWindow*>(self->window()), self);
+                               openExportPdfModal(MainWindow::of(self), self);
                        }};
 }
 
@@ -928,7 +928,12 @@ void MarkdownView::openLink(const QString& target, int kind, bool newLeaf)
         navigateToSubpath(LinkResolver::splitSubpath(t).second);
         return;
     }
-    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), newLeaf);
+    // Obsidian's Keymap.isModEvent(): Mod(+click) a new tab, Mod+Alt a split, Mod+Alt+Shift a new window.
+    Workspace::NewLeaf mode = newLeaf ? Workspace::NewLeaf::Tab : Workspace::NewLeaf::No;
+    const Qt::KeyboardModifiers mods = QGuiApplication::keyboardModifiers();
+    if (newLeaf && (mods & (Qt::ControlModifier | Qt::MetaModifier)) && (mods & Qt::AltModifier))
+        mode = (mods & Qt::ShiftModifier) ? Workspace::NewLeaf::Window : Workspace::NewLeaf::SplitRight;
+    openLinkText(workspace(), target, kind, m_file ? m_file->path() : QString(), mode);
 }
 
 void MarkdownView::openLinkText(Workspace* ws, const QString& target, int kind, const QString& source, bool newLeaf)

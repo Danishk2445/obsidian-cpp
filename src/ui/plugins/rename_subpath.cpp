@@ -25,7 +25,7 @@ namespace oc::rename_subpath {
 namespace {
 MainWindow* windowOf(const QWidget* w)
 {
-    return w ? qobject_cast<MainWindow*>(w->window()) : nullptr;
+    return w ? MainWindow::of(w) : nullptr;
 }
 
 QString collapse(QString s)

@@ -315,11 +315,16 @@ void PropertySuggest::refresh()
         rows.resize(kLimit);
     m_rows = rows;
     m_texts = texts;
+    // The popup lives in the input's own window (the view may have moved to a pop-out window).
+    OverlayLayer* layer = OverlayLayer::of(m_input);
+    if (m_popup && m_popup->parentWidget() != layer) {
+        delete m_popup.data();
+        m_popup = nullptr;
+    }
     if (!m_popup) {
-        auto* w = qobject_cast<MainWindow*>(m_input->window());
-        if (!w || !w->overlay())
+        if (!layer)
             return;
-        m_popup = new SuggestPopup(w->overlay());
+        m_popup = new SuggestPopup(layer);
         connect(m_popup->list(), &SuggestionList::activated, this, [this](int index, Qt::KeyboardModifiers) { choose(index, QString()); });
     }
     m_popup->list()->setSuggestions(rows);

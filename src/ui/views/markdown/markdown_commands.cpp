@@ -96,8 +96,9 @@ Command configToggle(const char* id, const QString& name, const char* icon, cons
     return c;
 }
 
-// Obsidian's "Open link under cursor to the right": the link opens in a split next to the note.
-bool openLinkAtCursorInSplit(EditorView& e, MarkdownView& v)
+// Obsidian's "Open link under cursor to the right" / "... in new window": the link opens in a split
+// next to the note, or in a new pop-out window.
+bool openLinkAtCursorIn(EditorView& e, MarkdownView& v, Workspace::NewLeaf mode)
 {
     LivePreviewDecorator* lp = e.livePreview();
     if (!lp || !e.document())
@@ -109,8 +110,7 @@ bool openLinkAtCursorInSplit(EditorView& e, MarkdownView& v)
         emit e.linkActivated(hit->target, int(hit->kind), false);
         return true;
     }
-    MarkdownView::openLinkText(v.workspace(), hit->target, int(hit->kind), v.file() ? v.file()->path() : QString(),
-                               Workspace::NewLeaf::SplitRight);
+    MarkdownView::openLinkText(v.workspace(), hit->target, int(hit->kind), v.file() ? v.file()->path() : QString(), mode);
     return true;
 }
 
@@ -236,7 +236,9 @@ void registerMarkdownCommands(CommandRegistry& r, Workspace* workspace)
     r.add(editing("editor:toggle-source", QObject::tr("Toggle Live Preview/Source mode"), "code-2", [](E&, V& v) { v.toggleSource(); }));
     r.add(viewing("markdown:toggle-preview", QObject::tr("Toggle reading view"), "book-open", [](V& v) { v.toggleReading(); }, keys({"Mod+E"})));
     r.add(editing("editor:open-link-in-new-split", QObject::tr("Open link under cursor to the right"), "link",
-                  [](E& e, V& v) { openLinkAtCursorInSplit(e, v); }, keys({"Mod+Alt+Enter"})));
+                  [](E& e, V& v) { openLinkAtCursorIn(e, v, Workspace::NewLeaf::SplitRight); }, keys({"Mod+Alt+Enter"})));
+    r.add(editing("editor:open-link-in-new-window", QObject::tr("Open link under cursor in new window"), "link",
+                  [](E& e, V& v) { openLinkAtCursorIn(e, v, Workspace::NewLeaf::Window); }, keys({"Mod+Alt+Shift+Enter"})));
     r.add(editing("editor:cycle-list-checklist", QObject::tr("Cycle bullet/checkbox"), "check-square",
                   [](E& e, V&) { mdcmd::toggleChecklist(e, true); }));
     r.add(editing("editor:insert-footnote", QObject::tr("Insert footnote"), "file-signature", [](E& e, V& v) {

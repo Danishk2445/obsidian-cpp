@@ -31,7 +31,7 @@ void registerNavigationCommands(CommandRegistry& registry, VaultSession* session
         if (!sess || !lay)
             return false;
         if (!checking)
-            openQuickSwitcher(sess, lay);
+            openQuickSwitcher(sess, OverlayLayer::focused(lay)); // in the focused window (a pop-out too)
         return true;
     };
     registry.add(switcher);
@@ -45,7 +45,7 @@ void registerNavigationCommands(CommandRegistry& registry, VaultSession* session
         if (!sess || !lay)
             return false;
         if (!checking)
-            openCommandPalette(sess, lay);
+            openCommandPalette(sess, OverlayLayer::focused(lay));
         return true;
     };
     registry.add(palette);

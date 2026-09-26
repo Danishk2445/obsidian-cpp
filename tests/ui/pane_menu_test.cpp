@@ -74,7 +74,7 @@ TEST_F(PaneMenuTest, MoreOptionsFollowObsidiansSections)
     ASSERT_TRUE(mv);
     QList<MenuEntry> items;
     mv->paneMenuEntries(items, "more-options");
-    EXPECT_EQ(titles(items, "open"), QStringList({"Split right", "Split down"}));
+    EXPECT_EQ(titles(items, "open"), QStringList({"Split right", "Split down", "Open in new window"}));
     EXPECT_EQ(titles(items, "pane"), QStringList({"Reading view", "Source mode"}));
     EXPECT_EQ(titles(items, "find"), QStringList({"Find...", "Replace..."}));
     const QStringList actions = titles(items, "action");

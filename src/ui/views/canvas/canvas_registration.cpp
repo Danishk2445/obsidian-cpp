@@ -294,7 +294,7 @@ void registerCanvasCommands(CommandRegistry& registry, MainWindow* window)
         FileMenuHooks::add([](QList<MenuEntry>& items, TAbstractFile* file, const QString& source, WorkspaceLeaf*, QWidget* origin) {
             if (source != u"file-explorer-context-menu" || !file || !file->isFolder() || !origin)
                 return;
-            auto* mw = qobject_cast<MainWindow*>(origin->window());
+            auto* mw = MainWindow::of(origin);
             QPointer<MainWindow> win = mw;
             const QString folder = file->path();
             items << MenuEntry{u"action-primary"_s, tr("New canvas"), u"layout-dashboard"_s, [win, folder] {

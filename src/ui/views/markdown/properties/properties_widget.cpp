@@ -814,7 +814,7 @@ void PropertyRow::changeType(const QString& type)
 
 void PropertyRow::showDisplayAsPrompt()
 {
-    auto* w = qobject_cast<MainWindow*>(window());
+    auto* w = MainWindow::of(window());
     const QString expected = props::propertyType(m_expected).name;
     const QString inferred = props::propertyType(m_inferred).name;
     if (!w || !w->overlay()) {

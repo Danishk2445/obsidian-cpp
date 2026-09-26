@@ -33,7 +33,8 @@ void registerNavigationViews(ViewRegistry& registry);
 //   command-palette:open   "Command palette: Open command palette" Mod+P
 //   global-search:open     "Search: Search in all files"            Mod+Shift+F (a one-line editor selection becomes
 //                                                                    the query)
-// Modals open in `layer` (MainWindow::overlay()). Also makes the recent commands persistent (see
+// Modals open in `layer` (MainWindow::overlay()), or in the focused pop-out window of its window
+// (OverlayLayer::focused()). Also makes the recent commands persistent (see
 // persistRecentCommands()).
 void registerNavigationCommands(CommandRegistry& registry, VaultSession* session, OverlayLayer* layer);
 

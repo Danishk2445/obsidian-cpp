@@ -255,7 +255,7 @@ SearchView::SearchView(WorkspaceLeaf* leaf, QWidget* parent)
             [this](int g, int s, Qt::KeyboardModifiers mods) { openMatch(g, s, mods); });
     connect(m_results, &SearchResultsList::rowHovered, this, [this](int g, const QRect& rect) {
         // Obsidian's page preview for search results (source "search": with Mod by default)
-        auto* w = qobject_cast<MainWindow*>(window());
+        auto* w = MainWindow::of(window());
         if (!w)
             return;
         QWidget* vp = m_results->viewport();
@@ -865,7 +865,7 @@ QString SearchView::resultsText(bool showPath, LinkStyle link, ListPrefix prefix
 void SearchView::copyResults()
 {
     QGuiApplication::clipboard()->setText(resultsText());
-    if (auto* w = qobject_cast<MainWindow*>(window()); w && w->notices())
+    if (auto* w = MainWindow::of(window()); w && w->notices())
         w->notices()->show(tr("Results copied to your clipboard."));
 }
 

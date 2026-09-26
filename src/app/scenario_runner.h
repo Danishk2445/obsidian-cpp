@@ -20,8 +20,10 @@ class MainWindow;
 //   key <chord>                                press a key: "Enter", "Mod+E", "Shift+ArrowDown", ...
 //   command <id>                               run a command ("editor:toggle-bold")
 //   click <objectName>                         left-click the center of a visible widget with that name
+//                                              (in the main window or a pop-out)
 //   wait <ms>                                  extra wait
 //   screenshot <png>                           save the window (relative paths: to the script's folder)
+//   screenshot-popout [n] <png>                save pop-out window n (workspace order; default: the last)
 //   expect-line <n> <text>                     fail unless line n (-1 = last) of the active note is <text>
 //   try <line>                                 run <line>, ignoring its failure
 //   quit                                       stop here (also at the end of the script)

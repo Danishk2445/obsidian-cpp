@@ -8,6 +8,7 @@
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
 #include "ui/shell/main_window.h"
+#include "ui/shell/popout_window.h"
 #include "ui/views/markdown/markdown_view.h"
 #include "ui/workspace/workspace.h"
 
@@ -207,9 +208,14 @@ bool ScenarioRunner::run(const QString& line)
     }
     if (cmd == u"click") {
         QWidget* target = nullptr;
-        for (QWidget* w : m_window->findChildren<QWidget*>(arg))
-            if (w->isVisible())
-                target = w;
+        QList<QWidget*> tops{m_window};
+        if (Workspace* ws = m_window ? m_window->workspace() : nullptr)
+            for (PopoutWindow* p : ws->popoutWindows())
+                tops.push_back(p);
+        for (QWidget* top : std::as_const(tops))
+            for (QWidget* w : top->findChildren<QWidget*>(arg))
+                if (w->isVisible())
+                    target = w;
         if (!target)
             return false;
         const QPointF local = QRectF(target->rect()).center();
@@ -246,6 +252,26 @@ bool ScenarioRunner::run(const QString& line)
         const QString out = QFileInfo(arg).isAbsolute() ? arg : m_dir + u'/' + arg;
         m_window->repaint();
         return m_window->grab().save(out);
+    }
+    if (cmd == u"screenshot-popout") {
+        // "screenshot-popout [index] <png>": a pop-out window (workspace order; default the last one)
+        Workspace* ws = m_window ? m_window->workspace() : nullptr;
+        const QList<PopoutWindow*> popouts = ws ? ws->popoutWindows() : QList<PopoutWindow*>();
+        QString file = arg;
+        qsizetype index = popouts.size() - 1;
+        if (const qsizetype sp2 = arg.indexOf(u' '); sp2 > 0) {
+            bool ok = false;
+            const int n = arg.left(sp2).toInt(&ok);
+            if (ok) {
+                index = n;
+                file = arg.mid(sp2 + 1);
+            }
+        }
+        if (index < 0 || index >= popouts.size())
+            return false;
+        const QString out = QFileInfo(file).isAbsolute() ? file : m_dir + u'/' + file;
+        popouts[index]->repaint();
+        return popouts[index]->grab().save(out);
     }
     if (cmd == u"expect-line") {
         MarkdownView* mv = activeMarkdown(m_window);

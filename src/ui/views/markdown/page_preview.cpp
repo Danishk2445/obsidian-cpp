@@ -35,6 +35,15 @@ namespace {
 constexpr int kWidth = 450;  // --popover-width
 constexpr int kHeight = 400; // --popover-height
 
+// Popovers show in the window of the hovered link (the main window or a pop-out; the mouse may hover
+// a window that doesn't have the focus).
+OverlayLayer* layerFor(MainWindow* window, const QWidget* hoverParent)
+{
+    if (OverlayLayer* l = OverlayLayer::of(hoverParent))
+        return l;
+    return window ? window->ownOverlay() : nullptr;
+}
+
 bool isImageExt(const QString& ext)
 {
     static const QStringList exts = {u"bmp"_s, u"png"_s, u"jpg"_s, u"jpeg"_s, u"gif"_s, u"svg"_s, u"webp"_s, u"avif"_s};
@@ -251,7 +260,8 @@ void PagePreview::onLinkHover(const QString& source, const QString& linktext, co
 {
     // already showing this link from this place
     for (HoverPopover* p : popovers()) {
-        if (p->hoverParent() == hoverParent && p->anchor().intersects(QRect(m_window->overlay()->mapFromGlobal(anchorGlobal.topLeft()), anchorGlobal.size())))
+        auto* layer = qobject_cast<QWidget*>(p->parent());
+        if (p->hoverParent() == hoverParent && layer && p->anchor().intersects(QRect(layer->mapFromGlobal(anchorGlobal.topLeft()), anchorGlobal.size())))
             return;
     }
     m_pending = {source, linktext, sourcePath, anchorGlobal, hoverParent, true};
@@ -271,7 +281,8 @@ void PagePreview::onLinkUnhover(QWidget* hoverParent)
 
 void PagePreview::showPending()
 {
-    if (!m_pending.active || !m_window || !m_window->overlay())
+    OverlayLayer* layer = m_window ? layerFor(m_window, m_pending.hoverParent) : nullptr;
+    if (!m_pending.active || !layer)
         return;
     m_pending.active = false;
     VaultSession* s = m_window->session();
@@ -290,7 +301,7 @@ void PagePreview::showPending()
     } else if (const qsizetype i = list.indexOf(parentPopover); i >= 0 && i + 1 < list.size()) {
         closeFrom(list[i + 1]);
     }
-    auto* p = new HoverPopover(m_window->overlay(), s, file, subpath, m_pending.hoverParent);
+    auto* p = new HoverPopover(layer, s, file, subpath, m_pending.hoverParent);
     m_popovers.append(p);
     if (EditorView* e = p->editor()) {
         const QString path = file->path();
@@ -301,7 +312,7 @@ void PagePreview::showPending()
             MarkdownView::openLinkText(ws, target, kind, path, newLeaf);
         });
     }
-    p->placeNear(QRect(m_window->overlay()->mapFromGlobal(m_pending.anchorGlobal.topLeft()), m_pending.anchorGlobal.size()));
+    p->placeNear(QRect(layer->mapFromGlobal(m_pending.anchorGlobal.topLeft()), m_pending.anchorGlobal.size()));
     m_outside.invalidate();
     m_poll.start();
     emit popoverShown(p);
@@ -351,15 +362,19 @@ void PagePreview::closeFrom(HoverPopover* p)
     const qsizetype i = m_popovers.indexOf(p);
     if (i < 0)
         return;
+    QList<QPointer<OverlayLayer>> layers;
     for (qsizetype j = m_popovers.size() - 1; j >= i; --j) {
         if (HoverPopover* q = m_popovers[j]) {
+            if (auto* layer = qobject_cast<OverlayLayer*>(q->parent()); layer && !layers.contains(layer))
+                layers.push_back(layer);
             q->hide();
             q->deleteLater();
         }
         m_popovers.removeAt(j);
     }
-    if (m_window && m_window->overlay())
-        m_window->overlay()->refresh();
+    for (const QPointer<OverlayLayer>& layer : std::as_const(layers))
+        if (layer)
+            layer->refresh();
 }
 
 void PagePreview::closeAll()
