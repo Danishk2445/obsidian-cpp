@@ -274,6 +274,8 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     s->m_caret = t.color(QStringLiteral("--caret-color"), text);
     s->m_guide = t.color(QStringLiteral("--indentation-guide-color"));
     s->m_guideActive = t.color(QStringLiteral("--indentation-guide-color-active"));
+    s->m_guideWidth = t.px(QStringLiteral("--indentation-guide-width"), base, 1);
+    s->m_guideActiveWidth = t.px(QStringLiteral("--indentation-guide-width-active"), base, 1);
     s->m_hr = t.color(QStringLiteral("--hr-color"), t.color(QStringLiteral("--background-modifier-border")));
     s->m_hrThickness = t.px(QStringLiteral("--hr-thickness"), base, 2);
     s->m_tableBorder = t.color(QStringLiteral("--table-border-color"), t.color(QStringLiteral("--background-modifier-border")));

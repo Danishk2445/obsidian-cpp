@@ -287,6 +287,7 @@ SectionWidget::SectionWidget(std::shared_ptr<const Index> index, const md::Synta
     m_decorator->setNestingDepth(1);
     m_decorator->setSharedFootnotes(m_index);
     if (parent) {
+        m_decorator->copyRenderOptions(*parent);
         m_decorator->isResolved = parent->isResolved;
         m_decorator->resolveAttachment = parent->resolveAttachment;
     }

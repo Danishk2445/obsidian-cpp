@@ -2,6 +2,7 @@
 
 #include "core/documents/document.h"
 #include "core/documents/document_manager.h"
+#include "core/config/vault_config.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
@@ -39,6 +40,7 @@ public:
         : m_vault(s->vault())
         , m_docs(s->documents())
         , m_meta(s->metadata())
+        , m_config(s->vaultConfig())
     {
     }
     std::optional<QString> vaultPath(const QString& absPath) const override
@@ -55,11 +57,14 @@ public:
     {
         return m_meta ? m_meta->resolver().resolve(linkpath, sourcePath) : QString();
     }
+    bool showIndentGuide() const override { return !m_config || m_config->flag(QStringLiteral("showIndentGuide")); }
+    bool strictLineBreaks() const override { return m_config && m_config->flag(QStringLiteral("strictLineBreaks")); }
 
 private:
     QPointer<Vault> m_vault;
     QPointer<DocumentManager> m_docs;
     QPointer<MetadataCache> m_meta;
+    QPointer<VaultConfig> m_config;
 };
 
 // Registers the session's host while alive and turns its events into NoteEmbeds notifications.
@@ -106,6 +111,13 @@ public:
         }
         if (MetadataCache* mc = s->metadata())
             connect(mc, &MetadataCache::resolved, this, [] { NoteEmbeds::instance().linksChanged(); });
+        if (VaultConfig* cfg = s->vaultConfig()) {
+            // rendering options: every cached layout is rebuilt (like a link change) and the live embeds repaint
+            connect(cfg, &VaultConfig::configChanged, this, [](const QString& key) {
+                if (key == u"showIndentGuide" || key == u"strictLineBreaks")
+                    NoteEmbeds::instance().linksChanged();
+            });
+        }
     }
     ~NoteEmbedBinder() override { NoteEmbeds::instance().removeHost(m_host.get()); }
 

@@ -15,7 +15,7 @@ quint64 LineDecoration::signature() const
     for (const StyleSpec& s : customStyles) {
         const QTextCharFormat& f = s.format;
         h = qHashMulti(h, f.foreground().color().rgba(), f.background().color().rgba(), f.background().style(), f.fontWeight(), f.fontItalic(),
-                       f.fontUnderline(), f.fontStrikeOut(), f.property(QTextFormat::FontPixelSize).toInt(), s.box.enabled);
+                       f.fontUnderline(), f.fontStrikeOut(), f.property(QTextFormat::FontPixelSize).toInt(), s.box.enabled, f.fontLetterSpacing());
     }
     for (const Replace& r : replaces) {
         h = qHashMulti(h, r.from, r.to, int(r.kind), r.text, int(r.style));
@@ -24,9 +24,11 @@ quint64 LineDecoration::signature() const
     }
     for (int c : guideColumns)
         h = qHashMulti(h, c);
+    for (qreal x : guidePositions)
+        h = qHashMulti(h, x, 3);
     for (int c : quoteColumns)
         h = qHashMulti(h, c, 7);
-    h = qHashMulti(h, guideOffset, hidden, fixedHeight);
+    h = qHashMulti(h, guideOffset, activeGuideColumn, hidden, fixedHeight);
     return h;
 }
 

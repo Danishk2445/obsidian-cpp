@@ -277,6 +277,22 @@ CanvasWidget::~CanvasWidget()
 void CanvasWidget::setSession(VaultSession* session)
 {
     m_session = session;
+    disconnect(m_renderOptionsConn);
+    if (VaultConfig* cfg = session ? session->vaultConfig() : nullptr) {
+        // cards render like the reading view: "showIndentGuide" / "strictLineBreaks" re-render them
+        m_renderOptionsConn = connect(cfg, &VaultConfig::configChanged, this, [this](const QString& key) {
+            if (key != u"showIndentGuide" && key != u"strictLineBreaks")
+                return;
+            m_contents.clear();
+            m_syncedRevision = ~0ull;
+            syncItems();
+            if (m_editor && m_session && m_session->vaultConfig()) {
+                m_editor->setShowIndentGuides(m_session->vaultConfig()->flag(u"showIndentGuide"_s));
+                m_editor->setStrictLineBreaks(m_session->vaultConfig()->flag(u"strictLineBreaks"_s));
+            }
+            viewport()->update();
+        });
+    }
     m_contents.clear();
     m_syncedRevision = ~0ull;
     syncItems();
@@ -320,6 +336,11 @@ LivePreviewDecorator* CanvasWidget::resolver()
             const QString dest = resolveLinkPath(linkpath);
             return dest.isEmpty() || !m_session || !m_session->vault() ? QString() : m_session->vault()->absolutePath(dest);
         };
+    }
+    if (const VaultConfig* cfg = m_session ? m_session->vaultConfig() : nullptr) {
+        // the cards' nested renderings copy these (NestedRenderer)
+        m_resolver->setIndentGuides(cfg->flag(u"showIndentGuide"_s));
+        m_resolver->setStrictLineBreaks(cfg->flag(u"strictLineBreaks"_s));
     }
     return m_resolver.get();
 }
@@ -1778,6 +1799,8 @@ void CanvasWidget::startEditing(const QString& id)
         lp->isResolved = resolver()->isResolved;
         lp->resolveAttachment = resolver()->resolveAttachment;
     }
+    m_editor->setShowIndentGuides(resolver()->indentGuides());
+    m_editor->setStrictLineBreaks(resolver()->strictLineBreaks());
     const canvasui::CanvasColor cc = canvasui::resolveColor(n->color, Palette::current());
     QColor bg = Palette::current().card;
     if (cc.themed) {

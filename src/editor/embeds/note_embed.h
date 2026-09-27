@@ -53,6 +53,10 @@ public:
     virtual const Document* openDocument(const QString& vaultPath) const = 0;   // loaded Document or null
     // Target (vault path) of a link path (no subpath) written in `sourcePath`, "" when unresolved.
     virtual QString resolveLink(const QString& linkpath, const QString& sourcePath) const = 0;
+    // The vault's rendering options (app.json "showIndentGuide" / "strictLineBreaks"); embeds of its notes render
+    // with them. When they change, the host calls NoteEmbeds::linksChanged() so cached layouts are rebuilt.
+    virtual bool showIndentGuide() const { return true; }
+    virtual bool strictLineBreaks() const { return false; }
 };
 
 // One embed rendered at one width: the box, the title, the laid-out content, the link icon.
@@ -127,6 +131,7 @@ private:
     QHash<QString, quint64> m_deps; // absPath -> content hash of every note rendered (this + nested)
     quint64 m_linkGeneration = 0;
     quint64 m_styleKey = 0;
+    int m_options = -1; // the host's rendering options it was built with (NoteEmbeds::renderOptions)
     quint64 m_lastUse = 0;
 };
 
@@ -169,6 +174,7 @@ private:
     std::shared_ptr<Snapshot> snapshot(const QString& absPath);
     std::shared_ptr<NoteEmbedLayout> build(const EmbedRequest& request, qreal width, const QStringList& chain);
     bool valid(NoteEmbedLayout& l);
+    int renderOptions(const QString& absPath) const; // the host's showIndentGuide / strictLineBreaks as bits
     void trim();
     StyleSheetPtr currentStyles(std::shared_ptr<const Theme>* theme);
 

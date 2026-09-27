@@ -176,6 +176,8 @@ LineDecoration SourceDecorator::decorate(int line)
                           : (nextCode ? LineDecoration::CodeEdge::Top : LineDecoration::CodeEdge::Single);
         d.hangingColumn = -1;
     }
+    if (m_guides && m_styles)
+        indent::decorateLine(text.lineView(line), line, m_activeIndent, 0.25, *m_styles, d); // --indentation-guide-source-indent
     if (extra)
         extra(line, d);
     return d;

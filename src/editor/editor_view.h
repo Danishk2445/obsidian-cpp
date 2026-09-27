@@ -2,6 +2,7 @@
 
 #include "core/documents/document.h"
 #include "editor/fold/fold_service.h"
+#include "editor/indent_guides.h"
 #include "render/layout/doc_layout.h"
 #include "text/selection.h"
 
@@ -50,6 +51,16 @@ public:
     // the text column (like .cm-gutters in .cm-contentContainer); the inline title keeps the full column.
     void setShowLineNumbers(bool on);
     bool showLineNumbers() const { return m_lineNumbers; }
+    // Obsidian's "Indentation guides" (app.json "showIndentGuide", on by default): the editing modes' indent units
+    // with the active list item's guide (editor/indent_guides.h), Reading view's nested-list lines.
+    void setShowIndentGuides(bool on);
+    bool showIndentGuides() const { return m_indentGuides; }
+    // Obsidian's "Strict line breaks" (app.json "strictLineBreaks", off by default): in Reading view a single line
+    // break inside a paragraph shows as a space (see LivePreviewDecorator::setStrictLineBreaks).
+    void setStrictLineBreaks(bool on);
+    bool strictLineBreaks() const { return m_strictLineBreaks; }
+    // The list item owning the main selection, whose body's guide is active (empty in Reading view / guides off).
+    const indent::ActiveRange& activeIndent() const { return m_activeIndent; }
 
     // Selection
     const Selection& selection() const { return m_sel; }
@@ -223,6 +234,10 @@ private:
     void ensureVisibleLayout();
     void restartBlink();
     void invalidateSelectionLines(const Selection& a, const Selection& b);
+    // Recomputes the active indentation guide's range for the main selection (once per selection / document
+    // change) and re-decorates the lines whose guide changed (true if any). `previous`: the old range in current
+    // coordinates.
+    bool updateActiveIndent(const indent::ActiveRange& previous);
     void emitCursor();
     void updatePrimarySelection();
     qsizetype clusterBoundary(qsizetype pos, int dir) const;
@@ -297,6 +312,9 @@ private:
     void positionFooter();
     double gutterWidth() const;
     bool m_lineNumbers = false;
+    bool m_indentGuides = true;
+    bool m_strictLineBreaks = false;
+    indent::ActiveRange m_activeIndent;
     double m_columnLeft = 0, m_columnWidth = 0; // the text column including the gutter
     int foldLineAtIndicator(const QPoint& vp);          // line whose indicator is under vp, or -1
     void setHoverLine(int line);

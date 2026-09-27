@@ -1,6 +1,7 @@
 #include "ui/views/markdown/page_preview.h"
 
 #include "core/config/config_store.h"
+#include "core/config/vault_config.h"
 #include "core/documents/document.h"
 #include "core/documents/document_manager.h"
 #include "core/metadata/link_resolver.h"
@@ -100,6 +101,10 @@ HoverPopover::HoverPopover(OverlayLayer* layer, VaultSession* session, TFile* fi
         m_editor->setObjectName(u"ocHoverPopoverEditor"_s);
         m_editor->setMode(EditorView::Mode::Reading);
         m_editor->setReadableLineLength(false);
+        if (const VaultConfig* cfg = session->vaultConfig()) { // the hover preview renders like the reading view
+            m_editor->setShowIndentGuides(cfg->flag(u"showIndentGuide"_s));
+            m_editor->setStrictLineBreaks(cfg->flag(u"strictLineBreaks"_s));
+        }
         const ThemePtr t = currentTheme();
         const double margin = t->px(u"--file-margins"_s, -1, 32);
         m_editor->setMargins(margin, margin, margin);

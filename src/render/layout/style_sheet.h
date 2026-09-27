@@ -128,6 +128,8 @@ public:
     QColor caret() const { return m_caret; }
     QColor guideColor() const { return m_guide; }
     QColor guideActiveColor() const { return m_guideActive; }
+    qreal guideWidth() const { return m_guideWidth; }             // --indentation-guide-width
+    qreal guideActiveWidth() const { return m_guideActiveWidth; } // --indentation-guide-width-active
     QColor faint() const { return m_faint; }
     QColor muted() const { return m_muted; }
     QColor hrColor() const { return m_hr; }
@@ -142,6 +144,7 @@ private:
     quint64 m_generation = 0;
     qreal m_textSize = 16, m_listIndent = 36, m_pSpacing = 16, m_listSpacing = 1.2, m_codePadX = 16;
     qreal m_quoteBar = 2, m_quoteIndent = 24, m_codeRadius = 4, m_hrThickness = 2;
+    qreal m_guideWidth = 1, m_guideActiveWidth = 1;
     QColor m_codeBg, m_quoteColor, m_selection, m_caret, m_guide, m_guideActive, m_faint, m_muted, m_hr;
     QColor m_tableBorder, m_tableHeaderBg;
 };

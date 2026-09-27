@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/indent_guides.h"
 #include "markdown/syntax_tree.h"
 #include "render/layout/decoration.h"
 #include "text/selection.h"
@@ -42,6 +43,30 @@ public:
     void setSelection(const Selection& sel) { m_sel = sel; }
     void setContentWidth(qreal w) { m_contentWidth = w; }
 
+    // Obsidian's indentation guides (app.json "showIndentGuide", on by default). Editing: every line's indent units
+    // (editor/indent_guides.h) offset by --indentation-guide-editing-indent (0 in code blocks), the unit of the
+    // list item owning the main selection (setActiveIndent) in the active colour. Reading
+    // (.markdown-rendered.show-indentation-guide li > ul::before, li > ol::before): a line down each nested list,
+    // under its parent item's marker, connecting the list's lines.
+    void setIndentGuides(bool on) { m_indentGuides = on; }
+    bool indentGuides() const { return m_indentGuides; }
+    void setActiveIndent(const indent::ActiveRange& r) { m_activeIndent = r; }
+    const indent::ActiveRange& activeIndent() const { return m_activeIndent; }
+    // app.json "strictLineBreaks" (off by default), Reading view only: Obsidian's markdown renderer runs with
+    // breaks = !strictLineBreaks. Off, every line break inside a paragraph is a line break; on, a single one is a
+    // soft break shown as a space: the paragraph's lines up to each hard break (two trailing spaces or a
+    // backslash) become one text unit (BlockRange::textRun). Live Preview's own lines aren't affected (its
+    // rendered blocks, callouts, are nested reading renderings and are).
+    void setStrictLineBreaks(bool on) { m_strictLineBreaks = on; }
+    bool strictLineBreaks() const { return m_strictLineBreaks; }
+    // Copies the rendering options above (indentation guides, strict line breaks) from another decorator: nested
+    // renderings (callout bodies, the footnotes section, canvas cards) follow their parent's.
+    void copyRenderOptions(const LivePreviewDecorator& from)
+    {
+        m_indentGuides = from.m_indentGuides;
+        m_strictLineBreaks = from.m_strictLineBreaks;
+    }
+
     // Link resolution (M3 wires the metadata cache): does a wikilink target exist?
     std::function<bool(const QString& target)> isResolved;
     // Absolute path of an embedded attachment ("image.png" -> "/vault/attachments/image.png"), "" if missing.
@@ -50,6 +75,8 @@ public:
     std::function<void(int line, LineDecoration&)> extra;
 
     LineDecoration decorate(int line) override;
+    LineDecoration decorateRun(int fromLine, int toLine) override;
+    bool hasTextRuns() const override { return m_reading && m_strictLineBreaks; }
     StyleId quickLineStyle(int line) override;
     qreal quickVerticalPadding(int line) override;
 
@@ -106,6 +133,9 @@ private:
     };
 
     bool hidesFootnoteDefinitions() const { return m_reading && m_footnoteMode != FootnoteMode::Definition; }
+    void readingGuides(int line, LineDecoration& d) const;
+    qreal markerCenter(int item) const;
+    void paragraphRuns(int fromLine, int toLine, QList<BlockRange>& out) const;
     bool previousVisibleLineBlank(int line) const;
 
     const md::DocSource* m_doc;
@@ -119,6 +149,9 @@ private:
     quint64 m_footnoteSectionKey = 0;
     Selection m_sel;
     bool m_reading = false;
+    bool m_indentGuides = true;
+    bool m_strictLineBreaks = false;
+    indent::ActiveRange m_activeIndent;
     qreal m_contentWidth = 700;
     QHash<int, FenceCache> m_fenceCache;
 };
