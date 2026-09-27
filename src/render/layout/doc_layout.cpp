@@ -32,6 +32,7 @@ void DocLayout::setContentWidth(qreal width)
         u.height = -1;
     }
     rebuildHeights();
+    refreshTrailer();
 }
 
 bool DocLayout::isHidden(int line) const
@@ -179,6 +180,24 @@ void DocLayout::setText(const Text& text)
     buildUnits(0, text.lineCount(), m_units);
     rebuildIndex();
     rebuildHeights();
+    refreshTrailer();
+}
+
+void DocLayout::refreshTrailer()
+{
+    std::shared_ptr<BlockWidget> t = m_decorator && m_styles ? m_decorator->trailer() : nullptr;
+    if (t != m_trailer) {
+        m_trailer = std::move(t);
+        m_trailerWidth = -1;
+    }
+    if (!m_trailer) {
+        m_trailerH = 0;
+        return;
+    }
+    if (m_trailerWidth != m_width) {
+        m_trailerH = m_trailer->layout(m_width);
+        m_trailerWidth = m_width;
+    }
 }
 
 void DocLayout::restructure(int from, int oldTo, int newTo)
@@ -243,6 +262,7 @@ void DocLayout::replaceLines(const Text& text, int from, int oldTo, int newTo)
 {
     m_text = text;
     restructure(from, oldTo, newTo);
+    refreshTrailer();
 }
 
 void DocLayout::invalidateLines(int from, int to)
@@ -255,6 +275,7 @@ void DocLayout::invalidateLines(int from, int to)
         return;
     // Drop text layouts; re-query blocks in the region (reveal state may have changed).
     restructure(from, to, to);
+    refreshTrailer();
 }
 
 void DocLayout::invalidateAll()
@@ -265,6 +286,8 @@ void DocLayout::invalidateAll()
     buildUnits(0, m_text.lineCount(), m_units);
     rebuildIndex();
     rebuildHeights();
+    m_trailerWidth = -1; // styles / decorator may have changed
+    refreshTrailer();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -679,6 +702,19 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         top += h;
         ++i;
     }
+    if (m_trailer && m_trailerH > 0) {
+        const double t = m_heights.total();
+        const QRectF r(0, t, m_width, m_trailerH);
+        if (ctx.clip.bottom() >= t && ctx.clip.top() <= t + m_trailerH) {
+            // clipped to what is visible, so a long trailer paints only that part (clipBoundingRect())
+            p->save();
+            p->setClipRect(QRectF(r.left() - 4, std::max(r.top(), ctx.clip.top()), r.width() + 8,
+                                  std::min(r.bottom(), ctx.clip.bottom()) - std::max(r.top(), ctx.clip.top())),
+                           Qt::IntersectClip);
+            m_trailer->paint(p, r);
+            p->restore();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -688,6 +724,8 @@ qsizetype DocLayout::hitTest(const QPointF& pt, int* assocOut)
 {
     if (m_units.empty())
         return 0;
+    if (m_trailer && pt.y() >= m_heights.total())
+        return m_text.length();
     const int ui = m_heights.indexAt(pt.y());
     measure(ui);
     const Unit& u = m_units[size_t(ui)];
@@ -864,7 +902,7 @@ QList<QRectF> DocLayout::rangeRects(qsizetype from, qsizetype to)
 
 std::optional<DocLayout::WidgetHit> DocLayout::widgetAt(const QPointF& pt)
 {
-    if (m_units.empty())
+    if (m_units.empty() || (m_trailer && pt.y() >= m_heights.total()))
         return std::nullopt;
     const int ui = m_heights.indexAt(pt.y());
     measure(ui);
@@ -896,6 +934,11 @@ std::optional<DocLayout::BlockHit> DocLayout::blockAt(const QPointF& pt)
 {
     if (m_units.empty())
         return std::nullopt;
+    if (m_trailer && pt.y() >= m_heights.total()) {
+        if (pt.y() > m_heights.total() + m_trailerH)
+            return std::nullopt;
+        return BlockHit{lineCount(), lineCount(), m_trailer, QRectF(0, m_heights.total(), m_width, m_trailerH)};
+    }
     const int ui = m_heights.indexAt(pt.y());
     measure(ui);
     const Unit& u = m_units[size_t(ui)];

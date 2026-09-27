@@ -21,6 +21,7 @@ enum class StyleId : quint16 {
     HrLine,
     CommentBlock,
     HtmlBlock,
+    FootnoteLine,        // a footnote definition line (.HyperMD-footnote: --footnote-size)
     // marks
     Formatting,          // faint markup (#, >, **, fences...)
     ListMarker,
@@ -66,8 +67,16 @@ enum class StyleId : quint16 {
     SmallText,
     LargeText,
     Monospace,
+    // footnotes
+    FootnoteMarker,      // "[^1]:" of a definition line (.cm-hmd-footnote: smallest, raised, muted)
+    FootnoteInline,      // "^[text]" in the editor (.cm-footref without the muted colour)
+    FootnoteLink,        // Reading view "[1]" (sup.footnote-ref > a.footnote-link)
+    FootnoteBackref,     // "↩︎" in the footnotes section (.footnote-backref: faint)
     Count
 };
+
+// The last line style (line styles are StyleId::Normal..LastLineStyle).
+inline constexpr StyleId LastLineStyle = StyleId::FootnoteLine;
 
 // Extra painting for marks that CSS draws with backgrounds/borders (inline code, tags, highlights).
 struct BoxStyle {
@@ -102,7 +111,7 @@ public:
 
     const StyleSpec& spec(StyleId id) const { return m_specs[size_t(id)]; }
     const LineMetrics& line(StyleId lineStyle) const;
-    bool isLineStyle(StyleId id) const { return id <= StyleId::HtmlBlock; }
+    bool isLineStyle(StyleId id) const { return id <= LastLineStyle; }
 
     quint64 generation() const { return m_generation; }
     qreal textSize() const { return m_textSize; }
@@ -129,7 +138,7 @@ public:
 
 private:
     std::array<StyleSpec, size_t(StyleId::Count)> m_specs;
-    std::array<LineMetrics, size_t(StyleId::HtmlBlock) + 1> m_lines;
+    std::array<LineMetrics, size_t(LastLineStyle) + 1> m_lines;
     quint64 m_generation = 0;
     qreal m_textSize = 16, m_listIndent = 36, m_pSpacing = 16, m_listSpacing = 1.2, m_codePadX = 16;
     qreal m_quoteBar = 2, m_quoteIndent = 24, m_codeRadius = 4, m_hrThickness = 2;

@@ -8,6 +8,7 @@ oc_add_library(oc_editor
     embeds/note_embed.cpp
     fold/fold_service.cpp
     export/pdf_exporter.cpp
+    footnotes/footnotes.cpp
     html/html_block.cpp
     html/html_inline.cpp
     html/html_parse.cpp

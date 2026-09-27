@@ -4,6 +4,7 @@
 #include "render/services/code_highlighter.h"
 #include "render/widgets/inline_widgets.h"
 #include "editor/embeds/embed_registry.h"
+#include "editor/footnotes/footnotes.h"
 #include "editor/html/html_block.h"
 #include "editor/html/html_inline.h"
 #include "editor/widgets/block_widgets.h"
@@ -88,6 +89,8 @@ StyleId LivePreviewDecorator::quickLineStyle(int line)
         const int leaf = tree.leafAt(line);
         return leaf >= 0 ? headingStyle(tree.heading(leaf).level) : StyleId::Normal;
     }
+    case LineRole::Paragraph:
+        return footnotes::isDefinitionLine(tree, m_doc->text(), line) ? StyleId::FootnoteLine : StyleId::Normal;
     case LineRole::FenceOpen:
     case LineRole::FenceBody:
     case LineRole::FenceClose:
@@ -192,11 +195,17 @@ LineDecoration LivePreviewDecorator::decorate(int line)
     const bool active = lineActive(line);
     const int leaf = tree.leafAt(line);
     d.lineStyle = quickLineStyle(line);
+    // Reading view: footnote definitions leave the flow (the footnotes section shows them).
+    if (hidesFootnoteDefinitions() && footnotes::inDefinition(tree, line)) {
+        d.hidden = true;
+        return d;
+    }
     if (codeBlockEmbed(line, leaf, role, d))
         return d; // a ```base fence (EmbedRegistry code block languages) shown as its embed
 
     // ---- container markers -----------------------------------------------------------------------
     bool inList = false;
+    bool footnoteLine = false;
     int listItemNode = -1;
     for (const md::ContainerMarker& m : tree.containerMarkers(line)) {
         switch (m.kind) {
@@ -214,13 +223,32 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         case md::ContainerMarker::Kind::ListIndent:
             inList = true;
             break;
-        case md::ContainerMarker::Kind::FootnoteLabel:
-            d.marks.push_back({m.from, m.to, StyleId::FootnoteRef});
+        case md::ContainerMarker::Kind::FootnoteLabel: {
+            // "[^label]:" (.cm-hmd-footnote); Live Preview hides "[^" and "]:" while the selection is away.
+            footnoteLine = true;
+            const int close = int(lv.indexOf(u']', m.from + 2));
+            if (m_reading) {
+                d.replaces.push_back({m.from, m.to, Replace::Kind::Hide, {}, StyleId::Normal, nullptr}); // content only
+            } else if (close > m.from + 2 && close + 2 <= m.to) {
+                const qsizetype ls = text.lineStart(line);
+                d.marks.push_back({m.from, close + 2, StyleId::FootnoteMarker});
+                if (touches(ls + m.from, ls + close + 2)) {
+                    d.marks.push_back({m.from, m.from + 2, StyleId::Formatting});
+                    d.marks.push_back({close, close + 2, StyleId::Formatting});
+                } else {
+                    d.replaces.push_back({m.from, m.from + 2, Replace::Kind::Hide, {}, StyleId::Normal, nullptr});
+                    d.replaces.push_back({close, close + 2, Replace::Kind::Hide, {}, StyleId::Normal, nullptr});
+                }
+            }
             break;
+        }
         case md::ContainerMarker::Kind::FootnoteIndent:
+            footnoteLine = true;
             break;
         }
     }
+    if (footnoteLine && d.lineStyle == StyleId::Normal)
+        d.lineStyle = StyleId::FootnoteLine; // .HyperMD-footnote
 
     if (inList) {
         d.tabStop = m_styles->listIndent();
@@ -345,7 +373,7 @@ LineDecoration LivePreviewDecorator::decorate(int line)
     case LineRole::Blank:
         if (m_reading && d.quoteColumns.isEmpty()) {
             // Reading view: paragraph spacing instead of empty lines; runs of blank lines collapse.
-            if (line > 0 && tree.role(line - 1) == LineRole::Blank)
+            if (previousVisibleLineBlank(line))
                 d.hidden = true;
             else
                 d.fixedHeight = m_styles->pSpacing();
@@ -666,9 +694,44 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
             addMark(a, b, StyleId::Tag);
             break;
         case InlineType::FootnoteRef:
-        case InlineType::InlineFootnote:
-            addMark(a, b, StyleId::FootnoteRef);
+        case InlineType::InlineFootnote: {
+            if (m_reading) {
+                // Reading view: "[1]" (or "[1-2]" for a repeat); a reference without a definition is its
+                // lowercased label as plain text (app.js's remark transformer).
+                QString label;
+                StyleId st = StyleId::FootnoteLink;
+                const std::shared_ptr<const footnotes::Index> idx = footnoteIndex();
+                const auto ref = idx && !m_sharedFootnotes ? idx->refAt(a) : std::nullopt;
+                if (ref) {
+                    if (ref->note >= 0)
+                        label = QLatin1Char('[') + footnotes::Index::refLabel(ref->note, ref->occurrence) + QLatin1Char(']');
+                } else if (idx) {
+                    // nested rendering: by label / inline text
+                    const int note = n.type == InlineType::FootnoteRef ? idx->noteForId(it->footnote(id).label)
+                                                                       : idx->noteForInlineText(text.slice(contentRange(id).first, contentRange(id).second));
+                    if (note >= 0)
+                        label = QLatin1Char('[') + footnotes::Index::refLabel(note, 0) + QLatin1Char(']');
+                }
+                if (label.isEmpty() && n.type == InlineType::FootnoteRef) {
+                    label = it->footnote(id).label.toLower();
+                    st = StyleId::Normal;
+                }
+                if (label.isEmpty()) {
+                    addHide(a, b);
+                } else if (b >= ls && a <= le) {
+                    // one substitution on the line where it starts (an inline footnote may span lines)
+                    if (a >= ls)
+                        d.replaces.push_back({int(a - colBase), int(std::min(b, le) - colBase), Replace::Kind::Text, label, st, nullptr});
+                    else
+                        addHide(a, b);
+                }
+            } else {
+                // .cm-footref: smaller and raised, "[^" / "^[" and "]" faint; a reference's label muted
+                addMark(a, b, n.type == InlineType::FootnoteRef ? StyleId::FootnoteRef : StyleId::FootnoteInline);
+                marksOf(id, false);
+            }
             break;
+        }
         case InlineType::BlockId:
             if (reading)
                 addHide(a, b);
@@ -837,6 +900,39 @@ std::optional<LivePreviewDecorator::LinkHit> LivePreviewDecorator::linkAt(qsizet
             h.kind = LinkHit::Kind::Tag;
             h.target = QLatin1Char('#') + it->tag(id).tag;
             return h;
+        case InlineType::FootnoteRef:
+        case InlineType::InlineFootnote: {
+            // Hover previews "#[^id]" (named ones); a click scrolls to the footnote in Reading view.
+            const bool named = n.type == InlineType::FootnoteRef;
+            h.kind = LinkHit::Kind::WikiLink;
+            h.target = named ? QStringLiteral("#[^") + it->footnote(id).label.toLower() + QLatin1Char(']') : QString();
+            h.anchor = QStringLiteral("fn");
+            if (m_reading) {
+                const std::shared_ptr<const footnotes::Index> idx = footnoteIndex();
+                int note = -1;
+                if (idx && !m_sharedFootnotes) {
+                    const auto ref = idx->refAt(h.from);
+                    note = ref ? ref->note : -1;
+                } else if (idx) { // nested rendering: by label / inline text
+                    int open = -1, close = -1;
+                    for (int c = n.firstChild; c >= 0; c = it->node(c).next)
+                        if (it->node(c).type == InlineType::Mark) {
+                            if (open < 0)
+                                open = c;
+                            close = c;
+                        }
+                    note = named ? idx->noteForId(it->footnote(id).label)
+                                 : open >= 0 && close > open ? idx->noteForInlineText(it->content().mid(it->node(open).to, it->node(close).from - it->node(open).to))
+                                                             : -1;
+                }
+                if (note < 0)
+                    break; // plain text in Reading view
+                h.anchor = QStringLiteral("fn-") + QString::number(note + 1);
+            } else if (!named) {
+                break; // Obsidian's editor doesn't make inline footnotes clickable
+            }
+            return h;
+        }
         default:
             break;
         }
@@ -844,6 +940,69 @@ std::optional<LivePreviewDecorator::LinkHit> LivePreviewDecorator::linkAt(qsizet
     if (const auto a = html::anchorAt(it, content, text, off))
         return LinkHit{a->external ? LinkHit::Kind::Url : LinkHit::Kind::Link, a->href, a->from, a->to};
     return std::nullopt;
+}
+
+std::shared_ptr<const footnotes::Index> LivePreviewDecorator::footnoteIndex() const
+{
+    if (m_sharedFootnotes)
+        return m_sharedFootnotes;
+    if (!m_doc)
+        return nullptr;
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const quint64 key = qHashMulti(quintptr(m_doc), m_doc->version(), tree.validUpTo(), tree.lineCount());
+    if (!m_footnotes || key != m_footnotesKey) {
+        m_footnotes = footnotes::Index::build(tree, m_doc->text());
+        m_footnotesKey = key;
+        ++m_footnotesSerial;
+    }
+    return m_footnotes;
+}
+
+std::optional<qsizetype> LivePreviewDecorator::footnoteRefPosition(const QString& anchor) const
+{
+    const std::shared_ptr<const footnotes::Index> idx = m_reading ? footnoteIndex() : nullptr;
+    return idx ? idx->refPosition(anchor) : std::nullopt;
+}
+
+bool LivePreviewDecorator::previousVisibleLineBlank(int line) const
+{
+    const md::SyntaxTree& tree = m_doc->syntax();
+    // hidden footnote definitions take no room: look past them (a bounded walk)
+    int prev = line - 1;
+    for (int steps = 0; prev >= 0 && steps < 2000 && hidesFootnoteDefinitions() && tree.role(prev) != LineRole::Blank
+                        && footnotes::inDefinition(tree, prev);
+         ++steps)
+        --prev;
+    return prev >= 0 && tree.role(prev) == LineRole::Blank;
+}
+
+std::shared_ptr<BlockWidget> LivePreviewDecorator::trailer()
+{
+    if (!m_reading || m_depth > 0 || m_footnoteMode != FootnoteMode::Document || !m_doc || !m_styles || m_sharedFootnotes) {
+        m_footnoteSection.reset();
+        return nullptr;
+    }
+    const std::shared_ptr<const footnotes::Index> idx = footnoteIndex();
+    if (!idx || idx->isEmpty()) {
+        m_footnoteSection.reset();
+        return nullptr;
+    }
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const Text& text = m_doc->text();
+    // The <hr>'s 2rem top margin collapses with the last block's --p-spacing: when the note ends with a blank
+    // line (shown as a paragraph gap) that gap already counts.
+    int last = text.lineCount() - 1;
+    while (last >= 0 && footnotes::inDefinition(tree, last))
+        --last;
+    const qreal gap = last >= 0 && tree.role(last) == LineRole::Blank ? m_styles->pSpacing() : 0;
+    const qreal topGap = std::max<qreal>(0, 32 - gap);
+    const quint64 key = qHashMulti(m_footnotesSerial, m_styles->generation(), topGap);
+    if (!m_footnoteSection || key != m_footnoteSectionKey) {
+        const StyleSheetPtr styles(std::shared_ptr<const StyleSheet>(), m_styles); // non-owning alias
+        m_footnoteSection = std::make_shared<footnotes::SectionWidget>(idx, tree, text, styles, this, topGap);
+        m_footnoteSectionKey = key;
+    }
+    return m_footnoteSection;
 }
 
 } // namespace oc

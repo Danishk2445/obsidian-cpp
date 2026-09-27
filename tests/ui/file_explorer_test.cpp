@@ -51,7 +51,7 @@ QAction* findAction(const QMenu* menu, const QString& text)
 
 const QStringList kRootOrder{
     "Archive/", "attachments/", "Daily/", "Projects/", "Templates/", "4chan thread.md", "Bash snippets.md", "Code.md", "Embeds.md",
-    "Formatting.md", "Frontmatter.md", "HTML.md", "Lists.md", "Math.md", "Quotes and callouts.md", "Tables.md", "Unicode.md", "Welcome.md",
+    "Footnotes.md", "Formatting.md", "Frontmatter.md", "HTML.md", "Lists.md", "Math.md", "Quotes and callouts.md", "Tables.md", "Unicode.md", "Welcome.md",
 };
 } // namespace
 
@@ -273,7 +273,7 @@ TEST_F(FileExplorerTest, SelectionWithAltAndShift)
     EXPECT_EQ(tree()->selectedItems(), (QList<TAbstractFile*>{m_vault->item("Lists.md")}));
     // Shift: a range from the last item Alt+clicked on (deselecting doesn't move that anchor)
     click("Embeds.md", Qt::LeftButton, Qt::ShiftModifier);
-    EXPECT_EQ(tree()->selectedItems(), (QList<TAbstractFile*>{m_vault->item("Embeds.md"), m_vault->item("Formatting.md"),
+    EXPECT_EQ(tree()->selectedItems(), (QList<TAbstractFile*>{m_vault->item("Embeds.md"), m_vault->item("Footnotes.md"), m_vault->item("Formatting.md"),
                                                               m_vault->item("Frontmatter.md"), m_vault->item("HTML.md"), m_vault->item("Lists.md"),
                                                               m_vault->item("Math.md")}));
     // a plain click clears it

@@ -95,6 +95,8 @@ public:
     virtual bool click(const QPointF& local, Qt::KeyboardModifiers mods) { Q_UNUSED(local); Q_UNUSED(mods); return false; }
     // Link under `local` ("" if none): wikilink target / URL.
     virtual QString linkAt(const QPointF& local) const { Q_UNUSED(local); return {}; }
+    // y (relative to the widget's top) of an in-document anchor it contains ("fn-1"), or -1.
+    virtual qreal anchorY(const QString& anchor) const { Q_UNUSED(anchor); return -1; }
 };
 
 struct BlockRange {
@@ -113,6 +115,9 @@ public:
     virtual qreal quickVerticalPadding(int line) { Q_UNUSED(line); return 0; }
     // Block widgets starting in [fromLine, toLine), sorted and non-overlapping.
     virtual void blockRanges(int fromLine, int toLine, QList<BlockRange>& out) { Q_UNUSED(fromLine); Q_UNUSED(toLine); Q_UNUSED(out); }
+    // A block shown after the last line (Reading view's footnotes section), or nullptr. Queried whenever the
+    // layout's text or decorations change, so it must be cheap when nothing changed.
+    virtual std::shared_ptr<BlockWidget> trailer() { return nullptr; }
 };
 
 } // namespace oc

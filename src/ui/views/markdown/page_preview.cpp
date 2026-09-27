@@ -125,6 +125,11 @@ HoverPopover::HoverPopover(OverlayLayer* layer, VaultSession* session, TFile* fi
                     return dest.isEmpty() ? QString() : s->vault()->absolutePath(dest);
                 };
             }
+            // a footnote ("#[^1]") shows its definition's content, a section no footnotes section
+            if (LivePreviewDecorator* lp = m_editor->livePreview())
+                lp->setFootnoteMode(subpath.startsWith(QLatin1String("#[^")) ? LivePreviewDecorator::FootnoteMode::Definition
+                                    : subpath.isEmpty()                      ? LivePreviewDecorator::FootnoteMode::Document
+                                                                             : LivePreviewDecorator::FootnoteMode::Section);
             m_editor->setDocument(m_doc);
             if (!subpath.isEmpty() && session->metadata()) {
                 if (const md::CachedMetadata* meta = session->metadata()->fileCache(file->path())) {

@@ -182,6 +182,7 @@ void TableWidget::paint(QPainter* p, const QRectF& rect)
                 p->fillRect(c.rect, headerBg);
             p->setPen(QPen(border, 1));
             p->drawRect(c.rect.adjusted(0.5, 0.5, -0.5, -0.5));
+            p->setPen(m_styles->line(StyleId::Normal).color); // cell text (QTextLayout draws unformatted text with the pen)
             if (c.layout)
                 c.layout->draw(p, c.rect.topLeft() + QPointF(padX, padY));
         }

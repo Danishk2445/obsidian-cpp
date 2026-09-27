@@ -1,6 +1,7 @@
 #include "editor/export/pdf_exporter.h"
 
 #include "editor/embeds/embed_registry.h"
+#include "editor/footnotes/footnotes.h"
 #include "editor/live_preview_decorator.h"
 #include "markdown/doc_source.h"
 #include "render/layout/doc_layout.h"
@@ -115,6 +116,23 @@ bool exportPdf(const Text& body, const QString& title, const QString& outPath, c
             }
         }
         line = next;
+    }
+    // The footnotes section after the last line: split between its lines.
+    if (const auto* section = dynamic_cast<const footnotes::SectionWidget*>(layout.trailer().get())) {
+        const double top = layout.trailerTop();
+        qreal lastFit = pageStart;
+        for (const qreal b : section->breakPoints()) {
+            const qreal y = top + b;
+            if (y - pageStart > pageH) {
+                pageStart = lastFit > pageStart ? lastFit : pageStart + pageH;
+                breaks.push_back(pageStart);
+            }
+            lastFit = y;
+        }
+    }
+    while (total - pageStart > pageH) {
+        pageStart += pageH;
+        breaks.push_back(pageStart);
     }
 
     QPainter p;

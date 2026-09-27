@@ -71,7 +71,7 @@ public:
 
     const Text& text() const { return m_text; }
     int lineCount() const { return int(m_lineToUnit.size()); }
-    double totalHeight() const { return m_heights.total(); }
+    double totalHeight() const { return m_heights.total() + trailerHeight(); }
     double lineTop(int line) const;
     double lineHeight(int line) const;              // height of the unit containing the line
     int lineAtY(double y) const;                    // first line of the unit at y
@@ -117,6 +117,13 @@ public:
     int laidOutCount() const;
     int unitCount() const { return int(m_units.size()); }
 
+    // The decorator's trailer (LineDecorator::trailer(): Reading view's footnotes section), laid out after the
+    // last line. totalHeight() includes it; hitTest() maps it to the end of the text and blockAt() reports it
+    // with fromLine == toLine == lineCount().
+    const std::shared_ptr<BlockWidget>& trailer() const { return m_trailer; }
+    double trailerTop() const { return m_heights.total(); }
+    double trailerHeight() const { return m_trailer ? m_trailerH : 0; }
+
 private:
     struct Unit {
         int firstLine = 0;
@@ -136,6 +143,7 @@ private:
     void layoutText(UnitLayout& ul, const LineMetrics& lm);
     int visualLineIndex(const UnitLayout& ul, int dispPos) const;
     void restructure(int fromLine, int oldToLine, int newToLine);
+    void refreshTrailer();
     int unitOfLine(int line) const { return m_lineToUnit[size_t(std::clamp(line, 0, lineCount() - 1))]; }
 
     bool isHiddenUnit(const Unit& u) const { return !u.block && isHidden(u.firstLine); }
@@ -149,6 +157,9 @@ private:
     std::vector<Unit> m_units;
     std::vector<int> m_lineToUnit;
     HeightMap m_heights;
+    std::shared_ptr<BlockWidget> m_trailer;
+    double m_trailerH = 0;
+    qreal m_trailerWidth = -1; // width m_trailerH was measured for
 };
 
 } // namespace oc

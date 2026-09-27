@@ -16,6 +16,10 @@ NestedRenderer::NestedRenderer(const Text& text, StyleSheetPtr styles, int depth
     if (parent) {
         m_decorator->isResolved = parent->isResolved;
         m_decorator->resolveAttachment = parent->resolveAttachment;
+        // footnote references in a callout body are numbered with the note's (Reading view only: the editor
+        // doesn't number them)
+        if (parent->reading())
+            m_decorator->setSharedFootnotes(parent->footnoteIndex());
     }
     m_layout.setDecorator(m_decorator.get());
     m_layout.setStyleSheet(std::move(styles));
@@ -54,6 +58,8 @@ QString NestedRenderer::linkAt(const QPointF& local) const
 {
     const qsizetype pos = m_layout.hitTest(local);
     auto hit = m_decorator->linkAt(pos);
+    if (hit && !hit->anchor.isEmpty()) // a footnote reference: its footnote in the note's footnotes section
+        return hit->anchor.startsWith(QLatin1String("fn-")) ? QLatin1Char('#') + hit->anchor : QString();
     return hit ? hit->target : QString();
 }
 
@@ -63,7 +69,7 @@ std::optional<std::pair<QString, int>> NestedRenderer::linkHitAt(const QPointF& 
         return std::nullopt;
     const qsizetype pos = m_layout.hitTest(local);
     const auto hit = m_decorator->linkAt(pos);
-    if (!hit)
+    if (!hit || !hit->anchor.isEmpty()) // footnote references aren't links to follow
         return std::nullopt;
     using K = LivePreviewDecorator::LinkHit::Kind;
     int kind = 0;

@@ -688,6 +688,33 @@ void EditorView::scrollToPos(qsizetype pos, bool center)
     }
 }
 
+bool EditorView::scrollToAnchor(const QString& anchor)
+{
+    if (!m_doc || anchor.isEmpty())
+        return false;
+    auto anchorY = [&]() -> double {
+        if (const auto pos = m_lp->footnoteRefPosition(anchor))
+            return m_layout.caretRect(*pos).center().y();
+        if (const std::shared_ptr<BlockWidget>& t = m_layout.trailer())
+            if (const qreal ty = t->anchorY(anchor); ty >= 0)
+                return m_layout.trailerTop() + ty;
+        return -1;
+    };
+    double y = anchorY();
+    if (y < 0)
+        return false;
+    // like Element.scrollIntoView({block: "center"}); laying out the lines that come into view replaces height
+    // estimates above the target, so aim again
+    for (int i = 0; i < 3 && y >= 0; ++i) {
+        setScrollTop(y - viewport()->height() / 2.0);
+        const double again = anchorY();
+        if (std::abs(again - y) < 0.5)
+            break;
+        y = again;
+    }
+    return true;
+}
+
 QJsonObject EditorView::ephemeralState() const
 {
     if (!m_doc)
@@ -1823,6 +1850,8 @@ void EditorView::mousePressEvent(QMouseEvent* e)
                 return;
             }
             const QString link = bh->widget->linkAt(local);
+            if (link.startsWith(QLatin1String("#fn")) && m_mode == Mode::Reading && scrollToAnchor(link.mid(1)))
+                return; // a footnote back-link / reference
             if (!link.isEmpty()) {
                 emit linkActivated(link, 0, e->modifiers() & Qt::ControlModifier);
                 return;
@@ -2003,6 +2032,8 @@ bool EditorView::handleLinkClick(qsizetype pos, Qt::KeyboardModifiers mods)
     auto hit = m_lp->linkAt(pos);
     if (!hit)
         return false;
+    if (!hit->anchor.isEmpty()) // a footnote reference: Reading view scrolls to the footnote, the editor places the cursor
+        return m_mode == Mode::Reading && scrollToAnchor(hit->anchor);
     // In live preview a link is followed only when it's rendered (not being edited).
     if (m_mode == Mode::LivePreview) {
         bool active = false;

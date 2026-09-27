@@ -89,6 +89,7 @@ protected:
         writeFile(root + "/Welcome.md", "Read [[Other#Sub]] now.\n\nAnd [[Other]] too.\n");
         writeFile(root + "/Other.md", "# Head\ntext\n## Sub\nsub text [[Third]]\nmore\n# Next\nafter\n");
         writeFile(root + "/Third.md", "third note\n");
+        writeFile(root + "/Notes.md", "Text with a footnote[^a] here.\n\n[^a]: The footnote's content.\n");
         session = std::make_unique<VaultSession>(QStringLiteral("0123456789abcdef"), root);
         vault = new Vault(root);
         docs = new DocumentManager(vault);
@@ -185,6 +186,30 @@ TEST_F(PagePreviewTest, ReadingViewHoverShowsSection)
     if (const QByteArray dir = qgetenv("OC_SHOT_DIR"); !dir.isEmpty())
         window->grab().save(QString::fromLocal8Bit(dir) + "/page_preview.png");
     // leaving the link and the popover hides it
+    hover(e, QPoint(5, e->viewport()->height() - 5));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return preview->popovers().isEmpty(); }, 2000));
+}
+
+TEST_F(PagePreviewTest, FootnoteReferenceShowsTheFootnote)
+{
+    MarkdownView* mv = open("Notes.md", EditorView::Mode::Reading);
+    ASSERT_TRUE(mv);
+    EditorView* e = mv->editor();
+    ASSERT_TRUE(QTest::qWaitFor([&] { return meta->fileCache("Notes.md") && e->livePreview()->linkAt(22).has_value(); }, 2000));
+    // "[1]" in Reading view
+    hover(e, pointAt(e, "[^a]"));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return preview->popovers().size() == 1; }, 2000));
+    HoverPopover* p = preview->popovers().first();
+    EXPECT_EQ(p->file()->path(), "Notes.md");
+    EXPECT_EQ(p->subpath(), "#[^a]");
+    ASSERT_TRUE(p->editor());
+    EXPECT_EQ(p->editor()->visibleLineRange(), qMakePair(2, 2));
+    // the definition shows (its content, without the marker); no footnotes section in the popover
+    ASSERT_TRUE(p->editor()->livePreview());
+    EXPECT_EQ(p->editor()->livePreview()->footnoteMode(), LivePreviewDecorator::FootnoteMode::Definition);
+    EXPECT_FALSE(p->editor()->livePreview()->decorate(2).hidden);
+    EXPECT_EQ(p->editor()->layout().trailer(), nullptr);
+    EXPECT_GT(p->editor()->layout().lineHeight(2), 0);
     hover(e, QPoint(5, e->viewport()->height() - 5));
     ASSERT_TRUE(QTest::qWaitFor([&] { return preview->popovers().isEmpty(); }, 2000));
 }
