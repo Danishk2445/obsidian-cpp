@@ -65,7 +65,9 @@
 - Code tokens: comment faint, function yellow, keyword pink, operator red, property cyan, string green, tag red, value purple, punctuation muted.
 - Quote: 2px interactive-accent bar plus 24px padding. HR: 2px, border color.
 - Checkbox: text size, radius 4, fill interactive-accent.
-- Lists: indent 2.25em, bullet .3em faint.
+- Lists: indent 2.25em, bullet .3em faint, spacing .075em (li / list line padding).
+  - Reading: ul/ol padding 0, margin-block p-spacing (0 when nested); li margin-inline-start 3ch, 2.25em in `ul ul` / `ol ol`; bullet float at -.8em; `::marker` "N. " tabular-nums; ul task checkbox margin-start -1.5×size, margin-end .6em, top .2em; blockquote 2px + 24px; guide `li > ul::before` at -.85em.
+  - Editor: marker token padding .75em (Live Preview, --list-indent-editing) / 0 (Source), tabular-nums; list line tab-size 2.25em; continuation's last spacing unit padding .75em + marker-space (.25em LP, 0 Source); task label -.25em, checkbox margin .85em / .25em, vertical-align middle, top -.1em; hanging indent = floor(x after `^([>\s]*)(([*+-] |\d+[.)] )(\[.\] )?)?`).
 - Embeds: 2px accent bar, 24px padding. Table cells: padding 4 8, 1px border.
 - Callouts: background = callout color at 10%, radius 4, padding 12 12 12 24, bold colored title, 16px icon.
 - Callout colors: note, info and todo blue; tip, important and summary cyan; success green; question and warning orange; fail, error and bug red; example purple; quote #9e9e9e.

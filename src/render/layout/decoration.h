@@ -46,8 +46,9 @@ struct Replace {
 };
 
 // A widget outside the text flow, at a fixed x on a line's first visual line (CSS floats and outside markers:
-// Reading view's list bullets, numbers and checkboxes). It sits on the first visual line's baseline like an
-// inline widget; [from, to) are the source columns it stands for (a checkbox click toggles column from + 1).
+// Reading view's list bullets, numbers and checkboxes). It sits on the baseline a plain text line has at the top of
+// the first visual line (a tall inline widget doesn't move it down); [from, to) are the source columns it stands
+// for (a checkbox click toggles column from + 1).
 struct FloatWidget {
     qreal x = 0; // px, text column coordinates (may be negative: in the left margin)
     std::shared_ptr<InlineWidget> widget;

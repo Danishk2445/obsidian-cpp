@@ -19,6 +19,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QFontMetricsF>
+#include <QImage>
 #include <QTemporaryDir>
 #include <QTest>
 #include <gtest/gtest.h>
@@ -121,7 +122,9 @@ struct Note {
                 if (rect) {
                     const LineMetrics& lm = layout.styleSheet()->line(deco(line).lineStyle);
                     const QSizeF s = w->size(lm);
-                    *rect = QRectF(f.x, ul(line).lines.first().baseline - w->ascent(lm), s.width(), s.height());
+                    // (floats sit on a plain line's baseline at the top of the first visual line)
+                    const qreal baseline = ul(line).lines.first().y + (lm.lineBox - (lm.ascent + lm.descent)) / 2 + lm.ascent;
+                    *rect = QRectF(f.x, baseline - w->ascent(lm), s.width(), s.height());
                 }
                 return w;
             }
@@ -468,6 +471,40 @@ TEST(ListGeometry, ReadingSpacing)
     EXPECT_NEAR(two.deco(0).paddingBottom + two.deco(1).paddingTop, p + 2 * s, 0.01);
 }
 
+TEST(ListGeometry, ReadingEmptyFirstLineAndTallLines)
+{
+    Env env;
+    const qreal ch3 = 3 * env.styles->ch();
+    // "-" then the content indented on the next line: one <li>, the marker on the content's line
+    Note n(QStringLiteral("- a\n-\n  below\n-\n- d\n"), env.styles, EditorView::Mode::Reading);
+    EXPECT_TRUE(n.deco(1).hidden);
+    ASSERT_TRUE(n.floating<BulletWidget>(2));
+    EXPECT_NEAR(n.textX(2), ch3, 0.01);
+    EXPECT_NEAR(n.deco(2).paddingTop, env.styles->listSpacing(), 0.01);
+    // an empty item keeps its line and bullet
+    EXPECT_FALSE(n.deco(3).hidden);
+    EXPECT_TRUE(n.floating<BulletWidget>(3));
+    EXPECT_NEAR(n.layout.lineHeight(3), env.lm().lineBox + 2 * env.styles->listSpacing(), 0.01);
+    // a float sits at the top of its line (the top of the li) even when a tall inline widget pushes the baseline down
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    QImage img(40, 120, QImage::Format_RGB32);
+    img.fill(Qt::red);
+    ASSERT_TRUE(img.save(dir.filePath(QStringLiteral("tall.png"))));
+    Note tall(QStringLiteral("- ![[tall.png]] x\n"), env.styles, EditorView::Mode::Reading);
+    tall.lp.resolveAttachment = [&](const QString&) { return dir.filePath(QStringLiteral("tall.png")); };
+    tall.relayout();
+    const DocLayout::UnitLayout& ul = tall.ul(0);
+    const LineMetrics& lm = env.lm();
+    ASSERT_GT(ul.lines[0].baseline, ul.lines[0].y + 100); // the image made the line tall
+    const FloatWidget& f = ul.deco.floatWidgets.first();
+    const qreal dotY = ul.lines[0].y + lm.lineBox / 2; // the middle of a plain line box at the line's top
+    const auto hit = tall.layout.widgetAt(QPointF(f.x + env.styles->listBulletSize() / 2, tall.lineTop(0) + dotY));
+    ASSERT_TRUE(hit);
+    EXPECT_TRUE(dynamic_cast<const BulletWidget*>(hit->widget.get()));
+    EXPECT_NEAR(hit->rect.top(), tall.lineTop(0) + ul.lines[0].y + (lm.lineBox - lm.ascent - lm.descent) / 2, 0.01);
+}
+
 TEST(ListGeometry, ReadingQuotesAndNestedContainers)
 {
     Env env;
@@ -550,7 +587,8 @@ TEST_F(ListGeometryViewTest, ReadingCheckboxClickToggles)
     ASSERT_EQ(ul->deco.floatWidgets.size(), 1);
     const FloatWidget& f = ul->deco.floatWidgets.first();
     const LineMetrics& lm = l.styleSheet()->line(StyleId::Normal);
-    const QRectF rect(f.x, l.lineTop(0) + ul->lines.first().baseline - f.widget->ascent(lm), f.widget->size(lm).width(), f.widget->size(lm).height());
+    const qreal baseline = ul->lines.first().y + (lm.lineBox - (lm.ascent + lm.descent)) / 2 + lm.ascent;
+    const QRectF rect(f.x, l.lineTop(0) + baseline - f.widget->ascent(lm), f.widget->size(lm).width(), f.widget->size(lm).height());
     const QRectF box = static_cast<const CheckboxWidget*>(f.widget.get())->boxRect(rect, lm);
     const auto hit = l.widgetAt(box.center());
     ASSERT_TRUE(hit);

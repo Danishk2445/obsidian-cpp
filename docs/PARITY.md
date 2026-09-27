@@ -210,21 +210,46 @@ Open parity questions:
   the main selection (continuation lines walk up, its body = marker-width continuations and deeper lines) draws its
   body's guide in --indentation-guide-color-active, recomputed once per selection / edit (only lines whose guide
   changes are re-decorated). `.cm-indent`'s min-width: var(--list-indent) widens four-space units (so space-indented
-  lists nest like tab-indented ones) and TABs outside list lines. Reading view, hover previews, note embeds, Live
-  Preview callouts, canvas cards and PDF export draw `li > ul::before`: a line down each nested list (blank lines
-  between its items included) under the parent item's bullet / number / checkbox.
+  lists nest like tab-indented ones) and TABs outside list lines, so Live Preview guides run through the parent's
+  bullet. Reading view, hover previews, note embeds, Live Preview callouts, canvas cards and PDF export draw
+  `li > ul::before`: a line down each nested list at --indentation-guide-reading-indent (-0.85em) from its start, i.e.
+  through the parent item's bullet / number / checkbox.
 - ✅ Strict line breaks ("strictLineBreaks", applied live): off (default), every line break inside a paragraph is a
   line break; on, Reading view, hover previews, note embeds, Live Preview's rendered callouts, canvas cards and PDF
   export join a paragraph's lines up to each hard break (two trailing spaces, a trailing backslash) and show each soft
   break as a space (the lines' container markers and surrounding whitespace dropped). Live Preview's own lines keep
   their breaks, like Obsidian (its markdown renderer's `breaks` option doesn't reach CodeMirror). A backslash hard
   break's `\` no longer shows in rendered views.
-- Differences (guides / breaks): Live Preview list bullets have no --list-indent-editing (0.75em) lead padding in this
-  clone, so Live Preview guides (at Obsidian's 0.85em) fall under the parent's text start rather than through its
-  bullet; the Reading view guide is placed under the clone's own bullet (its list geometry isn't Obsidian's `ul`
-  padding). Obsidian's `.HyperMD-list-line-nobullet .cm-indent-spacing:last-child` padding, the min-width of a TAB
-  after a quote marker, and Bases' list-view guides aren't reproduced. A hard break is detected lexically (a code
-  span or HTML tag across the line end isn't told apart).
+- Differences (guides / breaks): the min-width of a TAB after a quote marker and Bases' list-view guides aren't
+  reproduced; a Reading view guide ends with its line (the parent item's --list-spacing bottom padding included when
+  both end there, 1.2px). A hard break is detected lexically (a code span or HTML tag across the line end isn't told
+  apart).
+- ✅ List geometry (app.css, 16px text). Live Preview / Source keep the source indentation (CM6 lines): list lines
+  tab-size --list-indent, --list-spacing above and below (not above a continuation line); the marker token (marker +
+  following whitespace, `font-variant-numeric: tabular-nums` — Inter's hyphen is tabular too) has padding-inline-start
+  --list-indent-editing (0.75em) in Live Preview, 0 in Source; a bullet is the transparent "-" with a 0.3em disc
+  centred in it (the "-" shows while the selection touches the token); ordered markers stay text; a task's "- " and
+  "[ ]" become the checkbox label (-0.25em + --checkbox-margin-inline-start 0.85em, a 1em box, 0.25em after,
+  vertical-align middle, top -0.1em), an ordered task keeps its number; the revealed "[ ]" is monospace and muted;
+  only "x" / "X" tasks are struck through. With guides on, a continuation line's last spacing unit gets
+  --list-indent-editing + --list-marker-space (0.25em Live Preview, 0 Source). Wrapped lines hang under Obsidian's list
+  prefix match (quote markers, whitespace, "- " / "1. ", "[x] "), floored to a pixel, on every non-code line.
+- ✅ Reading view (and hover previews, note embeds, callouts, canvas cards, PDF export) nests by depth, not source
+  columns: ul/ol padding 0, li margin-inline-start 3ch (--list-indent in a list nested in one of its own type, `ul ul`
+  / `ol ol`, 3ch when mixed), blockquotes border 2px + padding 24px; the source prefix is hidden and paragraph lines
+  lose their leading whitespace. Bullets float at -0.8em (a 0.3em disc), numbers are outside markers ending at the
+  content start ("N. " in tabular figures, counted from the list's start), ul task checkboxes at -1.5 * --checkbox-size
+  with 0.6em after and top 0.2em (the text starts 1.6px in, wrapped lines at the content edge), ol task checkboxes
+  inline after the number. li padding --list-spacing; loose lists show no gap between items (li p:first/last-of-type),
+  only between two paragraphs of one item; a list right after or before another block of its container keeps
+  --p-spacing (margins collapse). An item whose first line is only its marker shows it on the content's line; a click
+  on a checkbox toggles it (above the fold indicator).
+- Differences (lists): Live Preview's fold chevron keeps its position for list lines (Obsidian moves it 5px right and
+  lets a click on an inactive bullet fold, --list-bullet-end-padding); an ordered task's checkbox gets the 0.85em
+  margin (read from CM6's decoration order: the marks of a token a widget replaces don't wrap it, so Obsidian's
+  `.cm-formatting-list-ol > .task-list-label { margin-inline-start: 2px }` is taken as dead CSS; unverified); a heading as an item's first line puts the marker in the heading's font;
+  the Live Preview bullet shows as "-" only while the selection touches the marker token (Obsidian's reveal group also
+  spans formatting tokens right after it, e.g. "- **").
 - ✅ Show editing mode in status bar (the "editor-status" core plugin switch hides the mode toggle).
 - 🟡 Stored but not applied yet: RTL, native menus (menus are always Qt menus styled like Obsidian's). URI callbacks:
   Obsidian only calls x-success for the "new" and "hook-get-address" actions, and the clone handles "open" only (a

@@ -9,10 +9,12 @@
 namespace oc {
 
 namespace {
-// A float widget's rect (unit coordinates): on the first visual line's baseline, like an inline widget.
+// A float widget's rect (unit coordinates): at the top of the first visual line, on the baseline a plain text line
+// has there (a CSS float at the top of its box, whatever the line's tall inline widgets do to its baseline).
 QRectF floatRect(const FloatWidget& f, const DocLayout::UnitLayout& ul, const LineMetrics& lm)
 {
-    const qreal baseline = ul.lines.isEmpty() ? lm.ascent : ul.lines.first().baseline;
+    const qreal top = ul.lines.isEmpty() ? 0 : ul.lines.first().y;
+    const qreal baseline = top + (lm.lineBox - (lm.ascent + lm.descent)) / 2 + lm.ascent;
     const QSizeF size = f.widget->size(lm);
     return QRectF(f.x, baseline - f.widget->ascent(lm), size.width(), size.height());
 }

@@ -144,6 +144,18 @@ Interfaces other modules/agents build against. Change deliberately and update al
   first line: layout columns of a text run count from there — code that maps a line's columns through `layoutFor()`
   must use it). `NoteEmbedHost::showIndentGuide()` / `strictLineBreaks()` (virtual, defaults true / false; layouts are
   rebuilt when they change), `PdfExportContext::showIndentGuide` / `strictLineBreaks`.
+- List geometry (Obsidian's CSS, see PARITY "List geometry"), additive: `LineDecoration::floatWidgets` (`FloatWidget`
+  {x, widget, from, to}: widgets outside the text flow on the first visual line, at the top-of-line baseline; painted
+  and hit-tested by `DocLayout` — `widgetAt()` reports them with from / to as docFrom / docTo) and
+  `LineDecoration::quoteBars` (fixed-x quote bars); `hangingColumn` is now floored to a pixel (Obsidian's K);
+  `StyleSheet::listIndentEditing()` / `listBulletSize()` / `checkboxSize()` / `checkboxMarginStart()` / `ch()` /
+  `listMarkerColor()`; the `ListMarker` style carries tabular-nums. Widgets (render/widgets/inline_widgets.h, all users
+  updated): `BulletWidget(color, width, centerX, dotPx)` + `dotCenter()`, `CheckboxWidget(status, size, lead,
+  marginEnd, raise)` + `boxRect(rect, lineMetrics)`, new `SpacerWidget(width)` (CSS padding in the flow) and
+  `MarkerTextWidget(text, color, tabularNums)` (an outside `::marker`). `indent::hangingPrefix(line)` (Obsidian's
+  list-prefix match for the hanging indent) and `indent::lastSpacingUnit(line)` (the continuation padding's unit).
+  Reading-view lines are placed by `LivePreviewDecorator`'s container chain (`LineDecoration::indent`), so code that
+  maps a Reading-view column to x must go through the layout (the source prefix is hidden).
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,
   `line`, `match{content, matches}`, `rename`, `focus`), static `openLinkText(ws, target, kind, sourcePath,
   newLeaf)` and `setTagHandler`. `editor_suggest.h` (the "[[", "#", "[^" popups), `page_preview.h`

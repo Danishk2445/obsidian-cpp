@@ -27,7 +27,10 @@ class Index;
 // Obsidian "Live Preview" (and Reading) decorations. Markdown syntax is hidden unless the selection
 // touches the element (inline) or the line (headings, quotes, fences, HR), bullets/checkboxes/math/
 // images become widgets, links show their display text. In reading mode nothing is active and
-// comments/block ids are hidden.
+// comments/block ids are hidden. List geometry follows Obsidian's CSS: Live Preview keeps the source
+// indentation (CM6 lines) with the marker padding, tab stops and hanging indent of its editor; Reading view
+// places a line by its blockquotes and list items (readingChain()), hiding the source prefix, with the list
+// markers as float widgets (LineDecoration::floatWidgets) and the quote bars at fixed positions.
 class LivePreviewDecorator : public LineDecorator {
 public:
     explicit LivePreviewDecorator(const md::DocSource* doc) : m_doc(doc) {}
@@ -48,7 +51,7 @@ public:
     // (editor/indent_guides.h) offset by --indentation-guide-editing-indent (0 in code blocks), the unit of the
     // list item owning the main selection (setActiveIndent) in the active colour. Reading
     // (.markdown-rendered.show-indentation-guide li > ul::before, li > ol::before): a line down each nested list,
-    // under its parent item's marker, connecting the list's lines.
+    // -0.85em from its start (through the parent item's marker), connecting the list's lines.
     void setIndentGuides(bool on) { m_indentGuides = on; }
     bool indentGuides() const { return m_indentGuides; }
     void setActiveIndent(const indent::ActiveRange& r) { m_activeIndent = r; }
@@ -157,6 +160,7 @@ private:
     void readingLayout(int line, md::LineRole role, const ReadingChain& chain, LineDecoration& d);
     void readingGuides(int line, const ReadingChain& chain, LineDecoration& d) const;
     bool blankBetweenListItems(int line) const;
+    int itemMarkerLine(int item) const;
     int lastContentLine(int node) const;
     bool blockNextTo(int line, int container, int dir) const;
     int listNumber(int item) const;

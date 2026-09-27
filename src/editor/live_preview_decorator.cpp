@@ -334,11 +334,16 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         if (m_reading) {
             // Reading view: paragraph spacing instead of empty lines; runs of blank lines collapse. In a loose
             // list the items' paragraphs lose their outer margins (li p:first-of-type / :last-of-type), so a
-            // blank line before an item leaves no gap.
-            if (blankBetweenListItems(line) || previousVisibleLineBlank(line))
+            // blank line before an item leaves no gap. A marker alone is an item's line (an empty item), unless the
+            // item's content follows on the next line: that line shows the marker (one <li>).
+            if (markerLine) {
+                if (listItemNode >= 0 && itemMarkerLine(listItemNode) != line)
+                    d.hidden = true;
+            } else if (blankBetweenListItems(line) || previousVisibleLineBlank(line)) {
                 d.hidden = true;
-            else
+            } else {
                 d.fixedHeight = m_styles->pSpacing();
+            }
         }
         break;
     default:
@@ -579,7 +584,10 @@ void LivePreviewDecorator::readingLayout(int line, LineRole role, const ReadingC
     d.indent = chain.x;
     d.quoteBars = chain.quoteBars;
     d.hangingColumn = -1; // wrapped lines start at the box's content edge
-    if (d.hidden || role == LineRole::Blank)
+    bool startsItem = false;
+    for (const ReadingItem& item : chain.items)
+        startsItem |= itemMarkerLine(item.node) == line;
+    if (d.hidden || (role == LineRole::Blank && !startsItem))
         return;
 
     // The source's container markers, indentation and list marker aren't shown; a paragraph's lines lose their
@@ -593,11 +601,11 @@ void LivePreviewDecorator::readingLayout(int line, LineRole role, const ReadingC
         const md::BlockNode& n = tree.node(item.node);
         if (lastContentLine(item.node) == line)
             d.paddingBottom += m_styles->listSpacing(); // li { padding-bottom: var(--list-spacing) }
-        if (n.fromLine != line)
+        if (itemMarkerLine(item.node) != line)
             continue;
         d.paddingTop += m_styles->listSpacing(); // li { padding-top: var(--list-spacing) }
         const md::ListItemInfo li = tree.listItem(item.node);
-        const bool task = (n.flags & md::FlagTask) && li.taskFrom >= 0 && li.taskFrom + 3 <= len;
+        const bool task = n.fromLine == line && (n.flags & md::FlagTask) && li.taskFrom >= 0 && li.taskFrom + 3 <= len;
         int textFrom = task ? li.taskFrom + 3 : len;
         while (textFrom < len && (lv[textFrom] == u' ' || lv[textFrom] == u'\t'))
             ++textFrom;
@@ -647,7 +655,8 @@ void LivePreviewDecorator::readingLayout(int line, LineRole role, const ReadingC
         const int container = tree.parent(list);
         if (container < 0 || tree.node(container).type == NodeType::ListItem)
             continue;
-        if (tree.node(list).fromLine == line && blockNextTo(line, container, -1))
+        const int first = tree.firstChild(list);
+        if (first >= 0 && itemMarkerLine(first) == line && blockNextTo(tree.node(list).fromLine, container, -1))
             d.paddingTop += m_styles->pSpacing();
         if (lastContentLine(list) == line && blockNextTo(line, container, 1))
             d.paddingBottom += m_styles->pSpacing();
@@ -709,6 +718,17 @@ bool LivePreviewDecorator::blankBetweenListItems(int line) const
         if (m.kind == md::ContainerMarker::Kind::ListMarker)
             return true;
     return false;
+}
+
+int LivePreviewDecorator::itemMarkerLine(int item) const
+{
+    // An item whose first line holds only its marker ("-", its content indented on the next line) is one <li> whose
+    // content starts on the next line: the marker shows there.
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const md::BlockNode& n = tree.node(item);
+    if (tree.role(n.fromLine) == LineRole::Blank && n.fromLine + 1 < n.toLine && tree.role(n.fromLine + 1) != LineRole::Blank)
+        return n.fromLine + 1;
+    return n.fromLine;
 }
 
 int LivePreviewDecorator::lastContentLine(int node) const
