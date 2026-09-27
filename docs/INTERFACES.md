@@ -127,6 +127,19 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `src/editor/footnotes/footnotes.h` (not frozen): `footnotes::Index` (Obsidian's numbering), `SectionWidget`.
 - `src/ui/overlay/suggest_modal.h` — `SuggestModal` (Obsidian's prompt), `SuggestionList`, `PromptInstructions`;
   `overlay_layer.h` — in-window overlays + notices.
+- Indentation guides / strict line breaks (app.json "showIndentGuide" / "strictLineBreaks"), additive:
+  `EditorView::setShowIndentGuides` / `showIndentGuides` / `setStrictLineBreaks` / `strictLineBreaks` / `activeIndent()`
+  (MarkdownView applies both live); `LivePreviewDecorator::setIndentGuides` / `setActiveIndent` / `setStrictLineBreaks`
+  / `copyRenderOptions(parent)` (nested renderings copy their parent's), `SourceDecorator::setIndentGuides` /
+  `setActiveIndent`; `src/editor/indent_guides.h` (not frozen: Obsidian's unit walk `forEachUnit`, `activeRange`,
+  `changedLines`, `decorateLine`). Render layer: `LineDecoration::activeGuideColumn` (drawn in
+  --indentation-guide-color-active) and `guidePositions` (fixed-x guides: Reading view's nested lists),
+  `StyleSheet::guideWidth()` / `guideActiveWidth()`; text runs: `BlockRange::textRun` (no widget: lines laid out as ONE
+  text unit), `LineDecorator::decorateRun(from, to)` (one decoration over the lines joined with '\n', columns from the
+  first line's start; an uncovered '\n' shows as a space) and `hasTextRuns()`, `DocLayout::unitStart(line)` (a unit's
+  first line: layout columns of a text run count from there — code that maps a line's columns through `layoutFor()`
+  must use it). `NoteEmbedHost::showIndentGuide()` / `strictLineBreaks()` (virtual, defaults true / false; layouts are
+  rebuilt when they change), `PdfExportContext::showIndentGuide` / `strictLineBreaks`.
 - `src/ui/views/markdown/markdown_view.h` — `MarkdownView` (view state `{file, mode, source}`, eState `subpath`,
   `line`, `match{content, matches}`, `rename`, `focus`), static `openLinkText(ws, target, kind, sourcePath,
   newLeaf)` and `setTagHandler`. `editor_suggest.h` (the "[[", "#", "[^" popups), `page_preview.h`
