@@ -1184,6 +1184,8 @@ void TabGroupWidget::updateTabs()
     m_header->update();
     for (StackedTabHeader* s : std::as_const(m_spines))
         s->update();
+    for (QWidget* shadow : std::as_const(m_shadows))
+        shadow->update();
 }
 
 void TabGroupWidget::releaseLeaves()
