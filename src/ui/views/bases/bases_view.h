@@ -46,6 +46,7 @@ private:
 
     BasesController* m_controller;
     QString m_lastText;   // the file's text as last read or written
+    bool m_textLoaded = false; // m_lastText is this file's
     QString m_pending;    // text to write
     QTimer m_saveTimer;
     QMetaObject::Connection m_modifiedConn;

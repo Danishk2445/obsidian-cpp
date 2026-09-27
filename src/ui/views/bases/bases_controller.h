@@ -67,6 +67,9 @@ public:
 
     QString viewName() const { return m_viewName; }
     void selectView(const QString& name);
+    // Another base is about to be shown: the next setBase() selects its first view (or the one
+    // selectView() asks for) and the remembered per-view scroll states are dropped.
+    void resetView();
     const bases::BaseView* currentView() const;
     void setThisFile(const QString& path);
     QString thisFile() const;

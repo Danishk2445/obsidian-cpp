@@ -63,6 +63,12 @@ void BasesFileView::loadFile(TFile* file)
 {
     if (m_saveTimer.isActive())
         save();
+    if (file != m_file) {
+        // another base in this tab: its first view unless the state names one
+        m_controller->resetView();
+        m_lastText.clear();
+        m_textLoaded = false;
+    }
     m_file = file;
     VaultSession* s = session();
     if (s && s->vault() && !m_modifiedConn) {
@@ -93,9 +99,10 @@ void BasesFileView::reload()
         return;
     }
     const QString text = decodeFile(*bytes).text.toString();
-    if (text == m_lastText && m_controller->base().views.size() > 0 && !m_controller->hasError())
+    if (m_textLoaded && text == m_lastText && m_controller->base().views.size() > 0 && !m_controller->hasError())
         return; // our own write
     m_lastText = text;
+    m_textLoaded = true;
     QString error;
     const std::optional<BaseFile> base = BaseFile::fromString(text, &error);
     if (!base) {

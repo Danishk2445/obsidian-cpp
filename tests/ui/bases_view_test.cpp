@@ -483,6 +483,19 @@ TEST_F(BasesTest, ViewSubpathsAndStateSelectTheView)
     EXPECT_EQ(v->state().value("viewName").toString(), "Reading list");
     QTest::qWait(700);
     EXPECT_EQ(disk("Books.base"), fixtureBytes("Books.base")); // switching views isn't an edit
+
+    // another base in the same tab shows its first view; so does the first one opened again
+    BasesFileView* other = openBase("Grouped.base");
+    ASSERT_EQ(other, v);
+    EXPECT_EQ(v->controller()->viewName(), "By status");
+    ASSERT_EQ(openBase("Books.base"), v);
+    EXPECT_EQ(v->controller()->viewName(), "All books");
+    // the state's view wins
+    ws()->activeRootLeaf()->setViewState(QJsonObject{{"type", "bases"}, {"state", QJsonObject{{"file", "Grouped.base"}}}});
+    ws()->activeRootLeaf()->setViewState(
+        QJsonObject{{"type", "bases"}, {"state", QJsonObject{{"file", "Books.base"}, {"viewName", "Gallery"}}}});
+    ASSERT_TRUE(waitReady(v->controller()));
+    EXPECT_EQ(v->controller()->viewName(), "Gallery");
 }
 
 // ---------------------------------------------------------------------------------------------

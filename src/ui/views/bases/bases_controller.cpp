@@ -264,6 +264,12 @@ void BasesController::selectView(const QString& name)
     emit viewChanged(name);
 }
 
+void BasesController::resetView()
+{
+    m_viewName.clear();
+    m_viewStates.clear();
+}
+
 const BaseView* BasesController::currentView() const { return m_base.view(m_viewName); }
 
 void BasesController::setThisFile(const QString& path) { m_runner->setThisFile(path); }
