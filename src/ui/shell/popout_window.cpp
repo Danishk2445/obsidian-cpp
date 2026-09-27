@@ -9,6 +9,7 @@
 #include <QCloseEvent>
 #include <QEvent>
 #include <QPainter>
+#include <QWindow>
 
 namespace oc {
 
@@ -62,6 +63,22 @@ void PopoutWindow::setContent(QWidget* content)
 }
 
 PopoutWindow* PopoutWindow::of(const QWidget* w) { return w ? qobject_cast<PopoutWindow*>(w->window()) : nullptr; }
+
+bool PopoutWindow::isAlwaysOnTop() const { return windowFlags().testFlag(Qt::WindowStaysOnTopHint); }
+
+void PopoutWindow::setAlwaysOnTop(bool on)
+{
+    if (isAlwaysOnTop() == on)
+        return;
+    Qt::WindowFlags flags = windowFlags();
+    flags.setFlag(Qt::WindowStaysOnTopHint, on);
+    // QWidget::setWindowFlags() would hide the window (to be shown again): tell the widget without touching
+    // the window system, then change the live window's flags.
+    overrideWindowFlags(flags);
+    if (QWindow* handle = windowHandle())
+        handle->setFlags(flags);
+    emit alwaysOnTopChanged(on);
+}
 
 void PopoutWindow::relayout()
 {

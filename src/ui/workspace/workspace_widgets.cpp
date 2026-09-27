@@ -7,7 +7,14 @@
 //   .workspace-tab-header-inner       radius 4, padding 0 3px 0 6px (root), gap 2px
 //   sidedock tabs                     icon only (18px), 25px tall, padding 0 8px, gap 3px
 //   .view-header                      40px, padding 0 12px, gap 8px, title 13px centered
+//   .mod-stacked (stacked tabs)       header row: container-inner padding 0 0 0 12px (only "+" and the tab
+//                                     list); spines --tab-stacked-header-width wide, --background-primary,
+//                                     box-shadow -1px 0 0 --tab-outline-color + --tab-stacked-shadow; spine
+//                                     inner padding 8px 8px 16px, gap 2px: close (16px icon, 2px padding),
+//                                     icon (14px, 4px padding, radius 4, hover bg), title (vertical-lr,
+//                                     --tab-stacked-font-size / -weight, padding 4px 0, --text-normal)
 
+#include "core/util/busy.h"
 #include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "render/theme/icons.h"
@@ -34,6 +41,9 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QRegularExpression>
+#include <QScrollBar>
+#include <QSet>
 #include <QToolTip>
 #include <QWheelEvent>
 #include <QWindow>
@@ -52,8 +62,90 @@ constexpr int kDragThreshold = 6;
 constexpr int kMinPaneSize = 200; // Obsidian's minimum pane size while resizing
 constexpr int kMinSideWidth = 200;
 constexpr int kMinPopoutSizeForDrop = 600; // Obsidian's WorkspaceWindow: at least 600x600
+constexpr double kStackedMaxPaneFloor = 300; // updateSlidingTabs(): max pane width = max(300, visible - spines)
+constexpr double kWheelStep = 60;            // px per wheel notch when scrolling a stacked strip
+constexpr int kStackedInsetTop = 8, kStackedInsetSide = 8, kStackedInsetBottom = 16; // spine inner padding
+constexpr int kStackedGap = 2;                // --size-2-1
 
 QColor tok(const ThemePtr& t, const char* name) { return t->color(QLatin1String(name)); }
+
+// --tab-stacked-shadow ("-8px 0 8px 0 rgba(0, 0, 0, 0.05)"): the x offset, blur and color that matter for a
+// spine's shadow on the pane before it.
+struct SpineShadow {
+    double dx = -8, blur = 8, spread = 0;
+    QColor color = QColor(0, 0, 0, 13);
+    // How far it reaches left of the spine (the widget painting it is that wide).
+    int extent() const { return std::max(1, int(std::ceil(std::max(0.0, spread - dx) + blur))); }
+};
+
+SpineShadow spineShadow(const ThemePtr& t)
+{
+    SpineShadow s;
+    const CssValue v = t->value(QStringLiteral("--tab-stacked-shadow"));
+    if (v.kind != CssValue::List || v.commaList || v.items.size() < 3)
+        return s;
+    QList<double> lengths;
+    for (const CssValue& item : v.items) {
+        if (item.kind == CssValue::Color)
+            s.color = item.color;
+        else if (item.kind == CssValue::Length || item.kind == CssValue::Number)
+            lengths.push_back(item.kind == CssValue::Length ? item.len.resolve(t->textSize()) : item.num);
+    }
+    if (lengths.size() >= 3) {
+        s.dx = lengths[0];
+        s.blur = std::max(0.0, lengths[2]);
+        s.spread = lengths.size() >= 4 ? lengths[3] : 0;
+    }
+    return s;
+}
+
+// --tab-stacked-text-transform: "rotate(0deg)" (Obsidian's RTL layout uses 180deg).
+double stackedTitleRotation(const ThemePtr& t)
+{
+    static const QRegularExpression re(QStringLiteral(R"(rotate\(\s*(-?[\d.]+)\s*deg\s*\))"));
+    const QRegularExpressionMatch m = re.match(t->raw(QStringLiteral("--tab-stacked-text-transform")));
+    return m.hasMatch() ? m.captured(1).toDouble() : 0.0;
+}
+
+// The standard normal distribution function (a blurred box-shadow edge is a Gaussian step).
+double normalCdf(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }
+
+// The shadow a spine casts on the pane before it (drawn over that pane, left of the spine; transparent for
+// the mouse). Obsidian: box-shadow: -1px 0 0 0 var(--tab-outline-color), var(--tab-stacked-shadow).
+class StackShadow : public QWidget {
+public:
+    explicit StackShadow(QWidget* parent)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setFocusPolicy(Qt::NoFocus);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        const ThemePtr t = currentTheme();
+        const SpineShadow s = spineShadow(t);
+        QPainter p(this);
+        const double w = width();
+        // The shadow box is the spine shifted by dx and grown by spread; its blurred left edge (sigma =
+        // blur / 2) is what shows outside the spine.
+        const double edge = w + s.dx - s.spread;
+        if (s.color.alpha() > 0 && edge < w) {
+            QLinearGradient g(0, 0, w, 0);
+            const int steps = 12;
+            for (int i = 0; i <= steps; ++i) {
+                const double x = w * i / steps;
+                const double k = s.blur > 0 ? normalCdf((x - edge) / (s.blur / 2)) : (x >= edge ? 1.0 : 0.0);
+                QColor c = s.color;
+                c.setAlphaF(s.color.alphaF() * k);
+                g.setColorAt(double(i) / steps, c);
+            }
+            p.fillRect(rect(), g);
+        }
+        p.fillRect(QRectF(w - 1, 0, 1, height()), tok(t, "--tab-outline-color"));
+    }
+};
 
 QPixmap icon(const QString& name, int size, const QColor& color, double stroke, qreal dpr)
 {
@@ -430,6 +522,19 @@ void TabHeaderBar::setRightReserve(int px)
     update();
 }
 
+void TabHeaderBar::setStacked(bool stacked)
+{
+    if (m_stacked == stacked)
+        return;
+    m_stacked = stacked;
+    m_hoverTab = m_pressTab = -1;
+    m_hoverClose = false;
+    m_lockedWidth = -1;
+    m_snappedTab = -2;
+    relayout();
+    update();
+}
+
 WorkspaceLeaf* TabHeaderBar::leafAt(int index) const { return m_group ? m_group->leaves.value(index) : nullptr; }
 
 void TabHeaderBar::detachModel()
@@ -501,6 +606,17 @@ void TabHeaderBar::relayout()
     }
     m_newTab->show();
     m_tabList->show();
+    if (m_stacked) {
+        // The tabs are the group's spines: .mod-stacked .workspace-tab-header-container-inner is empty
+        // (padding-left 12px, no margins), "+" follows it (margin-left -4px).
+        m_tabs.clear();
+        m_scroll = 0;
+        m_clipL = m_clipR = 0;
+        m_newTab->move(int(padL) + 12 - 4, 8);
+        m_tabList->move(int(std::lround(width() - padR - 4 - 26)), 8);
+        refreshDragRegion();
+        return;
+    }
     const double content = width() - padL - padR;
     // inner (tabs) margin box = tabs + 20; "+" margin box 34; tab list margin box 30.
     const double availStrip = std::max(0.0, content - 20 - 34 - 30);
@@ -947,6 +1063,16 @@ void TabHeaderBar::showTabList()
         return;
     WorkspaceImpl* dd = d;
     QMenu& menu = *ownedMenu(this); // "Close all" may close this tab group, or the pop-out window it is in
+    // Obsidian's sections: action ("Stack tabs" / "Unstack tabs", not in the sidebars), close, tab list.
+    if (!m_sidedock) {
+        const bool stacked = m_group->stacked;
+        menu.addAction(menuIcon(QStringLiteral("layers")), stacked ? tr("Unstack tabs") : tr("Stack tabs"), &menu,
+                       [dd, group = QPointer<TabGroupWidget>(qobject_cast<TabGroupWidget*>(parentWidget())), stacked] {
+                           if (group && group->tabs())
+                               dd->setStacked(group->tabs(), !stacked);
+                       });
+        menu.addSeparator();
+    }
     int unpinned = 0;
     for (const WorkspaceLeaf* l : std::as_const(m_group->leaves))
         unpinned += l->isPinned() ? 0 : 1;
@@ -977,7 +1103,38 @@ TabGroupWidget::TabGroupWidget(WorkspaceImpl* d, WorkspaceTabs* tabs)
     , m_header(new TabHeaderBar(d, tabs, this))
 {
     setObjectName(QStringLiteral("ocTabGroup"));
+    // A stacked strip that overflows scrolls with Obsidian's styled 12px scroll bar (app.qss).
+    m_hbar = new QScrollBar(Qt::Horizontal, this);
+    m_hbar->setObjectName(QStringLiteral("ocStackScrollBar"));
+    m_hbar->hide();
+    connect(m_hbar, &QScrollBar::valueChanged, this, [this](int v) {
+        if (v != m_scroll)
+            setStackScroll(v);
+    });
+    m_scrollAnim = new QVariantAnimation(this);
+    m_scrollAnim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_scrollAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant& v) {
+        if (!m_stacked || !m_tabs)
+            return;
+        m_scroll = v.toInt();
+        layoutStacked();
+    });
+    connect(m_scrollAnim, &QAbstractAnimation::stateChanged, this, [this](QAbstractAnimation::State state) {
+        const bool running = state == QAbstractAnimation::Running;
+        if (running == m_animBusy)
+            return;
+        m_animBusy = running;
+        if (running)
+            Busy::begin();
+        else
+            Busy::end();
+    });
     hide();
+}
+
+TabGroupWidget::~TabGroupWidget()
+{
+    stopScrollAnimation(); // (releases oc::Busy while this widget is still whole)
 }
 
 void TabGroupWidget::sync()
@@ -985,7 +1142,18 @@ void TabGroupWidget::sync()
     if (!m_tabs)
         return;
     WorkspaceSplit* top = d->topSplit(m_tabs);
-    m_header->setSidedock(top && top->isSidedock());
+    const bool sidedock = top && top->isSidedock();
+    m_header->setSidedock(sidedock);
+    const bool stacked = m_tabs->stacked && !sidedock;
+    const bool entering = stacked && !m_stacked;
+    if (stacked != m_stacked) {
+        m_stacked = stacked;
+        stopScrollAnimation();
+        m_scroll = 0;
+        m_revealed = nullptr;
+        m_revealPending = false;
+    }
+    m_header->setStacked(stacked);
     WorkspaceLeaf* cur = m_tabs->current();
     for (WorkspaceLeaf* l : std::as_const(m_tabs->leaves)) {
         LeafWidget* lw = d->leafWidget(l);
@@ -994,11 +1162,28 @@ void TabGroupWidget::sync()
         if (lw->parentWidget() != this)
             lw->setParent(this);
         lw->refresh();
-        lw->setVisible(l == cur);
+        if (!stacked)
+            lw->setVisible(l == cur);
     }
-    layoutChildren();
+    syncSpines();
+    restack();
+    layoutChildren(); // (stacked: also which panes show)
+    // Obsidian's selectTabIndex() / setStacked(): the (new) current tab scrolls into view.
+    if (stacked && cur && cur != m_revealed) {
+        m_revealed = cur;
+        revealTab(m_tabs->currentTab, !entering);
+    }
+    if (!stacked)
+        m_revealed = nullptr;
     m_header->relayout();
+    updateTabs();
+}
+
+void TabGroupWidget::updateTabs()
+{
     m_header->update();
+    for (StackedTabHeader* s : std::as_const(m_spines))
+        s->update();
 }
 
 void TabGroupWidget::releaseLeaves()
@@ -1013,21 +1198,265 @@ void TabGroupWidget::releaseLeaves()
 
 void TabGroupWidget::detachModel()
 {
+    stopScrollAnimation();
     m_tabs = nullptr;
     m_header->detachModel();
+    for (StackedTabHeader* s : std::as_const(m_spines))
+        s->detach();
 }
+
+void TabGroupWidget::syncSpines()
+{
+    const QList<WorkspaceLeaf*> leaves = m_stacked && m_tabs ? m_tabs->leaves : QList<WorkspaceLeaf*>();
+    QList<StackedTabHeader*> old = std::exchange(m_spines, {});
+    for (WorkspaceLeaf* l : leaves) {
+        auto it = std::find_if(old.begin(), old.end(), [l](const StackedTabHeader* s) { return s->leaf() == l; });
+        StackedTabHeader* s = nullptr;
+        if (it != old.end()) {
+            s = *it;
+            old.erase(it);
+        } else {
+            s = new StackedTabHeader(d, this, l);
+            s->show();
+        }
+        m_spines.push_back(s);
+    }
+    // Deleted later: a spine may be handling the event that took its leaf away (its close button, a drop).
+    for (StackedTabHeader* s : std::as_const(old)) {
+        s->detach();
+        s->deleteLater();
+    }
+    while (m_shadows.size() > m_spines.size())
+        delete m_shadows.takeLast();
+    while (m_shadows.size() < m_spines.size()) {
+        auto* shadow = new StackShadow(this);
+        shadow->show();
+        m_shadows.push_back(shadow);
+    }
+}
+
+void TabGroupWidget::restack()
+{
+    if (!m_stacked || !m_tabs)
+        return;
+    // The strip's DOM order: later spines and panes paint over earlier ones; a spine's shadow lies over the
+    // pane before it, under the spine. The scroll bar stays on top.
+    QList<QWidget*> want;
+    for (int i = 0; i < m_spines.size(); ++i) {
+        want << m_shadows.value(i) << m_spines[i];
+        if (LeafWidget* lw = d->leafWidget(m_tabs->leaves.value(i)); lw && lw->parentWidget() == this)
+            want << lw;
+    }
+    want << m_hbar;
+    const QSet<QWidget*> ours(want.cbegin(), want.cend());
+    QList<QWidget*> have;
+    for (QObject* o : children())
+        if (o->isWidgetType() && ours.contains(static_cast<QWidget*>(o)))
+            have << static_cast<QWidget*>(o);
+    if (have == want)
+        return;
+    for (QWidget* w : std::as_const(want))
+        w->raise();
+}
+
+int TabGroupWidget::stackHeaderWidth() const
+{
+    return std::max(1, int(std::lround(currentTheme()->px(QStringLiteral("--tab-stacked-header-width"), -1, kHeaderHeight))));
+}
+
+TabGroupWidget::StackMetrics TabGroupWidget::stackMetrics() const
+{
+    // Obsidian's updateSlidingTabs(): panes are --tab-stacked-pane-width, at most max(300, visible width -
+    // all spines) and at least that / n (min-width wins).
+    StackMetrics m;
+    const ThemePtr t = currentTheme();
+    const int n = m_tabs ? int(m_tabs->leaves.size()) : 0;
+    m.header = stackHeaderWidth();
+    m.client = width();
+    const double maxPane = std::max(kStackedMaxPaneFloor, m.client - n * m.header);
+    const double minPane = n > 0 ? maxPane / n : maxPane;
+    m.pane = std::max(minPane, std::min(t->px(QStringLiteral("--tab-stacked-pane-width"), -1, 700), maxPane));
+    m.content = n * (m.header + m.pane);
+    m.maxScroll = std::max(0, int(std::ceil(m.content - m.client - 0.01)));
+    m.barHeight = m.maxScroll > 0 ? std::max(1, int(std::lround(t->px(QStringLiteral("--scrollbar-height"), -1, 12)))) : 0;
+    m.areaHeight = std::max(0, height() - kHeaderHeight - m.barHeight);
+    return m;
+}
+
+int TabGroupWidget::stackMaxScroll() const { return m_stacked && m_tabs ? stackMetrics().maxScroll : 0; }
+
+double TabGroupWidget::stackPaneWidth() const { return stackMetrics().pane; }
 
 void TabGroupWidget::layoutChildren()
 {
     m_header->setGeometry(0, 0, width(), kHeaderHeight);
     if (!m_tabs)
         return;
+    if (m_stacked) {
+        layoutStacked();
+        return;
+    }
+    m_hbar->hide();
     for (WorkspaceLeaf* l : std::as_const(m_tabs->leaves))
         if (LeafWidget* lw = d->leafWidget(l); lw && lw->parentWidget() == this)
             lw->setGeometry(0, kHeaderHeight, width(), std::max(0, height() - kHeaderHeight));
 }
 
-void TabGroupWidget::resizeEvent(QResizeEvent*) { layoutChildren(); }
+void TabGroupWidget::layoutStacked()
+{
+    const StackMetrics m = stackMetrics();
+    const int n = int(m_tabs->leaves.size());
+    m_scroll = std::clamp(m_scroll, 0, m.maxScroll);
+    if (m.maxScroll > 0) {
+        const QSignalBlocker block(m_hbar);
+        m_hbar->setRange(0, m.maxScroll);
+        m_hbar->setPageStep(std::max(1, int(m.client)));
+        m_hbar->setSingleStep(int(kWheelStep / 3));
+        m_hbar->setValue(m_scroll);
+        m_hbar->setGeometry(0, height() - m.barHeight, width(), m.barHeight);
+        m_hbar->show();
+    } else {
+        m_hbar->hide();
+    }
+    const int top = kHeaderHeight;
+    const int shadowExtent = spineShadow(currentTheme()).extent();
+    const int cur = m_tabs->currentTab;
+    const double H = m.header, L = m.pane, scroll = m_scroll, client = m.client;
+    auto px = [](double v) { return int(std::lround(v)); };
+    double x = 0; // natural position in the strip
+    for (int i = 0; i < n; ++i) {
+        // A spine sticks at the left after the spines before it and at the right before the spines after
+        // it (left wins).
+        const double sx = std::max(std::min(x - scroll, client - (n - i) * H), i * H);
+        if (StackedTabHeader* s = m_spines.value(i))
+            s->setGeometry(px(sx), top, px(sx + H) - px(sx), m.areaHeight);
+        if (QWidget* shadow = m_shadows.value(i)) {
+            shadow->setGeometry(px(sx) - shadowExtent, top, shadowExtent, m.areaHeight);
+            shadow->setVisible(px(sx) > 0);
+        }
+        x += H;
+        // A pane sticks at the left after its own spine. Obsidian's onContainerScroll() hides the panes
+        // out of view or entirely covered by the ones after them, but never the current one.
+        const double lx = std::max(x - scroll, (i + 1) * H);
+        if (LeafWidget* lw = d->leafWidget(m_tabs->leaves[i]); lw && lw->parentWidget() == this) {
+            lw->setGeometry(px(lx), top, px(lx + L) - px(lx), m.areaHeight);
+            const bool hidden = i != cur && (x + L <= scroll || x >= scroll + client);
+            lw->setVisible(!hidden);
+        }
+        x += L;
+    }
+}
+
+void TabGroupWidget::setStackScroll(int x)
+{
+    stopScrollAnimation();
+    if (!m_stacked || !m_tabs)
+        return;
+    const int v = std::clamp(x, 0, stackMaxScroll());
+    if (v == m_scroll)
+        return;
+    m_scroll = v;
+    layoutStacked();
+}
+
+void TabGroupWidget::revealTab(int index, bool animate)
+{
+    if (!m_stacked || !m_tabs || index < 0 || index >= m_tabs->leaves.size())
+        return;
+    if (!isVisible() || width() <= 0) {
+        m_revealPending = true; // once the group is shown with its size
+        return;
+    }
+    m_revealPending = false;
+    const StackMetrics m = stackMetrics();
+    const int n = int(m_tabs->leaves.size());
+    // Obsidian's scrollIntoView(): scrolls between these show the whole pane and the spines after it.
+    const double least = n * m.header + (index + 1) * m.pane - m.client;
+    const double most = index * m.pane;
+    double target = m_scroll;
+    if (m_scroll < least)
+        target = least;
+    else if (m_scroll > most)
+        target = most;
+    const int to = std::clamp(int(std::lround(target)), 0, m.maxScroll);
+    if (animate)
+        animateScrollTo(to);
+    else
+        setStackScroll(to);
+}
+
+void TabGroupWidget::animateScrollTo(int x)
+{
+    // The browser's scrollTo({behavior: "smooth"}). Headless (offscreen) runs jump to the end, so tests and
+    // screenshots see the final state unless they enable combo animations.
+    const bool smooth = QApplication::isEffectEnabled(Qt::UI_AnimateCombo) || QGuiApplication::platformName() != u"offscreen";
+    if (!smooth || !isVisible()) {
+        setStackScroll(x);
+        return;
+    }
+    x = std::clamp(x, 0, stackMaxScroll());
+    if (m_scrollAnim->state() == QAbstractAnimation::Running && m_scrollAnim->endValue().toInt() == x)
+        return;
+    stopScrollAnimation();
+    const int distance = std::abs(x - m_scroll);
+    if (distance == 0)
+        return;
+    m_scrollAnim->setDuration(std::clamp(int(std::sqrt(double(distance)) * 12), 150, 450));
+    m_scrollAnim->setStartValue(m_scroll);
+    m_scrollAnim->setEndValue(x);
+    m_scrollAnim->start();
+}
+
+void TabGroupWidget::stopScrollAnimation()
+{
+    if (m_scrollAnim && m_scrollAnim->state() != QAbstractAnimation::Stopped)
+        m_scrollAnim->stop();
+}
+
+TabHeaderBar::InsertLocation TabGroupWidget::insertLocation(int x) const
+{
+    if (!m_stacked)
+        return m_header->insertLocation(x); // (the header row sits at the group's origin)
+    // Obsidian's getTabInsertLocation() over the spines (tabHeaderEls, where they stick): a 10px band on the
+    // edge nearest to x of the first spine not left of x.
+    TabHeaderBar::InsertLocation loc;
+    const int n = int(m_spines.size());
+    if (n == 0) {
+        loc.rect = QRect(13, kHeaderHeight, 10, std::max(0, height() - kHeaderHeight));
+        return loc;
+    }
+    for (int i = 0; i < n; ++i) {
+        const QRectF r = m_spines[i]->geometry();
+        if (i == n - 1 || x <= r.right()) {
+            QRectF band(r.left(), r.top(), 10, r.height());
+            loc.index = i;
+            if (x > r.center().x()) {
+                ++loc.index;
+                band.moveLeft(r.right());
+            }
+            band.translate(-5, 0);
+            loc.rect = band.toAlignedRect();
+            break;
+        }
+    }
+    return loc;
+}
+
+void TabGroupWidget::resizeEvent(QResizeEvent*)
+{
+    layoutChildren();
+    if (m_revealPending && m_tabs)
+        revealTab(m_tabs->currentTab, false);
+}
+
+void TabGroupWidget::showEvent(QShowEvent* e)
+{
+    QWidget::showEvent(e);
+    if (m_revealPending && m_tabs) {
+        layoutChildren();
+        revealTab(m_tabs->currentTab, false);
+    }
+}
 
 void TabGroupWidget::paintEvent(QPaintEvent*)
 {
@@ -1035,6 +1464,255 @@ void TabGroupWidget::paintEvent(QPaintEvent*)
     QPainter p(this);
     WorkspaceSplit* top = d->topSplit(m_tabs);
     p.fillRect(rect(), top && top->isSidedock() ? tok(t, "--background-secondary") : tok(t, "--background-primary"));
+}
+
+void TabGroupWidget::wheelEvent(QWheelEvent* e)
+{
+    // A stacked strip scrolls with horizontal wheels (touchpads), and with Shift + wheel like the browser;
+    // vertical wheels belong to the panes.
+    if (!m_stacked || stackMaxScroll() <= 0) {
+        e->ignore();
+        return;
+    }
+    const QPoint pixels = e->pixelDelta(), angle = e->angleDelta();
+    double dx = !pixels.isNull() ? pixels.x() : angle.x() / 120.0 * kWheelStep;
+    const double dy = !pixels.isNull() ? pixels.y() : angle.y() / 120.0 * kWheelStep;
+    if ((e->modifiers() & Qt::ShiftModifier) && std::abs(dy) > std::abs(dx)) {
+        dx = dy;
+    } else if (std::abs(dx) <= std::abs(dy)) {
+        e->ignore();
+        return;
+    }
+    setStackScroll(m_scroll - int(std::lround(dx)));
+    e->accept();
+}
+
+// ---------------------------------------------------------------------------------------------
+// StackedTabHeader
+// ---------------------------------------------------------------------------------------------
+
+StackedTabHeader::StackedTabHeader(WorkspaceImpl* d, TabGroupWidget* group, WorkspaceLeaf* leaf)
+    : QWidget(group)
+    , d(d)
+    , m_group(group)
+    , m_leaf(leaf)
+{
+    setObjectName(QStringLiteral("ocStackedTab"));
+    setMouseTracking(true);
+    setAttribute(Qt::WA_Hover);
+    setFocusPolicy(Qt::NoFocus);
+    if (auto* tm = ThemeManager::instance())
+        connect(tm, &ThemeManager::themeChanged, this, qOverload<>(&QWidget::update));
+}
+
+void StackedTabHeader::detach()
+{
+    m_leaf = nullptr;
+    m_group = nullptr;
+    m_pressed = m_dragging = false;
+    hide();
+}
+
+int StackedTabHeader::index() const
+{
+    return m_group && m_group->tabs() && m_leaf ? int(m_group->tabs()->leaves.indexOf(m_leaf.data())) : -1;
+}
+
+QRect StackedTabHeader::closeRect() const
+{
+    // First in the spine's column: .workspace-tab-header-inner-close-button (or the pin status icon), a 16px
+    // icon with 2px padding, centered in the 24px content box.
+    return QRect(width() / 2 - 10, kStackedInsetTop, 20, 20);
+}
+
+QRect StackedTabHeader::iconRect() const
+{
+    // .workspace-tab-header-inner-icon (order 2): a 14px icon with 4px padding.
+    return QRect(width() / 2 - 11, kStackedInsetTop + 20 + kStackedGap, 22, 22);
+}
+
+QRect StackedTabHeader::titleRect() const
+{
+    // .workspace-tab-header-inner-title (order 3): the rest of the column, down to the 16px bottom padding.
+    const int top = iconRect().bottom() + 1 + kStackedGap;
+    return QRect(kStackedInsetSide, top, std::max(0, width() - 2 * kStackedInsetSide), std::max(0, height() - kStackedInsetBottom - top));
+}
+
+void StackedTabHeader::paintEvent(QPaintEvent*)
+{
+    const ThemePtr t = currentTheme();
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+    p.fillRect(rect(), tok(t, "--background-primary"));
+    const WorkspaceLeaf* leaf = m_leaf;
+    if (!leaf)
+        return;
+    const qreal dpr = devicePixelRatioF();
+    const bool current = m_group && m_group->tabs() && m_group->tabs()->current() == leaf;
+    auto hoverBox = [&](const QRectF& r, const char* color) {
+        QPainterPath path;
+        path.addRoundedRect(r, 4, 4);
+        p.fillPath(path, tok(t, color));
+    };
+    const QRectF close = closeRect();
+    if (leaf->isPinned()) {
+        // The pin status icon replaces the close button (hover background only on the current tab).
+        if (m_hoverClose && current)
+            hoverBox(close, "--background-modifier-active-hover");
+        p.drawPixmap(close.topLeft() + QPointF(2, 2), icon(QStringLiteral("pin"), 16, tok(t, "--text-accent"), 2.0, dpr));
+    } else {
+        if (m_hoverClose)
+            hoverBox(close, "--background-modifier-hover");
+        p.drawPixmap(close.topLeft() + QPointF(2, 2), icon(QStringLiteral("x"), 16, tok(t, "--tab-text-color-focused"), 2.0, dpr));
+    }
+    // Stacked spines show every view's icon (notes too); hovering the spine brightens it.
+    const QRectF ir = iconRect();
+    if (m_hoverIcon)
+        hoverBox(ir, "--background-modifier-hover");
+    p.setOpacity(m_hover ? t->number(QStringLiteral("--icon-opacity-hover"), 1.0) : t->number(QStringLiteral("--icon-opacity"), 0.85));
+    const QColor ic = m_hover ? tok(t, "--icon-color-hover") : tok(t, "--icon-color");
+    p.drawPixmap(ir.topLeft() + QPointF(4, 4), icon(leaf->icon(), 14, ic, t->px(QStringLiteral("--icon-xs-stroke-width"), -1, 2.0), dpr));
+    p.setOpacity(1.0);
+
+    const QRectF title = QRectF(titleRect()).adjusted(0, 4, 0, -4); // padding 4px 0
+    if (title.height() <= 0)
+        return;
+    QFont f = t->interfaceFont(t->px(QStringLiteral("--tab-stacked-font-size"), -1, 13));
+    f.setWeight(QFont::Weight(std::clamp(int(t->number(QStringLiteral("--tab-stacked-font-weight"), 400)), 1, 1000)));
+    if (qobject_cast<const PlaceholderView*>(leaf->view()))
+        f.setItalic(true); // .workspace-tab-header.mod-unknown
+    p.setFont(f);
+    p.setPen(tok(t, "--text-normal"));
+    const QFontMetricsF fm(f);
+    const QString text = fm.elidedText(leaf->displayText(), Qt::ElideRight, title.height());
+    const double lh = fm.height();
+    p.save();
+    p.setClipRect(QRectF(0, title.top(), width(), title.height())); // overflow hidden
+    // --tab-stacked-text-transform turns the title box about its center (Obsidian's RTL layout: 180deg).
+    if (const double angle = stackedTitleRotation(t); angle != 0) {
+        p.translate(title.center());
+        p.rotate(angle);
+        p.translate(-title.center());
+    }
+    // writing-mode vertical-lr, text-orientation mixed: the line turned a quarter clockwise, from the top
+    // (text-align start), centered across the spine.
+    p.translate(title.center().x(), title.top());
+    p.rotate(90);
+    p.drawText(QRectF(0, -lh / 2, title.height(), lh), Qt::AlignLeft | Qt::AlignVCenter, text);
+    p.restore();
+}
+
+void StackedTabHeader::updateHover(const QPoint& pos)
+{
+    const bool inside = rect().contains(pos);
+    const bool overClose = inside && closeRect().contains(pos);
+    const bool overIcon = inside && iconRect().contains(pos);
+    if (inside != m_hover || overClose != m_hoverClose || overIcon != m_hoverIcon) {
+        m_hover = inside;
+        m_hoverClose = overClose;
+        m_hoverIcon = overIcon;
+        update();
+    }
+    // .workspace-tab-header-inner-icon { cursor: grab }
+    if (overIcon)
+        setCursor(Qt::OpenHandCursor);
+    else
+        unsetCursor();
+}
+
+void StackedTabHeader::mousePressEvent(QMouseEvent* e)
+{
+    updateHover(e->pos());
+    m_pressed = true;
+    m_pressButton = e->button();
+    m_pressPos = e->pos();
+    m_dragging = false;
+    m_pressClose = closeRect().contains(e->pos());
+    e->accept();
+}
+
+void StackedTabHeader::mouseMoveEvent(QMouseEvent* e)
+{
+    if (!(e->buttons() & Qt::LeftButton) || !m_pressed || m_pressButton != Qt::LeftButton || m_pressClose) {
+        updateHover(e->pos());
+        return;
+    }
+    const QPoint delta = e->pos() - m_pressPos;
+    if (!m_dragging && delta.x() * delta.x() + delta.y() * delta.y() >= kDragThreshold * kDragThreshold) {
+        WorkspaceLeaf* leaf = m_leaf;
+        if (leaf && leaf->tabs()) {
+            m_dragging = true;
+            QPointer<StackedTabHeader> self = this;
+            d->beginDrag(leaf, e->globalPosition().toPoint()); // (may become a native drag: nested loop)
+            if (!self)
+                return;
+        }
+    }
+    if (m_dragging)
+        d->updateDrag(e->globalPosition().toPoint());
+}
+
+void StackedTabHeader::mouseReleaseEvent(QMouseEvent* e)
+{
+    const bool pressed = std::exchange(m_pressed, false);
+    if (m_dragging) {
+        m_dragging = false;
+        d->endDrag(e->globalPosition().toPoint(), true);
+        return;
+    }
+    QPointer<WorkspaceLeaf> leaf = m_leaf;
+    if (!pressed || !leaf || !leaf->tabs() || !rect().contains(e->pos()))
+        return;
+    if (e->button() == Qt::MiddleButton && m_pressButton == Qt::MiddleButton) {
+        leaf->detach(); // Obsidian's auxclick on a tab header
+        return;
+    }
+    if (e->button() != Qt::LeftButton || m_pressButton != Qt::LeftButton)
+        return;
+    if (m_pressClose && closeRect().contains(e->pos())) {
+        if (leaf->isPinned())
+            leaf->setPinned(false);
+        else
+            leaf->detach();
+        return;
+    }
+    QPointer<TabGroupWidget> group = m_group;
+    d->q->setActiveLeaf(leaf, true); // a newly current tab scrolls into view (the group's sync)
+    // The current tab's spine reveals its pane too.
+    if (group && leaf && group->tabs() && leaf->tabs() == group->tabs())
+        group->revealTab(int(group->tabs()->leaves.indexOf(leaf.data())), true);
+}
+
+void StackedTabHeader::leaveEvent(QEvent* e)
+{
+    m_hover = m_hoverClose = m_hoverIcon = false;
+    unsetCursor();
+    update();
+    QWidget::leaveEvent(e);
+}
+
+void StackedTabHeader::contextMenuEvent(QContextMenuEvent* e)
+{
+    const int i = index();
+    if (i >= 0 && m_group)
+        m_group->header()->showTabMenu(i, e->globalPos());
+}
+
+bool StackedTabHeader::event(QEvent* e)
+{
+    if (e->type() == QEvent::ToolTip) {
+        // --no-tooltip on stacked headers: only the close button / pin explain themselves.
+        auto* he = static_cast<QHelpEvent*>(e);
+        if (m_leaf && closeRect().contains(he->pos())) {
+            QToolTip::showText(he->globalPos(), m_leaf->isPinned() ? tr("Unpin") : tr("Close"), this, closeRect());
+        } else {
+            QToolTip::hideText();
+            e->ignore();
+        }
+        return true;
+    }
+    return QWidget::event(e);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1754,7 +2432,11 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetInArea(const WorkspaceLea
         return {}; // Obsidian shows nothing when hovering the dragged tab's own single-tab group
     // Obsidian's getDropDirection().
     const bool inSidedock = area->isSidedock();
+    const bool stacked = tabs->w->isStacked();
     const double fx = p.x() - R.x(), fy = p.y() - R.y();
+    const bool overHeader = fy < kHeaderHeight;
+    // A stacked group splits left / right only from its header row: its strip takes tabs between spines.
+    const bool noSides = inSidedock || (stacked && !overHeader);
     const double a = std::abs(fx) / R.width(), s = std::abs(fy) / R.height();
     const double l = std::abs(p.x() - (R.x() + R.width())) / double(R.width());
     const double c = std::abs(p.y() - (R.y() + R.height())) / double(R.height());
@@ -1762,15 +2444,21 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetInArea(const WorkspaceLea
     double h = 1;
     if (s < 0.33 && s < h) {
         h = s;
-        if (fy < kHeaderHeight)
+        if (overHeader && !stacked)
             h = 0; // over the tab header: only "top" (upper third of the header) or a tab insert
-        edge = fy <= kHeaderHeight / 3.0 ? DropEdge::Top : DropEdge::Center;
+        if (fy <= kHeaderHeight / 3.0) {
+            edge = DropEdge::Top;
+        } else {
+            edge = DropEdge::Center;
+            if (stacked)
+                h = 1;
+        }
     }
-    if (!inSidedock && a < 0.33 && a < h) {
+    if (!noSides && a < 0.33 && a < h) {
         h = a;
         edge = DropEdge::Left;
     }
-    if (!inSidedock && l < 0.33 && l < h) {
+    if (!noSides && l < 0.33 && l < h) {
         h = l;
         edge = DropEdge::Right;
     }
@@ -1782,7 +2470,7 @@ Workspace::Impl::DropTarget Workspace::Impl::dropTargetInArea(const WorkspaceLea
     t.tabs = tabs;
     t.edge = edge;
     if (edge == DropEdge::Center) {
-        const TabHeaderBar::InsertLocation loc = tabs->w->header()->insertLocation(int(fx));
+        const TabHeaderBar::InsertLocation loc = tabs->w->insertLocation(int(fx));
         t.index = loc.index;
         t.rect = loc.rect.translated(R.topLeft());
     } else {
