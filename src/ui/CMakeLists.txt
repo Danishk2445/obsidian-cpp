@@ -43,6 +43,7 @@ oc_add_library(oc_ui
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
+    shell/opening_behavior.cpp
     shell/popout_window.cpp
     shell/popout_window.h
     shell/ribbon.cpp

@@ -373,7 +373,10 @@ TEST_F(CanvasTest, KeysAndClicksReachTheCardEditor)
     ASSERT_TRUE(cv);
     CanvasWidget* c = cv->canvas();
     window->activateWindow();
-    QApplication::setActiveWindow(window);
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
+    QApplication::setActiveWindow(window); // offscreen: activateWindow() alone doesn't make it active
+    QT_WARNING_POP
     c->setViewport(300, 200, 0);
     dclick(c, QPointF(100, 50)); // edit "Alpha" in place
     ASSERT_EQ(c->editingId(), "a");

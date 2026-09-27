@@ -52,6 +52,7 @@ private:
     ThemeManager* m_themes;
     VaultRegistry* m_registry;
     QPointer<VaultPicker> m_picker;
+    bool m_requestOpensFile = false; // handleRequest(): the vault being opened is opened on a file
     QList<QPointer<MainWindow>> m_windows;
     SingleInstance* m_single = nullptr;
 };

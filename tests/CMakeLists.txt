@@ -63,6 +63,7 @@ oc_add_test(ui_sidebar_views_test SOURCES ui/sidebar_views_test.cpp DEPS oc_ui Q
 oc_add_test(ui_file_recovery_test SOURCES ui/file_recovery_ui_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_core_plugins_test SOURCES ui/core_plugins_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_pane_menu_test SOURCES ui/pane_menu_test.cpp DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_opening_behavior_test SOURCES ui/opening_behavior_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_rename_subpath_test SOURCES ui/rename_subpath_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_note_composer_test SOURCES ui/note_composer_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_navigation_test SOURCES ui/quick_switcher_test.cpp ui/command_palette_test.cpp ui/search_view_test.cpp ui/navigation_shots_test.cpp ui/navigation_perf_test.cpp ui/navigation_test_support.h DEPS oc_ui Qt6::Test GUI)

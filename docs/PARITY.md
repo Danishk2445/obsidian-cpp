@@ -181,9 +181,11 @@ Open parity questions:
   Unassigned), record / remove / restore default, conflicts marked with tooltips; hotkeys.json
 - ✅ Applied: line numbers, properties in document, backlinks in document, quick font size adjustment (Ctrl+wheel
   changes baseFontSize by 1 in 10...30, not within 500 ms of a plain scroll), always focus new tabs (off: links and
-  files opened in a new tab load in the background; "+" / New tab still focus), show tab title bar (the view header).
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, default file to open, delete
-  attachments with files, URI callbacks, native menus, editing-mode status bar toggle
+  files opened in a new tab load in the background; "+" / New tab still focus), show tab title bar (the view header),
+  default file to open (after the layout is restored, unless the launch opens a note: last opened / new note unless
+  the active one is empty / daily note / a specific file, matched case-insensitively with ".md" implied).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, delete attachments with files, URI
+  callbacks, native menus, editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 
