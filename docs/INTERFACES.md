@@ -151,7 +151,9 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `StyleSheet::listIndentEditing()` / `listBulletSize()` / `checkboxSize()` / `checkboxMarginStart()` / `ch()` /
   `listMarkerColor()`; the `ListMarker` style carries tabular-nums. Widgets (render/widgets/inline_widgets.h, all users
   updated): `BulletWidget(color, width, centerX, dotPx)` + `dotCenter()`, `CheckboxWidget(status, size, lead,
-  marginEnd, raise)` + `boxRect(rect, lineMetrics)`, new `SpacerWidget(width)` (CSS padding in the flow) and
+  marginEnd, raise)` + `boxRect(rect, lineMetrics)`, new `SpacerWidget(width)` (CSS padding in the flow: a zero-length
+  replace whose `InlineWidget::padsFollowingText()` is true; `DisplayBlock::Segment::padding`, and `docToDisp(col,
+  assoc > 0)` maps its column after it, like a caret inside the padded span) and
   `MarkerTextWidget(text, color, tabularNums)` (an outside `::marker`). `indent::hangingPrefix(line)` (Obsidian's
   list-prefix match for the hanging indent) and `indent::lastSpacingUnit(line)` (the continuation padding's unit).
   Reading-view lines are placed by `LivePreviewDecorator`'s container chain (`LineDecoration::indent`), so code that

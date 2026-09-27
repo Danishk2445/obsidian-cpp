@@ -1,8 +1,9 @@
-// DisplayBlock: box (pill) padding is laid out, not painted over the neighbouring text.
+// DisplayBlock: box (pill) padding is laid out, not painted over the neighbouring text; padding spacers keep a caret after them.
 #include "render/layout/display_block.h"
 #include "render/layout/doc_layout.h"
 #include "render/layout/style_sheet.h"
 #include "render/theme/theme.h"
+#include "render/widgets/inline_widgets.h"
 
 #include <QImage>
 #include <QPainter>
@@ -138,4 +139,34 @@ TEST(DisplayBlock, HiddenLinesWithWidgetsPaintAndHitTest)
     for (qreal y = 0; y < layout.totalHeight(); y += 4)
         (void)layout.widgetAt(QPointF(5, y));
     EXPECT_GT(layout.totalHeight(), 0);
+}
+
+TEST(DisplayBlock, PaddingSpacerKeepsItsColumnsCaretAfterIt)
+{
+    // A zero-length SpacerWidget is CSS padding in front of the text at its column (Live Preview's list marker
+    // padding): a caret at that column is drawn after the padding, inside the padded span; assoc < 0 keeps it before
+    // (where the fold indicator goes). Other zero-length widgets keep the caret before them.
+    Fixture f;
+    const QString line = QStringLiteral("\t- a");
+    LineDecoration deco;
+    deco.replaces.push_back(Replace{1, 1, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<SpacerWidget>(12)});
+    const DisplayBlock b = DisplayBlock::build(line, deco, *f.styles);
+    ASSERT_EQ(b.display().size(), line.size() + 1);
+    EXPECT_EQ(b.docToDisp(1, 1), 2);
+    EXPECT_EQ(b.docToDisp(1, -1), 1);
+    EXPECT_EQ(b.docToDisp(0, 1), 0);
+    EXPECT_EQ(b.docToDisp(2, 1), 3);
+    EXPECT_EQ(b.dispToDoc(1, 1), 1);
+    EXPECT_EQ(b.dispToDoc(2, 1), 1);
+    // at the line start too
+    LineDecoration start;
+    start.replaces.push_back(Replace{0, 0, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<SpacerWidget>(12)});
+    const DisplayBlock s = DisplayBlock::build(QStringLiteral("- a"), start, *f.styles);
+    EXPECT_EQ(s.docToDisp(0, 1), 1);
+    EXPECT_EQ(s.docToDisp(0, -1), 0);
+    // a zero-length widget that isn't padding (a fold placeholder at the line end): the caret stays before it
+    LineDecoration other;
+    other.replaces.push_back(Replace{3, 3, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<BulletWidget>(Qt::red, 8, 4, 4)});
+    const DisplayBlock o = DisplayBlock::build(QStringLiteral("- a"), other, *f.styles);
+    EXPECT_EQ(o.docToDisp(3, 1), 3);
 }

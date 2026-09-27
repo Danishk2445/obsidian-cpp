@@ -15,6 +15,7 @@ public:
         Kind kind = Kind::Text;
         int docFrom = 0, docTo = 0;   // columns in the document line
         int dispFrom = 0, dispTo = 0; // positions in the display string
+        bool padding = false;         // a zero-length widget padding the text after it (InlineWidget::padsFollowingText)
     };
     struct WidgetSlot {
         int dispPos = 0;

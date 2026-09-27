@@ -63,6 +63,7 @@ public:
     qreal ascent(const LineMetrics& lm) const override { return lm.ascent; }
     void paint(QPainter*, const QRectF&, const LineMetrics&) const override {}
     quint64 signature() const override;
+    bool padsFollowingText() const override { return true; }
 
 private:
     qreal m_width;

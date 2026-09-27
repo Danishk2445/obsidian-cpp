@@ -382,7 +382,7 @@ QRectF EditorView::foldIndicatorRect(int line)
     int col = 0;
     while (col < v.size() && (v[col] == u' ' || v[col] == u'\t'))
         ++col;
-    const QRectF cr = m_layout.caretRect(t.lineStart(line) + col);
+    const QRectF cr = m_layout.caretRect(t.lineStart(line) + col, -1); // (before a list marker's padding)
     // Obsidian: a 10px chevron whose right edge sits 5px left of the line's first character.
     const qreal right = cr.x() - 5;
     const QRectF doc(right - 10, cr.y(), 10, cr.height());

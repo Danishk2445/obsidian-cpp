@@ -83,6 +83,7 @@ DisplayBlock DisplayBlock::build(QStringView text, const LineDecoration& deco, c
         }
         case Replace::Kind::Widget: {
             s.kind = Segment::Kind::Widget;
+            s.padding = to == from && r.widget && r.widget->padsFollowingText();
             b.m_display += QChar(0x00A0);
             WidgetSlot slot;
             slot.dispPos = s.dispFrom;
@@ -214,13 +215,15 @@ int DisplayBlock::docToDisp(int docCol, int assoc) const
         switch (s.kind) {
         case Segment::Kind::Text:
             if (docCol == s.docTo && assoc > 0 && i + 1 < m_segments.size() && m_segments[i + 1].docFrom == docCol
-                && m_segments[i + 1].kind == Segment::Kind::Text)
+                && (m_segments[i + 1].kind == Segment::Kind::Text || m_segments[i + 1].padding))
                 continue;
             return s.dispFrom + (docCol - s.docFrom);
         case Segment::Kind::Hidden:
             return s.dispFrom;
         case Segment::Kind::Substitute:
         case Segment::Kind::Widget:
+            if (s.padding) // (zero-length) the column's caret is inside the padded span, after the padding
+                return assoc > 0 ? s.dispTo : s.dispFrom;
             if (docCol == s.docFrom)
                 return s.dispFrom;
             if (docCol == s.docTo)

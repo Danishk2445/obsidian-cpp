@@ -24,6 +24,9 @@ public:
     virtual quint64 signature() const = 0; // content hash for layout caching
     // Text used when copying a selection that covers the widget (empty = the hidden source is copied).
     virtual QString accessibleText() const { return {}; }
+    // Inserted at a column (zero-length replace) as the CSS padding in front of the text there: a caret at that
+    // column sits after it (DisplayBlock::docToDisp with assoc > 0), like a caret inside the padded span.
+    virtual bool padsFollowingText() const { return false; }
 };
 
 // Character styling over columns [from, to) of a document line.

@@ -578,6 +578,21 @@ protected:
     std::unique_ptr<EditorView> view;
 };
 
+TEST_F(ListGeometryViewTest, LivePreviewCaretAndFoldChevronAroundTheMarkerPadding)
+{
+    open(QStringLiteral("- a\n\t- b\n"), EditorView::Mode::LivePreview);
+    const qreal P = view->layout().styleSheet()->listIndentEditing();
+    // CM6 draws a caret at the line start inside the padded marker span: after the padding, before the "-"
+    view->setCursorPosition(0);
+    QApplication::processEvents();
+    EXPECT_NEAR(view->caretRectAt(0).x(), view->docToViewport(QPointF(P, 0)).x(), 0.6);
+    EXPECT_NEAR(view->caretRectAt(doc->text().lineStart(1) + 1).x(), view->docToViewport(QPointF(2.25 * 16 + P, 0)).x(), 0.6);
+    // the fold indicator widget sits before the span (its chevron's right edge 5px left of it)
+    const QRectF chevron = view->foldIndicatorRect(0);
+    ASSERT_FALSE(chevron.isEmpty());
+    EXPECT_NEAR(chevron.right(), view->docToViewport(QPointF(-5, 0)).x(), 0.6);
+}
+
 TEST_F(ListGeometryViewTest, ReadingCheckboxClickToggles)
 {
     open(QStringLiteral("- [ ] todo\n\t- plain\n"), EditorView::Mode::Reading);
