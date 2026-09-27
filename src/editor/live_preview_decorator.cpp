@@ -875,6 +875,11 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
         case InlineType::Escape:
             marksOf(id, !act);
             break;
+        case InlineType::HardBreak:
+            // "\" at the end of a line: Reading view renders the break without it (Live Preview keeps the source)
+            if (reading && it->content().at(n.from) == u'\\')
+                addHide(a, a + 1);
+            break;
         default:
             break;
         }

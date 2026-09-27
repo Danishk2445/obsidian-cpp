@@ -203,7 +203,8 @@ Open parity questions:
   line break; on, Reading view, hover previews, note embeds, Live Preview's rendered callouts, canvas cards and PDF
   export join a paragraph's lines up to each hard break (two trailing spaces, a trailing backslash) and show each soft
   break as a space (the lines' container markers and surrounding whitespace dropped). Live Preview's own lines keep
-  their breaks, like Obsidian (its markdown renderer's `breaks` option doesn't reach CodeMirror).
+  their breaks, like Obsidian (its markdown renderer's `breaks` option doesn't reach CodeMirror). A backslash hard
+  break's `\` no longer shows in rendered views.
 - Differences (guides / breaks): Live Preview list bullets have no --list-indent-editing (0.75em) lead padding in this
   clone, so Live Preview guides (at Obsidian's 0.85em) fall under the parent's text start rather than through its
   bullet; the Reading view guide is placed under the clone's own bullet (its list geometry isn't Obsidian's `ul`

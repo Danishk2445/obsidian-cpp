@@ -395,6 +395,7 @@ TEST(StrictLineBreaks, ReadingViewJoinsSoftBreaks)
     EXPECT_EQ(n.layout.unitStart(8), 7);
     EXPECT_TRUE(n.display(7).contains(QStringLiteral("q1 q2"))) << n.display(7).toStdString();
     EXPECT_EQ(n.layout.unitStart(11), 11); // backslash hard break
+    EXPECT_EQ(n.display(10), QStringLiteral("back")); // (its backslash doesn't render)
     // positions in a joined line: caret on the same visual line, hit testing back to the same offset
     const qsizetype p0 = t.lineStart(0) + 2, p1 = t.lineStart(1) + 3;
     const QRectF c0 = n.layout.caretRect(p0), c1 = n.layout.caretRect(p1);
