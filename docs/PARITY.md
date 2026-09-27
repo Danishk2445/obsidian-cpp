@@ -188,8 +188,10 @@ Open parity questions:
 - ✅ Delete attachments with files ("deleteUnlinkedAttachments"): after a file is deleted, the attachments it linked
   that nothing else links are deleted ("always"), offered in a checklist, all checked ("ask"), or kept ("never").
   The checklist is a flat list of paths (Obsidian also has a file tree and a gallery view).
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, URI callbacks, native menus,
-  editing-mode status bar toggle
+- ✅ Show editing mode in status bar (the "editor-status" core plugin switch hides the mode toggle).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, native menus (menus are always
+  Qt menus styled like Obsidian's). URI callbacks: Obsidian only calls x-success for the "new" and
+  "hook-get-address" actions, and the clone handles "open" only (a link path, "#subpath" included, like Obsidian's).
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 

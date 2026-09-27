@@ -1,0 +1,2 @@
+expect-line 0 # Beta
+quit
