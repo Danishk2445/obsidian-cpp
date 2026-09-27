@@ -207,7 +207,10 @@ Open parity questions:
   Qt menus styled like Obsidian's). URI callbacks: Obsidian only calls x-success for the "new" and
   "hook-get-address" actions, and the clone handles "open" only (a link path, "#subpath" included, like Obsidian's).
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
-- ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
+- ✅ Ribbon items reorder by dragging (5px threshold); the order is saved with the layout ("left-ribbon".ocOrder —
+  Obsidian keeps it as hiddenItems' key order) and items it doesn't know go first. The "Ribbon menu configuration"
+  list has no drag handles (Obsidian's does).
+- ⬜ Community themes, translucency, zoom level, custom app icon
 
 ## Vim mode (M8)
 - ✅ "Vim key bindings" (`vimMode`) toggles live on every open editor. Behaviour follows the vim.js Obsidian 1.13

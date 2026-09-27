@@ -1621,15 +1621,39 @@ QJsonObject Workspace::Impl::ribbonHiddenItems() const
     return o;
 }
 
+QJsonArray Workspace::Impl::ribbonOrderKeys() const
+{
+    Ribbon* r = window() ? window()->ribbon() : nullptr;
+    if (!r)
+        return QJsonArray::fromStringList(ribbonOrder);
+    QJsonArray keys;
+    for (const QString& id : r->order())
+        for (const auto& [aid, button] : r->actions())
+            if (aid == id)
+                keys.append(ribbonKey(id, button->toolTip()));
+    return keys;
+}
+
 void Workspace::Impl::applyRibbonHidden()
 {
     Ribbon* r = window() ? window()->ribbon() : nullptr;
     if (!r)
         return;
+    QStringList orderedIds;
+    for (const QString& key : std::as_const(ribbonOrder))
+        for (const auto& [id, button] : r->actions())
+            if (ribbonKey(id, button->toolTip()) == key)
+                orderedIds << id;
     for (const auto& [id, button] : r->actions()) {
         const QString key = ribbonKey(id, button->toolTip());
         if (ribbonHidden.contains(key))
             r->setActionHidden(id, ribbonHidden.value(key).toBool());
+    }
+    if (!ribbonOrder.isEmpty())
+        r->setOrder(orderedIds);
+    if (!ribbonOrderConnected) {
+        ribbonOrderConnected = true;
+        QObject::connect(r, &Ribbon::orderChanged, q, [this] { q->requestSaveLayout(); });
     }
 }
 
@@ -2293,7 +2317,10 @@ QJsonObject Workspace::serialize() const
     o.insert(QStringLiteral("main"), d->serializeItem(d->root));
     o.insert(QStringLiteral("left"), d->serializeItem(d->left));
     o.insert(QStringLiteral("right"), d->serializeItem(d->right));
-    o.insert(QStringLiteral("left-ribbon"), QJsonObject{{QStringLiteral("hiddenItems"), d->ribbonHiddenItems()}});
+    QJsonObject ribbon{{QStringLiteral("hiddenItems"), d->ribbonHiddenItems()}};
+    if (const QJsonArray order = d->ribbonOrderKeys(); !order.isEmpty())
+        ribbon.insert(QStringLiteral("ocOrder"), order);
+    o.insert(QStringLiteral("left-ribbon"), ribbon);
     // Obsidian writes the floating split only while it has windows (a "floating" value that isn't a
     // floating split is kept as it was, in extraTop).
     if (!d->windows.isEmpty()) {
@@ -2392,6 +2419,9 @@ bool Workspace::restore(const QJsonObject& json)
         d->showWindow(win);
 
     d->ribbonHidden = json.value(QStringLiteral("left-ribbon")).toObject().value(QStringLiteral("hiddenItems")).toObject();
+    d->ribbonOrder.clear();
+    for (const QJsonValue& v : json.value(QStringLiteral("left-ribbon")).toObject().value(QStringLiteral("ocOrder")).toArray())
+        d->ribbonOrder << v.toString();
     d->applyRibbonHidden();
     d->lastOpenFiles.clear();
     for (const QJsonValue& v : json.value(QStringLiteral("lastOpenFiles")).toArray())
@@ -2426,6 +2456,7 @@ void Workspace::loadLayout()
             if (v.isString() && !d->lastOpenFiles.contains(v.toString()))
                 d->lastOpenFiles.push_back(v.toString());
         d->buildDefaultLayout();
+        d->applyRibbonHidden(); // no saved choices, but ribbon drags must save the layout
     }
     d->layoutReady = true;
     d->saveTimer.stop();

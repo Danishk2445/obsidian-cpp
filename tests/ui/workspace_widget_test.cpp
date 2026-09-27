@@ -4,6 +4,8 @@
 // closing, drops, the tab list's Stack / Unstack).
 
 #include "ui/workspace_test_support.h"
+#include <QJsonArray>
+#include <QSignalSpy>
 
 #include "core/util/busy.h"
 #include "ui/shell/main_window.h"
@@ -590,6 +592,68 @@ TEST_F(WorkspaceWindowTest, RibbonAndRightToggleDropIntoTheSidedocks)
     QWidget* leftToggle = ribbon->sidebarToggle();
     EXPECT_EQ(t.rect, QRect(ws->widget()->mapFromGlobal(leftToggle->mapToGlobal(QPoint(0, 0))), leftToggle->size()));
     window.reset(); // the window deletes the workspace (before the session goes away)
+}
+
+// Obsidian's ribbon items can be dragged into another order (5px threshold); the order is saved with the layout
+// (Obsidian: hiddenItems' key order; here "left-ribbon".ocOrder) and new items the saved order doesn't know go first.
+TEST_F(WorkspaceWindowTest, RibbonItemsReorderByDragAndPersist)
+{
+    auto build = [this](std::unique_ptr<MainWindow>& window, bool withNew) {
+        window = std::make_unique<MainWindow>(m_session.get(), false);
+        Ribbon* r = window->ribbon();
+        if (withNew)
+            r->addAction(QStringLiteral("zk-prefixer"), QStringLiteral("file-signature"), QStringLiteral("Create new unique note"));
+        r->addAction(QStringLiteral("switcher:open"), QStringLiteral("file-search"), QStringLiteral("Open quick switcher"));
+        r->addAction(QStringLiteral("graph:open"), QStringLiteral("git-fork"), QStringLiteral("Open graph view"));
+        r->addAction(QStringLiteral("canvas:new-file"), QStringLiteral("layout-dashboard"), QStringLiteral("Create new canvas"));
+        auto* ws = new Workspace(m_session.get(), &m_registry, window.get());
+        window->setWorkspace(ws);
+        ws->loadLayout();
+        window->resize(1200, 800);
+        window->show();
+        QCoreApplication::processEvents();
+        return ws;
+    };
+    std::unique_ptr<MainWindow> window;
+    Workspace* ws = build(window, false);
+    Ribbon* r = window->ribbon();
+    ASSERT_EQ(r->order(), (QStringList{"switcher:open", "graph:open", "canvas:new-file"}));
+    auto button = [r](const QString& id) {
+        for (const auto& [aid, b] : r->actions())
+            if (aid == id)
+                return b;
+        return static_cast<IconButton*>(nullptr);
+    };
+    QSignalSpy triggered(r, &Ribbon::actionTriggered);
+    QSignalSpy changed(r, &Ribbon::orderChanged);
+    // drag "Open graph view" (the middle item) below "Create new canvas"
+    IconButton* g = button("graph:open");
+    IconButton* c = button("canvas:new-file");
+    const QPoint start = g->rect().center();
+    sendMouse(g, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    sendMouse(g, QEvent::MouseMove, start + QPoint(0, 3), Qt::NoButton, Qt::LeftButton); // under the threshold
+    EXPECT_EQ(r->order().value(1), "graph:open");
+    const QPoint below = g->mapFromGlobal(c->mapToGlobal(QPoint(c->width() / 2, c->height() - 2)));
+    sendMouse(g, QEvent::MouseMove, below, Qt::NoButton, Qt::LeftButton);
+    sendMouse(g, QEvent::MouseButtonRelease, g->mapFromGlobal(c->mapToGlobal(QPoint(c->width() / 2, c->height() - 2))), Qt::LeftButton,
+              Qt::NoButton);
+    QCoreApplication::processEvents();
+    EXPECT_EQ(r->order(), (QStringList{"switcher:open", "canvas:new-file", "graph:open"}));
+    EXPECT_EQ(changed.count(), 1);
+    EXPECT_EQ(triggered.count(), 0); // a drag isn't a click
+    EXPECT_EQ(r->actions().value(1).first, "canvas:new-file"); // actions() follows
+    // a plain click still triggers
+    QTest::mouseClick(button("switcher:open"), Qt::LeftButton);
+    EXPECT_EQ(triggered.count(), 1);
+    // saved with the layout
+    const QJsonObject json = ws->serialize();
+    EXPECT_EQ(json.value("left-ribbon").toObject().value("ocOrder").toArray(),
+              QJsonArray({"switcher:Open quick switcher", "canvas:Create new canvas", "graph:Open graph view"}));
+    window.reset(); // the drag requested a save: flushed with the workspace
+    // restored at the next start; an item the saved order doesn't know comes first (Obsidian's indexOf() == -1)
+    ws = build(window, true);
+    EXPECT_EQ(window->ribbon()->order(), (QStringList{"zk-prefixer", "switcher:open", "canvas:new-file", "graph:open"}));
+    window.reset();
 }
 
 // ---------------------------------------------------------------------------------------------

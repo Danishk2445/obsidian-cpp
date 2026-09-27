@@ -4,6 +4,9 @@
 #include "ui/widgets/icon_button.h"
 
 #include <QEvent>
+#include <QMouseEvent>
+
+#include <algorithm>
 #include <QPainter>
 #include <QVBoxLayout>
 
@@ -29,6 +32,7 @@ Ribbon::Ribbon(QWidget* parent)
     v->addWidget(top);
 
     auto* actions = new QWidget(this);
+    m_actionsWidget = actions;
     m_actionsLayout = new QVBoxLayout(actions);
     m_actionsLayout->setContentsMargins(0, 4, 0, 4);
     m_actionsLayout->setSpacing(6);
@@ -59,8 +63,115 @@ IconButton* Ribbon::makeButton(const QString& id, const QString& icon, const QSt
 IconButton* Ribbon::addAction(const QString& id, const QString& icon, const QString& title)
 {
     IconButton* b = makeButton(id, icon, title);
+    b->setParent(m_actionsWidget);
     m_actionsLayout->addWidget(b, 0, Qt::AlignHCenter);
+    b->installEventFilter(this);
+    syncActionOrder();
     return b;
+}
+
+QStringList Ribbon::order() const
+{
+    QStringList ids;
+    for (int i = 0; i < m_actionsLayout->count(); ++i)
+        if (QWidget* w = m_actionsLayout->itemAt(i)->widget())
+            for (const auto& [id, b] : m_actions)
+                if (b == w)
+                    ids << id;
+    return ids;
+}
+
+void Ribbon::setOrder(const QStringList& ids)
+{
+    QList<IconButton*> buttons;
+    for (int i = 0; i < m_actionsLayout->count(); ++i)
+        if (auto* b = qobject_cast<IconButton*>(m_actionsLayout->itemAt(i)->widget()))
+            buttons << b;
+    auto idOf = [this](IconButton* b) {
+        for (const auto& [id, button] : m_actions)
+            if (button == b)
+                return id;
+        return QString();
+    };
+    // Obsidian: items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)); unknown ones (-1) come first
+    std::stable_sort(buttons.begin(), buttons.end(), [&](IconButton* a, IconButton* b) { return ids.indexOf(idOf(a)) < ids.indexOf(idOf(b)); });
+    for (IconButton* b : std::as_const(buttons))
+        m_actionsLayout->removeWidget(b);
+    for (IconButton* b : std::as_const(buttons))
+        m_actionsLayout->addWidget(b, 0, Qt::AlignHCenter);
+    syncActionOrder();
+}
+
+void Ribbon::syncActionOrder()
+{
+    QList<QPair<QString, IconButton*>> top, rest;
+    for (const auto& a : std::as_const(m_actions))
+        (a.second->parentWidget() == m_actionsWidget ? top : rest) << a;
+    std::stable_sort(top.begin(), top.end(), [this](const auto& a, const auto& b) {
+        return m_actionsLayout->indexOf(a.second) < m_actionsLayout->indexOf(b.second);
+    });
+    m_actions = top + rest;
+}
+
+bool Ribbon::eventFilter(QObject* obj, QEvent* ev)
+{
+    auto* b = qobject_cast<IconButton*>(obj);
+    if (!b || b->parentWidget() != m_actionsWidget)
+        return QWidget::eventFilter(obj, ev);
+    switch (ev->type()) {
+    case QEvent::MouseButtonPress: {
+        auto* me = static_cast<QMouseEvent*>(ev);
+        if (me->button() == Qt::LeftButton) {
+            m_dragButton = b;
+            m_pressPos = me->globalPosition().toPoint();
+            m_dragging = false;
+        }
+        break;
+    }
+    case QEvent::MouseMove: {
+        auto* me = static_cast<QMouseEvent*>(ev);
+        if (m_dragButton != b || !(me->buttons() & Qt::LeftButton))
+            break;
+        const QPoint gp = me->globalPosition().toPoint();
+        if (!m_dragging && (gp - m_pressPos).manhattanLength() >= 5)
+            m_dragging = true;
+        if (!m_dragging)
+            break;
+        // the dragged item goes after every other visible item whose middle is above the pointer
+        const int y = m_actionsWidget->mapFromGlobal(gp).y();
+        QList<QWidget*> others;
+        for (int i = 0; i < m_actionsLayout->count(); ++i)
+            if (QWidget* w = m_actionsLayout->itemAt(i)->widget(); w && w != b)
+                others << w;
+        int target = 0;
+        for (int i = 0; i < others.size(); ++i)
+            if (!others[i]->isHidden() && others[i]->geometry().center().y() < y)
+                target = i + 1;
+        if (m_actionsLayout->indexOf(b) != target) {
+            m_actionsLayout->removeWidget(b);
+            m_actionsLayout->insertWidget(target, b, 0, Qt::AlignHCenter);
+            m_actionsLayout->activate();
+        }
+        return true;
+    }
+    case QEvent::MouseButtonRelease: {
+        if (m_dragButton != b)
+            break;
+        const bool dragged = m_dragging;
+        m_dragButton = nullptr;
+        m_dragging = false;
+        if (dragged) {
+            b->setDown(false); // no click after a drag
+            syncActionOrder();
+            emit orderChanged();
+            return true;
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return QWidget::eventFilter(obj, ev);
 }
 
 IconButton* Ribbon::addBottomAction(const QString& id, const QString& icon, const QString& title)

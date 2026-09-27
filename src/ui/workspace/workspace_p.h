@@ -180,6 +180,10 @@ struct Workspace::Impl {
     QObject* vaultBridge = nullptr;
     QObject* activationFilter = nullptr;
     QJsonObject ribbonHidden; // "left-ribbon".hiddenItems
+    // "left-ribbon".ocOrder: the items' keys in ribbon order (Obsidian keeps it as hiddenItems' key order, which a
+    // QJsonObject can't; the file is the clone's own)
+    QStringList ribbonOrder;
+    bool ribbonOrderConnected = false;
     QJsonObject extraTop;     // unknown top-level keys ("floating", "right-ribbon", ...)
     QTimer saveTimer;
     bool layoutReady = false;
@@ -341,6 +345,7 @@ struct Workspace::Impl {
     void buildEmptyLayout();
     void buildDefaultLayout();
     QJsonObject ribbonHiddenItems() const;
+    QJsonArray ribbonOrderKeys() const;
     void applyRibbonHidden();
     void saveNow();
     QString layoutPath() const;
