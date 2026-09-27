@@ -1,5 +1,5 @@
 // Workspace model tests: default layout, persistence round trips, getLeaf modes, split/close rules,
-// moves between groups and sidedocks, navigation history, undo close, recent files.
+// moves between groups and sidedocks, navigation history, undo close, recent files, stacked groups.
 
 #include "ui/workspace_test_support.h"
 
@@ -707,4 +707,72 @@ TEST_F(WorkspaceModelTest, PinnedAndCloseMenusSkipPinnedTabs)
     EXPECT_TRUE(d->leavesUnder(d->root).first()->isPinned());
     d->closeAll(b->tabs());
     EXPECT_EQ(d->leavesUnder(d->root).size(), 1); // pinned tabs survive "Close all"
+}
+
+TEST_F(WorkspaceModelTest, StackedGroupsRoundTripAndOutliveTheirLastTab)
+{
+    auto ws = makeWorkspace();
+    WorkspaceImpl* d = impl(ws.get());
+    WorkspaceLeaf* a = ws->activeRootLeaf();
+    a->setViewState(graph("A"));
+    ws->getLeaf(NewLeaf::Tab)->setViewState(graph("B"));
+    WorkspaceLeaf* x = ws->getLeaf(NewLeaf::SplitRight);
+    x->setViewState(graph("X"));
+    EXPECT_FALSE(ws->isStacked(a));
+    ASSERT_TRUE(ws->setStacked(a, true));
+    EXPECT_TRUE(ws->isStacked(a));
+    EXPECT_FALSE(ws->isStacked(x)); // per tab group
+    // Sidebar groups can't be stacked through the API (nor the command / menu).
+    WorkspaceLeaf* files = ws->leavesOfType("file-explorer").value(0);
+    ASSERT_TRUE(files);
+    EXPECT_FALSE(ws->setStacked(files, true));
+    EXPECT_FALSE(ws->isStacked(files));
+    EXPECT_FALSE(ws->setStacked(nullptr, true));
+
+    // workspace.json: "stacked": true on the group while it is stacked (Obsidian's serialize()).
+    const QJsonObject json = ws->serialize();
+    const QJsonArray groups = json["main"].toObject()["children"].toArray();
+    ASSERT_EQ(groups.size(), 2);
+    EXPECT_EQ(groups[0].toObject()["stacked"], QJsonValue(true));
+    EXPECT_FALSE(groups[1].toObject().contains("stacked"));
+    auto ws2 = makeWorkspace(false);
+    ASSERT_TRUE(ws2->restore(json));
+    EXPECT_TRUE(ws2->isStacked(impl(ws2.get())->leafById(a->id())));
+    EXPECT_FALSE(ws2->isStacked(impl(ws2.get())->leafById(x->id())));
+    EXPECT_EQ(ws2->serialize()["main"], json["main"]);
+    ws->setStacked(a, false);
+    EXPECT_FALSE(ws->serialize()["main"].toObject()["children"].toArray()[0].toObject().contains("stacked"));
+
+    // Obsidian's lastTabGroupStacked: a root emptied of its tabs gets a new group stacked like the last
+    // group that lost its last tab.
+    ws->setStacked(a, true);
+    ws->closeLeaves({x});
+    ASSERT_EQ(describe(d->root), "V[T(A,B*)]");
+    ws->closeLeaves(ws->groupLeaves(a));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    EXPECT_EQ(describe(d->root), "V[T(_*)]");
+    EXPECT_TRUE(ws->isStacked(ws->activeRootLeaf()));
+    ASSERT_TRUE(ws->setStacked(ws->activeRootLeaf(), false));
+    ws->activeRootLeaf()->setViewState(graph("C"));
+    ws->closeActiveLeaf();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    EXPECT_FALSE(ws->isStacked(ws->activeRootLeaf()));
+    // A layout written by Obsidian with a stacked group loads stacked (unknown keys kept).
+    const QJsonObject obsidian = parseJson(R"({
+      "main": {"id": "m", "type": "split", "direction": "vertical", "children": [
+        {"id": "t", "type": "tabs", "stacked": true, "currentTab": 1, "future": 7, "children": [
+          {"id": "l1", "type": "leaf", "state": {"type": "graph", "state": {"name": "One"}}},
+          {"id": "l2", "type": "leaf", "state": {"type": "graph", "state": {"name": "Two"}}}
+        ]}
+      ]},
+      "left": {"id": "s1", "type": "split", "direction": "horizontal", "children": []},
+      "right": {"id": "s2", "type": "split", "direction": "horizontal", "children": []},
+      "active": "l2"
+    })");
+    ASSERT_TRUE(ws->restore(obsidian));
+    EXPECT_TRUE(ws->isStacked(d->leafById("l1")));
+    const QJsonObject back = ws->serialize()["main"].toObject()["children"].toArray()[0].toObject();
+    EXPECT_EQ(back["stacked"], QJsonValue(true));
+    EXPECT_EQ(back["future"], QJsonValue(7));
+    EXPECT_EQ(back["currentTab"], QJsonValue(1));
 }
