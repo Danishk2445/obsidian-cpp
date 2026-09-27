@@ -787,8 +787,9 @@ TEST(PopoutSession, StackedTabsAndAlwaysOnTopCommands)
     // Not while the pop-out is maximized (Obsidian), nor once the main window has the focus again.
     p->showMaximized();
     flush();
-    if (p->isMaximized())
+    if (p->isMaximized()) {
         EXPECT_FALSE(env.commands->isAvailable("window:toggle-always-on-top"));
+    }
     p->showNormal();
     flush();
     activate(env.window);
