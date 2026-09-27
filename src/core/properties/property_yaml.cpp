@@ -446,6 +446,14 @@ QString yamlKey(const QString& key)
     return stringNode(key, kc);
 }
 
+QString yamlString(const QString& value, const QString& indent, bool implicitKey)
+{
+    Ctx c;
+    c.indent = indent;
+    c.implicitKey = implicitKey;
+    return stringNode(value, c);
+}
+
 QString yamlPairValue(const QVariant& value) { return pairValue(value, Ctx{}); }
 
 QString yamlEntry(const QString& key, const QVariant& value) { return pair(key, value, Ctx{}); }

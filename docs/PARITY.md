@@ -276,6 +276,28 @@ Open parity questions:
 - Differences: link cards show the URL (no web view); "Export as image" without tiling / logo options; global search
   doesn't search canvases; cards are sized to media only on creation.
 
+## Bases
+- ✅ `.base` files: Obsidian's YAML model (filters / formulas / properties / summaries / views, unknown keys kept,
+  legacy keys migrated) written back in Obsidian's layout only when the model changes (opening never rewrites).
+- ✅ Formulas: Obsidian's expression language and its 80 functions (16 globals + methods on strings, numbers, dates,
+  durations, lists, objects, links, files, regexps), null propagation, loose equality, date ± duration, `this`,
+  `file.*` (links, embeds, backlinks, tags, properties...), `note.*`, `formula.*` with loop detection, Obsidian's
+  error messages; filters (`and` / `or` / `not`, base + view) over the MetadataCache, live updates.
+- ✅ Views: table (sticky header with sort toggle, resizable columns saved as `columnSize`, row heights, group-by
+  sections with group summaries, summary footer with the built-in functions per type, in-place editing of note
+  properties with the property widgets writing the frontmatter through the Properties core), cards (image / colour
+  covers, card size, aspect ratio, fit) and list (markers, separator, indented properties); virtualized painting.
+- ✅ Toolbar: views menu (switch, configure: name, layout, options, duplicate / delete), result count with limit,
+  copy table (TSV + Markdown) and Export CSV, Sort / Group by, Filter editor (simple rows per property type, advanced
+  formulas, nested groups), Properties (visibility, order, display names, formulas), Search, New (a note with the
+  properties the filters imply). `![[x.base]]` / `![[x.base#View]]` embeds and ```` ```base ```` code blocks (edits
+  written back to the file / the fence), "#View" subpaths, commands `bases:new-file` / `insert` / `copy-table` /
+  `change-view` / `add-view` / `add-item`, "New base" in the folder and editor menus, pop-out windows.
+- Differences: "New" opens the note in a new tab (Obsidian: an editable popover); filter values are plain inputs
+  (comma-separated for lists) instead of property widgets; the summary menu has no search / "Add summary" formula
+  entry; object literals `{a: 1}` parse (an extension); a base embed is sized from a static first rendering before its
+  live widget exists.
+
 ## Raw HTML
 - ✅ Inline HTML in Live Preview, Reading view, table cells, callouts and PDF export (`src/editor/html`): tags paired
   per paragraph and hidden, content formatted — `b strong i em cite dfn var u ins s strike del mark code kbd tt samp

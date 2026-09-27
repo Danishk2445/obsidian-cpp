@@ -1,0 +1,4 @@
+---
+type: author
+---
+# Frank Herbert

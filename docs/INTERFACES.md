@@ -190,3 +190,20 @@ Interfaces other modules/agents build against. Change deliberately and update al
   (no global positions) a tab leaving its window continues as a native `QDrag` (MIME
   `application/x-obsidian-cpp-leaf`) accepted by an event filter on each window's QWindow.
 - Scenario verb `screenshot-popout [n] <png>` (src/app/scenario_runner.h).
+
+## Bases (additive)
+- `src/core/bases` (new, `oc::bases`): the `.base` model (`BaseFile` / `BaseView` / `Filter`, Obsidian's YAML
+  serialization; `YamlNode` ordered tree), the formula language (`parseExpression` / `evaluate` / `Formula`, Obsidian's
+  functions), queries (`QueryContext`, `Entry`, `buildViewData`, summaries, `exportTable`) over a `DataSource`
+  (`VaultDataSource` for a session, `MemoryDataSource` for tests) and `QueryRunner` (time-sliced GUI-thread scans,
+  incremental on MetadataCache / Vault events; `isReady()` / `isIdle()`).
+- `src/ui/views/bases` (new, `oc::basesui`): `registerBases(MainWindow*)` (bases_plugin.h) registers the "bases" view
+  for `.base`, the embeds and the `bases:*` commands, "New base" in the folder and editor menus; call it in
+  `Application::populateWindow` after the command registry exists and before the layout loads.
+- `EmbedRegistry` (src/editor/embeds/embed_registry.h), additive: `registerCodeBlockLanguage(lang, provider)` /
+  `unregisterCodeBlockLanguage` / `codeBlockProvider` / `isCodeBlockLanguageRegistered` / `isEmptyOfCodeBlocks`, and
+  `makeCodeBlockEmbedWidget(language, source, maxWidth)`; `EmbedRequest` gains `language` and `source` (the fence's
+  content; `absPath` empty; `key()` includes them). `LivePreviewDecorator` shows a registered language's fence as that
+  embed while the selection is outside it (Live Preview and Reading), the source otherwise.
+- `props::yamlString(value, indent, implicitKey)` (src/core/properties/property_yaml.h): the YAML scalar writer with
+  an explicit indentation (for nested collections).

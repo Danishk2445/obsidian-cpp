@@ -44,4 +44,9 @@ QString yamlInlineItem(const QVariant& value, bool* singleLine);
 // JSON text of a value (Obsidian's JSON.stringify for the "unknown" property widget).
 QString jsonText(const QVariant& value);
 
+// (additive, used by Bases' nested .base serializer) A string scalar as the writer puts it inside
+// nested collections: `indent` is the indentation its continuation lines get (the enclosing
+// collection's item indentation), `implicitKey` for mapping keys. yamlKey() is ("key", "  ", true).
+QString yamlString(const QString& value, const QString& indent, bool implicitKey);
+
 } // namespace oc::props
