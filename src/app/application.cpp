@@ -53,6 +53,7 @@
 #include "ui/views/markdown/note_embed_view.h"
 #include "ui/views/markdown/properties/properties_commands.h"
 #include "ui/views/canvas/canvas_registration.h"
+#include "ui/views/bases/bases_plugin.h"
 #include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
@@ -552,6 +553,7 @@ void Application::populateWindow(MainWindow* w)
     registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
     registerExportPdfCommand(*commands, w);  // workspace:export-pdf
     registerCanvasCommands(*commands, w);    // canvas:new-file, export-as-image, ...
+    registerBases(w);                        // .base view, base embeds / code blocks, bases:* commands
     rename_subpath::registerCommands(*commands, w); // editor:rename-heading + editor menu "Rename this heading/block ID..."
     installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
     SettingsController* settings = SettingsController::of(w);

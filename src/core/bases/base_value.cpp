@@ -228,8 +228,6 @@ bool primitiveLooseEquals(const Value& a, const Value& b)
     return toNum(a) == toNum(b);
 }
 
-const QList<Value>& listItems(const Value& v) { return v.items(); }
-
 } // namespace
 
 // ---------------------------------------------------------------------------------------------
@@ -1584,7 +1582,7 @@ double Value::jsParseFloat(const QString& s)
     while (i < s.size() && isJsSpace(s[i]))
         ++i;
     static const QRegularExpression re(QStringLiteral("\\A[+-]?(?:Infinity|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)"));
-    const QRegularExpressionMatch m = re.match(QStringView(s).mid(i));
+    const QRegularExpressionMatch m = re.matchView(QStringView(s).mid(i));
     if (!m.hasMatch())
         return kNaN;
     const QString t = m.captured(0);
