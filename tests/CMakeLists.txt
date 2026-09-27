@@ -89,5 +89,6 @@ oc_add_test(core_canvas_links_test SOURCES core/canvas_links_test.cpp DEPS oc_co
 oc_add_test(ui_canvas_test SOURCES ui/canvas_view_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_bases_test SOURCES ui/bases_view_test.cpp DEPS oc_ui Qt6::Test GUI)
 oc_add_test(ui_note_embeds_test SOURCES ui/note_embeds_test.cpp ui/note_embeds_shots_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Test GUI)
+oc_add_test(ui_editor_options_test SOURCES ui/editor_options_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Pdf Qt6::Test GUI)
 oc_add_test(core_bases_test SOURCES core/bases_expr_test.cpp core/bases_file_test.cpp core/bases_query_test.cpp core/bases_test_support.h DEPS oc_core Qt6::Test GUI)
 oc_add_test(perf_bases_test SOURCES perf/bases_perf_test.cpp DEPS oc_core LABELS perf)

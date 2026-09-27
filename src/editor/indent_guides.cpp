@@ -1,8 +1,11 @@
 #include "editor/indent_guides.h"
 
+#include "markdown/inline_rules.h"
 #include "render/layout/decoration.h"
 
 namespace oc::indent {
+
+bool isJsSpace(QChar c) { return md::rules::isJsSpace(c.unicode()); }
 
 namespace {
 
@@ -21,7 +24,7 @@ ItemMatch matchItem(QStringView s)
 {
     ItemMatch m;
     int i = 0;
-    while (i < s.size() && (s[i] == u'>' || md::rules::isJsSpace(s[i].unicode())))
+    while (i < s.size() && (s[i] == u'>' || isJsSpace(s[i])))
         ++i;
     m.prefix = i;
     int k = i;

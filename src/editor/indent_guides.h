@@ -1,6 +1,5 @@
 #pragma once
 
-#include "markdown/inline_rules.h"
 #include "text/text.h"
 
 #include <QStringView>
@@ -22,13 +21,16 @@ class StyleSheet;
 // (--indentation-guide-color-active) on the lines of the item's body (see activeRange()).
 namespace indent {
 
+// JavaScript's \s (what Obsidian's regular expressions match).
+bool isJsSpace(QChar c);
+
 // Calls fn(from, to, guide) for each unit of the line's leading [\s>]+, in order: guide = true for an indent unit
 // (TAB / four spaces), false for spacing (possibly empty). Quote markers produce nothing.
 template <class F>
 void forEachUnit(QStringView line, F&& fn)
 {
     int n = 0;
-    while (n < line.size() && (line[n] == u'>' || md::rules::isJsSpace(line[n].unicode())))
+    while (n < line.size() && (line[n] == u'>' || isJsSpace(line[n])))
         ++n;
     for (int b = 0; b < n;) {
         const QChar k = line[b];
