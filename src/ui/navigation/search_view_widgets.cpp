@@ -1,5 +1,6 @@
 #include "ui/navigation/search_view_widgets.h"
 
+#include "core/util/owned_menu.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 
@@ -262,7 +263,7 @@ void SortDropdown::mousePressEvent(QMouseEvent* e)
 {
     if (e->button() != Qt::LeftButton)
         return;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     auto* group = new QActionGroup(&menu);
     for (int i = 0; i < m_labels.size(); ++i) {
         QAction* a = menu.addAction(m_labels[i]);

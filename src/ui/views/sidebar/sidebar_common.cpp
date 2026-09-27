@@ -8,6 +8,7 @@
 #include "core/metadata/metadata_cache.h"
 #include "core/search/search_document.h"
 #include "core/search/search_match.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
@@ -112,7 +113,7 @@ NavActionButton* NavHeader::addSortButton(const QList<QList<QPair<QString, QStri
     m_row->insertWidget(m_row->count() - 1, b);
     m_buttons << b;
     connect(b, &QAbstractButton::clicked, this, [this, b, groups, current, choose] {
-        QMenu menu(this);
+        QMenu& menu = *ownedMenu(this);
         const QString cur = current ? current() : QString();
         for (int g = 0; g < groups.size(); ++g) {
             for (const auto& [id, label] : groups[g]) {
@@ -128,8 +129,10 @@ NavActionButton* NavHeader::addSortButton(const QList<QList<QPair<QString, QStri
             menu.addSeparator();
         }
         b->setActive(true); // .has-active-menu
+        QPointer<NavActionButton> button(b); // the header may go while the menu is open
         menu.exec(b->mapToGlobal(QPoint(0, b->height() + 2)));
-        b->setActive(false);
+        if (button)
+            button->setActive(false);
     });
     return b;
 }

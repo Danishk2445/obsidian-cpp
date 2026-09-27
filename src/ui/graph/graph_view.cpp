@@ -4,6 +4,7 @@
 #include "core/config/config_store.h"
 #include "core/files/file_manager.h"
 #include "core/metadata/metadata_cache.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "graph/graph_settings.h"
@@ -220,7 +221,7 @@ public:
         TFile* file = s && s->vault() ? s->vault()->file(id) : nullptr;
         if (!file || !ws)
             return;
-        QMenu menu(m_view);
+        QMenu& menu = *ownedMenu(m_view);
         QAction* title = menu.addAction(file->isMarkdown() ? file->basename() : file->name());
         title->setEnabled(false);
         menu.addSeparator();

@@ -16,6 +16,7 @@
 
 #include <KIO/OpenFileManagerWindowJob>
 
+#include <QCheckBox>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
@@ -24,6 +25,7 @@
 #include <QLineEdit>
 #include <QPointer>
 #include <QTimer>
+#include <QVBoxLayout>
 
 #include <memory>
 
@@ -318,6 +320,105 @@ WorkspaceLeaf* openNewFile(Workspace* ws, TFile* file, Workspace::NewLeaf mode)
 // deletion
 // ---------------------------------------------------------------------------------------------
 
+namespace {
+
+// The existing attachments (anything but notes, canvases and bases) that `path` links to.
+QStringList linkedAttachments(VaultSession* s, const QString& path)
+{
+    MetadataCache* mc = s->metadata();
+    Vault* v = s->vault();
+    QStringList out;
+    if (!mc || !v)
+        return out;
+    static const QStringList notAttachments{QStringLiteral("md"), QStringLiteral("canvas"), QStringLiteral("base")};
+    const QHash<QString, int> targets = mc->resolvedLinks().value(path);
+    for (auto it = targets.cbegin(); it != targets.cend(); ++it) {
+        TFile* f = v->file(it.key());
+        if (f && !notAttachments.contains(f->extension().toLower()))
+            out << f->path();
+    }
+    out.sort();
+    return out;
+}
+
+void trashPaths(VaultSession* s, const QStringList& paths)
+{
+    for (const QString& p : paths) {
+        Vault* v = s ? s->vault() : nullptr;
+        TAbstractFile* it = v ? v->item(p) : nullptr;
+        if (!it)
+            continue;
+        QString err;
+        FileManager* fm = s->fileManager();
+        if (!(fm ? fm->trashFile(it, &err) : v->trash(it, Vault::TrashMode::System, &err)))
+            showNotice(s, err.isEmpty() ? tr("Failed to delete “%1”.").arg(p) : err);
+    }
+}
+
+// Obsidian's promptForDeletion() tail ("deleteUnlinkedAttachments"): after `deleted` is gone, the attachments it
+// linked that no other file links to are deleted too ("always"), offered in a checklist ("ask", all checked) or
+// kept ("never"). `then` runs once that's settled.
+void deleteOrphanAttachments(VaultSession* s, const QString& deleted, QStringList candidates, const std::function<void()>& then)
+{
+    VaultConfig* cfg = s ? s->vaultConfig() : nullptr;
+    const QString mode = cfg ? cfg->string(QStringLiteral("deleteUnlinkedAttachments")) : QStringLiteral("ask");
+    if (s && s->metadata() && mode != u"never") {
+        const auto& resolved = s->metadata()->resolvedLinks();
+        for (auto it = resolved.cbegin(); it != resolved.cend() && !candidates.isEmpty(); ++it)
+            if (it.key() != deleted)
+                for (auto t = it->cbegin(); t != it->cend(); ++t)
+                    candidates.removeAll(t.key());
+    }
+    OverlayLayer* layer = s ? sessionOverlay(s) : nullptr;
+    if (mode == u"never" || candidates.isEmpty() || (mode == u"ask" && !layer) || (mode != u"ask" && mode != u"always")) {
+        if (then)
+            then();
+        return;
+    }
+    if (mode == u"always") {
+        trashPaths(s, candidates);
+        if (then)
+            then();
+        return;
+    }
+    auto* m = new Modal(layer);
+    m->setObjectName(QStringLiteral("ocOrphanAttachments"));
+    m->setTitle(tr("Delete file attachments?"));
+    m->addParagraph(candidates.size() == 1
+                        ? tr("This attachment is no longer used in any notes. Would you like to delete it?")
+                        : tr("These %1 attachments are no longer used in any notes. Would you like to delete them?")
+                              .arg(candidates.size()));
+    auto* list = new QWidget;
+    auto* col = new QVBoxLayout(list);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(4);
+    QList<QPointer<QCheckBox>> boxes;
+    for (const QString& p : std::as_const(candidates)) {
+        auto* box = new QCheckBox(p, list);
+        box->setChecked(true);
+        col->addWidget(box);
+        boxes << box;
+    }
+    m->addContentWidget(list);
+    m->addButton(tr("Cancel"));
+    const int del = m->addButton(tr("Delete"), Modal::ButtonStyle::Warning);
+    QPointer<VaultSession> guard = s;
+    QObject::connect(m, &Modal::closed, m, [guard, boxes, del, then](int result) {
+        if (result == del && guard) {
+            QStringList checked;
+            for (const auto& b : boxes)
+                if (b && b->isChecked())
+                    checked << b->text();
+            trashPaths(guard, checked);
+        }
+        if (then)
+            then();
+    });
+    m->open();
+}
+
+} // namespace
+
 void promptForDeletion(VaultSession* session, TAbstractFile* item, std::function<void(bool)> done)
 {
     Vault* vault = session ? session->vault() : nullptr;
@@ -332,12 +433,22 @@ void promptForDeletion(VaultSession* session, TAbstractFile* item, std::function
         Vault* v = s ? s->vault() : nullptr;
         TAbstractFile* it = v ? v->item(path) : nullptr;
         bool ok = false;
+        QStringList attachments;
         if (it) {
+            if (!it->isFolder())
+                attachments = linkedAttachments(s, path);
             QString err;
             FileManager* fm = s->fileManager();
             ok = fm ? fm->trashFile(it, &err) : v->trash(it, Vault::TrashMode::System, &err);
             if (!ok)
                 showNotice(s, err.isEmpty() ? tr("Failed to delete “%1”.").arg(path) : err);
+        }
+        if (ok && !attachments.isEmpty()) {
+            deleteOrphanAttachments(s, path, attachments, [done] {
+                if (done)
+                    done(true);
+            });
+            return;
         }
         if (done)
             done(ok);

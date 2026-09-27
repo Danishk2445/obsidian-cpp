@@ -5,6 +5,7 @@
 #include "core/config/json_file.h"
 #include "core/config/vault_config.h"
 #include "core/files/file_manager.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
@@ -782,11 +783,13 @@ void FileExplorerView::populateSortMenu(QMenu* menu)
 
 void FileExplorerView::showSortMenu()
 {
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     populateSortMenu(&menu);
     m_sort->setActive(true); // .has-active-menu
+    QPointer<FileExplorerView> self(this);
     menu.exec(m_sort->mapToGlobal(QPoint(0, m_sort->height() + 2)));
-    m_sort->setActive(false);
+    if (self)
+        m_sort->setActive(false);
 }
 
 void FileExplorerView::populateContextMenu(QMenu* menu, TAbstractFile* item)
@@ -971,10 +974,12 @@ void FileExplorerView::showContextMenu(TAbstractFile* item, const QPoint& global
 {
     if (item && item == m_tree->renamingItem())
         return;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     populateContextMenu(&menu, item);
-    if (menu.isEmpty())
+    if (menu.isEmpty()) {
+        menu.deleteLater();
         return;
+    }
     if (item) {
         m_tree->setFocusedItem(item, false);
         m_tree->setMenuItem(item);

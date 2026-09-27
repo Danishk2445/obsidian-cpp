@@ -5,6 +5,7 @@
 #include "core/metadata/mentions.h"
 #include "core/metadata/metadata_cache.h"
 #include "core/metadata/subpath.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "markdown/metadata.h"
@@ -323,10 +324,12 @@ void OutgoingLinkView::showContextMenu(TreeList::Node* n, const QPoint& globalPo
 {
     if (!n || n->type != kLink)
         return;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     buildSectionedMenu(&menu, linkMenuEntries(workspace(), n->data.toString(), filePath(), this));
-    if (menu.isEmpty())
+    if (menu.isEmpty()) {
+        menu.deleteLater();
         return;
+    }
     m_tree->setMenuNode(n);
     QPointer<OutgoingLinkView> self(this);
     menu.exec(globalPos);

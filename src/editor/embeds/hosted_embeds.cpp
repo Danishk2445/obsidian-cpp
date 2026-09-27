@@ -131,7 +131,7 @@ QList<HostedEmbeds::Found> HostedEmbeds::collect(double y0, double y1) const
             continue;
         const auto& slotList = ul->block.widgets();
         for (qsizetype i = 0; i < slotList.size() && i < ul->widgetRects.size(); ++i) {
-            const auto* ew = dynamic_cast<const EmbedWidget*>(slotList[i].widget.get());
+            auto ew = std::dynamic_pointer_cast<const EmbedWidget>(slotList[i].widget);
             if (!ew)
                 continue;
             if (ul->widgetRects[i].isEmpty())
@@ -139,7 +139,7 @@ QList<HostedEmbeds::Found> HostedEmbeds::collect(double y0, double y1) const
             const QRectF docRect = ul->widgetRects[i].translated(0, top);
             const QPointF tl = v->docToViewport(docRect.topLeft());
             Found f;
-            f.embed = ew;
+            f.embed = std::move(ew);
             f.rect = QRect(int(std::lround(tl.x())), int(std::lround(tl.y())), int(std::lround(docRect.width())),
                            int(std::lround(docRect.height())));
             f.line = line;

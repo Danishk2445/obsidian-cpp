@@ -9,6 +9,7 @@
 #include "core/config/json_file.h"
 #include "ui/views/markdown/inline_title.h"
 
+#include <QCheckBox>
 #include <QClipboard>
 #include <QJsonArray>
 #include <QLineEdit>
@@ -449,6 +450,106 @@ TEST_F(FileExplorerTest, KeyboardNavigation)
     tree()->setFocusedItem(m_vault->item("Math.md"));
     QTest::keyClick(tree(), Qt::Key_Left);
     EXPECT_TRUE(tree()->expandedPaths().isEmpty());
+}
+
+// Obsidian's "Delete attachments with files" (deleteUnlinkedAttachments). Embeds.md is the only note linking
+// attachments/image.png (HTML.md's <img> isn't a link).
+TEST_F(FileExplorerTest, DeletingANoteOffersItsOrphanedAttachments)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    explorer()->deleteItems({m_vault->item("Embeds.md")});
+    QApplication::processEvents();
+    EXPECT_FALSE(exists("Embeds.md"));
+    Modal* m = openModal();
+    ASSERT_NE(m, nullptr);
+    EXPECT_EQ(m->title(), "Delete file attachments?");
+    EXPECT_EQ(m->paragraphs(), QStringList{"This attachment is no longer used in any notes. Would you like to delete it?"});
+    const QList<QCheckBox*> boxes = m->findChildren<QCheckBox*>();
+    ASSERT_EQ(boxes.size(), 1);
+    EXPECT_EQ(boxes[0]->text(), "attachments/image.png");
+    EXPECT_TRUE(boxes[0]->isChecked());
+    ASSERT_EQ(m->buttonCount(), 2);
+    EXPECT_EQ(m->button(1)->text(), "Delete");
+    m->button(1)->click();
+    QApplication::processEvents();
+    EXPECT_FALSE(exists("attachments/image.png"));
+}
+
+TEST_F(FileExplorerTest, OrphanedAttachmentsUncheckedOrCancelledStay)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    explorer()->deleteItems({m_vault->item("Embeds.md")});
+    QApplication::processEvents();
+    Modal* m = openModal();
+    ASSERT_NE(m, nullptr);
+    m->findChildren<QCheckBox*>().value(0)->setChecked(false);
+    m->button(1)->click();
+    QApplication::processEvents();
+    EXPECT_TRUE(exists("attachments/image.png"));
+}
+
+TEST_F(FileExplorerTest, OrphanedAttachmentsNever)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    m_session->vaultConfig()->set(QStringLiteral("deleteUnlinkedAttachments"), QStringLiteral("never"));
+    explorer()->deleteItems({m_vault->item("Embeds.md")});
+    QApplication::processEvents();
+    EXPECT_EQ(openModal(), nullptr);
+    EXPECT_TRUE(exists("attachments/image.png"));
+}
+
+TEST_F(FileExplorerTest, OrphanedAttachmentsAlways)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    m_session->vaultConfig()->set(QStringLiteral("deleteUnlinkedAttachments"), QStringLiteral("always"));
+    explorer()->deleteItems({m_vault->item("Embeds.md")});
+    QApplication::processEvents();
+    EXPECT_EQ(openModal(), nullptr);
+    EXPECT_FALSE(exists("Embeds.md"));
+    EXPECT_FALSE(exists("attachments/image.png"));
+}
+
+// Monkey seed 7106: the deleted note's MarkdownView is replaced and only deleted later (deleteLater()); an attachment
+// deleted in the same event (here: "always") re-decorated it through MetadataCache::resolved while it still pointed
+// at the freed TFile.
+TEST_F(FileExplorerTest, AReplacedViewOfADeletedNoteForgetsTheFile)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    m_session->vaultConfig()->set(QStringLiteral("deleteUnlinkedAttachments"), QStringLiteral("always"));
+    m_ws->openFile(m_vault->file("Embeds.md"));
+    QApplication::processEvents();
+    QPointer<FileView> view = qobject_cast<FileView*>(m_ws->activeLeaf()->view());
+    ASSERT_TRUE(view && view->file());
+    explorer()->deleteItems({m_vault->item("Embeds.md")}); // the note, then its image, in one go
+    EXPECT_FALSE(exists("attachments/image.png"));
+    ASSERT_TRUE(view); // not deleted yet
+    EXPECT_EQ(view->file(), nullptr);
+    EXPECT_EQ(view->state().value("file").toString(), "Embeds.md");
+    QApplication::processEvents();
+}
+
+namespace {
+class SharedAttachmentTest : public FileExplorerTest {
+protected:
+    void prepareVault(const QString& root) override
+    {
+        QFile f(root + "/Gallery.md");
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write("![[image.png]]\n");
+    }
+};
+} // namespace
+
+TEST_F(SharedAttachmentTest, AttachmentsStillLinkedElsewhereStay)
+{
+    m_session->vaultConfig()->set(QStringLiteral("promptDelete"), false);
+    m_session->vaultConfig()->set(QStringLiteral("deleteUnlinkedAttachments"), QStringLiteral("always"));
+    ASSERT_TRUE(QTest::qWaitFor([&] { return m_meta->resolvedLinks().value("Gallery.md").contains("attachments/image.png"); }, 10000));
+    explorer()->deleteItems({m_vault->item("Embeds.md")});
+    QApplication::processEvents();
+    EXPECT_EQ(openModal(), nullptr);
+    EXPECT_FALSE(exists("Embeds.md"));
+    EXPECT_TRUE(exists("attachments/image.png"));
 }
 
 TEST_F(FileExplorerTest, DeleteAsksAndUsesTheTrashOption)

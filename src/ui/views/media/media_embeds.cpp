@@ -1,6 +1,7 @@
 #include "ui/views/media/media_embeds.h"
 
 #include "core/util/busy.h"
+#include "core/util/owned_menu.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 #include "ui/views/media/media_player.h"
@@ -196,7 +197,7 @@ PdfEmbedWidget::PdfEmbedWidget(const EmbedContext& context, QWidget* parent)
         right->addWidget(m_editSpacer);
         connect(m_more, &QAbstractButton::clicked, this, [this] {
             // Obsidian's link context menu
-            QMenu menu(this);
+            QMenu& menu = *ownedMenu(this);
             const EmbedRequest req = m_ctx.request;
             QPointer<QWidget> self = this;
             menu.addAction(IconProvider::instance().icon(QStringLiteral("file-plus"), 16, 2.0), tr("Open in new tab"), this,

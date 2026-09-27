@@ -1,6 +1,7 @@
 #include "ui/views/media/media_player.h"
 
 #include "core/util/busy.h"
+#include "core/util/owned_menu.h"
 #include "render/theme/theme.h"
 
 #include <QApplication>
@@ -637,7 +638,7 @@ void MediaControlBar::setVolumeAt(int x)
 
 void MediaControlBar::showMenu()
 {
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     QMenu* speed = menu.addMenu(tr("Playback speed"));
     const double rates[] = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
     for (double r : rates) {

@@ -9,6 +9,7 @@
 #include "core/search/search_document.h"
 #include "core/search/search_engine.h"
 #include "core/search/search_match.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
@@ -749,10 +750,12 @@ void BacklinkPane::showContextMenu(TreeList::Node* n, const QPoint& globalPos)
                            },
                            true};
     }
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     buildSectionedMenu(&menu, items);
-    if (menu.isEmpty())
+    if (menu.isEmpty()) {
+        menu.deleteLater();
         return;
+    }
     m_tree->setMenuNode(n);
     QPointer<BacklinkPane> self(this);
     menu.exec(globalPos);

@@ -3,6 +3,7 @@
 #include "core/commands/command_registry.h"
 #include "core/config/vault_config.h"
 #include "core/documents/document.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "editor/editor_view.h"
@@ -247,7 +248,7 @@ void registerMarkdownCommands(CommandRegistry& r, Workspace* workspace)
     }));
     r.add(editing("editor:insert-tag", QObject::tr("Add tag"), "tag", [](E& e, V&) { mdcmd::insertTag(e); }));
     r.add(editing("editor:set-heading", QObject::tr("Set heading"), "heading-glyph", [](E& e, V&) {
-        QMenu menu(&e);
+        QMenu& menu = *ownedMenu(&e);
         for (int level = 0; level <= 6; ++level) {
             const QString title = level == 0 ? QObject::tr("No heading") : QObject::tr("Heading %1").arg(level);
             menu.addAction(IconProvider::instance().icon(level == 0 ? u"type"_s : u"heading-"_s + QString::number(level), 16), title, &e,

@@ -68,7 +68,9 @@ private:
 class FileView : public View {
     Q_OBJECT
 public:
-    using View::View;
+    // A view still showing its file when the vault deletes it (one the workspace replaced and disposes with
+    // deleteLater(), a preview, an embed) forgets the TFile, which the vault frees right after deleted().
+    explicit FileView(WorkspaceLeaf* leaf, QWidget* parent = nullptr);
 
     TFile* file() const { return m_file; }
     virtual bool canAcceptExtension(const QString& extension) const = 0;

@@ -1,6 +1,7 @@
 #include "ui/picker/vault_picker.h"
 
 #include "core/config/vault_registry.h"
+#include "core/util/owned_menu.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
 
@@ -251,7 +252,7 @@ void VaultPicker::showItemMenu(const QPoint& pos)
     if (!it || it->data(ExternalRole).toInt() == 2)
         return;
     const QString path = it->data(PathRole).toString();
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     menu.addAction(tr("Reveal in file manager"), this, [path] { QDesktopServices::openUrl(QUrl::fromLocalFile(path)); });
     if (it->data(ExternalRole).toInt() == 0) {
         const QString id = it->data(IdRole).toString();

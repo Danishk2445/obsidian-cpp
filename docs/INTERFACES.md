@@ -67,8 +67,11 @@ Interfaces other modules/agents build against. Change deliberately and update al
 - `FrontmatterEditor(const Text&)`: minimal byte-exact frontmatter patches (`set/add/rename/remove/reorder/merge/clear`
   → `changes()`), `property_yaml.h` (Obsidian's YAML output for a changed value), `PropertyTypeManager::of(session)`
   (types.json in the clone config), `vault_properties.h` (`renameProperty` / `deleteProperty` vault-wide via
-  FileManager::editFile). `src/core/util/owned_menu.h`: `ownedMenu(owner)` for context menus whose items may destroy
-  their owner (never a stack `QMenu m(owner)` there).
+  FileManager::editFile). `src/core/util/owned_menu.h`: `ownedMenu(owner)` for every parented popup menu: `exec()`
+  runs a nested loop in which the owner can be destroyed (an item, a file deleted underneath, deferred deletes), so
+  never a stack `QMenu m(owner)`; touch the owner after `exec()` only through a QPointer.
+- `FileView` (view.h) now has an explicit constructor: it forgets `m_file` when the vault deletes it (after the
+  workspace's own handler), so a view pending `deleteLater()`, a preview or an embed never reads a freed TFile.
 
 ## Editor & UI building blocks (stable; additive changes only)
 - `EditorView` (src/editor/editor_view.h): decoration layers (`addDecorationLayer`), folding API (`foldLine`,

@@ -1,6 +1,7 @@
 #include "ui/views/sidebar/bookmarks_view.h"
 
 #include "core/time/moment_format.h"
+#include "core/util/owned_menu.h"
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
@@ -742,10 +743,12 @@ void BookmarksView::populateContextMenu(QMenu* menu, TreeList::Node* node)
 
 void BookmarksView::showContextMenu(TreeList::Node* node, const QPoint& globalPos)
 {
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     populateContextMenu(&menu, node);
-    if (menu.isEmpty())
+    if (menu.isEmpty()) {
+        menu.deleteLater();
         return;
+    }
     if (node)
         m_tree->setMenuNode(node);
     QPointer<BookmarksView> self(this);

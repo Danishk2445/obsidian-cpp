@@ -57,6 +57,19 @@ void View::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
 // FileView
 // ---------------------------------------------------------------------------------------------
 
+FileView::FileView(WorkspaceLeaf* leaf, QWidget* parent)
+    : View(leaf, parent)
+{
+    // Runs after the workspace's own deleted() handler (connected first), which moves leaves off the file.
+    if (Vault* v = session() ? session()->vault() : nullptr)
+        connect(v, &Vault::deleted, this, [this](TAbstractFile* item) {
+            if (m_file && item == m_file) {
+                setProperty(kPathProperty, m_file->path());
+                m_file = nullptr;
+            }
+        });
+}
+
 void FileView::paneMenuEntries(QList<MenuEntry>& items, const QString& source)
 {
     View::paneMenuEntries(items, source);

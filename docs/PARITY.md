@@ -184,8 +184,11 @@ Open parity questions:
   files opened in a new tab load in the background; "+" / New tab still focus), show tab title bar (the view header),
   default file to open (after the layout is restored, unless the launch opens a note: last opened / new note unless
   the active one is empty / daily note / a specific file, matched case-insensitively with ".md" implied).
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, delete attachments with files, URI
-  callbacks, native menus, editing-mode status bar toggle
+- ✅ Delete attachments with files ("deleteUnlinkedAttachments"): after a file is deleted, the attachments it linked
+  that nothing else links are deleted ("always"), offered in a checklist, all checked ("ask"), or kept ("never").
+  The checklist is a flat list of paths (Obsidian also has a file tree and a gallery view).
+- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, URI callbacks, native menus,
+  editing-mode status bar toggle
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 

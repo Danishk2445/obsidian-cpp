@@ -21,6 +21,8 @@
 #include <QPointer>
 #include <QRect>
 
+#include <memory>
+
 namespace oc {
 
 class EditorView;
@@ -79,7 +81,8 @@ protected:
 
 private:
     struct Found {
-        const EmbedWidget* embed = nullptr;
+        // Owned too: creating a live widget can relayout the view and drop the display block holding it.
+        std::shared_ptr<const EmbedWidget> embed;
         QRect rect;
         int line = -1;
         qsizetype docFrom = 0;

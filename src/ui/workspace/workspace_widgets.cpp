@@ -1264,7 +1264,7 @@ void ViewHeader::showHistoryMenu(bool back)
         return;
     QPointer<WorkspaceLeaf> leaf = m_leaf;
     WorkspaceImpl* dd = d;
-    QMenu menu(this);
+    QMenu& menu = *ownedMenu(this);
     for (int i = 0; i < items.size(); ++i) {
         QString title = items[i].first;
         if (title.size() > 50)
