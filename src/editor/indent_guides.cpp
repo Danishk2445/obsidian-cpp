@@ -114,6 +114,25 @@ ActiveRange activeRange(const Text& text, int selectionLine)
     return r;
 }
 
+int hangingPrefix(QStringView line)
+{
+    const ItemMatch m = matchItem(line);
+    return m.prefix + m.marker;
+}
+
+int lastSpacingUnit(QStringView line)
+{
+    int n = 0;
+    while (n < line.size() && isJsSpace(line[n]))
+        ++n;
+    int last = -1;
+    forEachUnit(line.left(n), [&](int from, int to, bool guide) {
+        if (to > from) // (an empty mark makes no element)
+            last = guide ? -1 : from;
+    });
+    return last;
+}
+
 QList<QPair<int, int>> changedLines(const ActiveRange& a, const ActiveRange& b)
 {
     QList<QPair<int, int>> out;

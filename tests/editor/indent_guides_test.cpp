@@ -327,7 +327,7 @@ TEST(IndentGuides, ReadingViewNestedLists)
     EXPECT_EQ(guides(0), 0);
     EXPECT_EQ(guides(1), 1);
     EXPECT_EQ(guides(2), 1);
-    EXPECT_EQ(guides(3), 1); // a blank line between nested items: the guide goes through
+    EXPECT_EQ(guides(3), -1); // a blank line between nested items: no gap in Reading view (a loose list), nothing to draw
     EXPECT_EQ(guides(4), 1);
     EXPECT_EQ(guides(5), 2);
     EXPECT_LE(guides(6), 0);
@@ -335,19 +335,27 @@ TEST(IndentGuides, ReadingViewNestedLists)
     // no editor guides in Reading view
     for (int l = 0; l < n.src.text().lineCount(); ++l)
         EXPECT_TRUE(n.deco(l).guideColumns.isEmpty()) << l;
-    // under the parent's bullet: the guide's centre is the bullet widget's centre
-    auto bulletCenter = [&](int line) {
-        const DocLayout::UnitLayout* u = n.layout.layoutFor(line);
-        return u->widgetRects.isEmpty() ? -100.0 : u->widgetRects.first().center().x();
-    };
+    // li > ul::before { inset-inline-start: var(--indentation-guide-reading-indent) } (-0.85em) from the nested list's
+    // start, the parent item's content edge (li margin-inline-start: 3ch, --list-indent below a list of its type)
+    const qreal em = env.styles->textSize(), ch3 = 3 * env.styles->ch(), unit = env.styles->listIndent();
     const qreal w = env.styles->guideWidth();
-    EXPECT_NEAR(n.deco(1).guidePositions[0] + w / 2, bulletCenter(0), 1);
-    EXPECT_NEAR(n.deco(5).guidePositions[0] + w / 2, bulletCenter(0), 1);
-    EXPECT_NEAR(n.deco(5).guidePositions[1] + w / 2, bulletCenter(4), 1);
-    // an ordered parent: under its number; a task: under its checkbox
-    const QFontMetricsF fm(env.styles->line(StyleId::Normal).font);
-    EXPECT_NEAR(n.deco(10).guidePositions[0] + w / 2, fm.horizontalAdvance(QStringLiteral("1.")) / 2, 1);
-    EXPECT_NEAR(n.deco(13).guidePositions[0] + w / 2, bulletCenter(12) - (n.layout.layoutFor(12)->widgetRects.first().width() - env.styles->textSize()) / 2, 1);
+    EXPECT_NEAR(n.deco(1).guidePositions[0], ch3 - 0.85 * em, 0.01);
+    EXPECT_NEAR(n.deco(5).guidePositions[0], ch3 - 0.85 * em, 0.01);
+    EXPECT_NEAR(n.deco(5).guidePositions[1], ch3 + unit - 0.85 * em, 0.01);
+    // ...which runs through the parent's bullet (floated -0.8em), number (an outside ::marker ending at the content
+    // edge) or checkbox (margin-inline-start: -1.5 * --checkbox-size)
+    auto floatSpan = [&](int line) {
+        const FloatWidget& f = n.deco(line).floatWidgets.first();
+        return std::pair<qreal, qreal>(f.x, f.x + f.widget->size(env.styles->line(StyleId::Normal)).width());
+    };
+    const auto bullet = floatSpan(0);
+    EXPECT_NEAR(n.deco(1).guidePositions[0] + w / 2, (bullet.first + bullet.second) / 2, env.styles->listBulletSize() / 2);
+    const auto number = floatSpan(9);
+    EXPECT_GT(n.deco(10).guidePositions[0], number.first);
+    EXPECT_LT(n.deco(10).guidePositions[0] + w, number.second);
+    const auto box = floatSpan(12);
+    EXPECT_GT(n.deco(13).guidePositions[0], box.first);
+    EXPECT_LT(n.deco(13).guidePositions[0] + w, box.first + env.styles->checkboxSize());
     // off: none
     n.lp.setIndentGuides(false);
     n.relayout();

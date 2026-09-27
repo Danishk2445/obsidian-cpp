@@ -9,6 +9,7 @@
 #include <KSyntaxHighlighting/State>
 
 #include <QHash>
+#include <QVarLengthArray>
 
 #include <functional>
 #include <optional>
@@ -133,10 +134,32 @@ private:
     };
 
     bool hidesFootnoteDefinitions() const { return m_reading && m_footnoteMode != FootnoteMode::Definition; }
-    void readingGuides(int line, LineDecoration& d) const;
-    qreal markerCenter(int item) const;
     void paragraphRuns(int fromLine, int toLine, QList<BlockRange>& out) const;
     bool previousVisibleLineBlank(int line) const;
+
+    // Live Preview: a list item's marker on its first line (bullet, number, checkbox; CSS in the .cpp).
+    void listMarker(int line, int item, LineDecoration& d) const;
+    // Reading view (.markdown-rendered): the boxes a line sits in, outermost first. Blockquotes (a 2px
+    // border and 24px padding) and list items (margin-inline-start: 3ch, or --list-indent in a list nested in a
+    // list of its own type) move the content right; lists have no padding.
+    struct ReadingItem {
+        int node = -1;
+        qreal x = 0; // the item's content start (px)
+        bool ordered = false;
+    };
+    struct ReadingChain {
+        qreal x = 0; // the line's content start (px)
+        QList<qreal> quoteBars;
+        QVarLengthArray<ReadingItem, 8> items; // the line's list items, outermost first
+        QVarLengthArray<int, 8> lists;         // the line's lists, outermost first
+    };
+    ReadingChain readingChain(int line) const;
+    void readingLayout(int line, md::LineRole role, const ReadingChain& chain, LineDecoration& d);
+    void readingGuides(int line, const ReadingChain& chain, LineDecoration& d) const;
+    bool blankBetweenListItems(int line) const;
+    int lastContentLine(int node) const;
+    bool blockNextTo(int line, int container, int dir) const;
+    int listNumber(int item) const;
 
     const md::DocSource* m_doc;
     const StyleSheet* m_styles = nullptr;
@@ -154,6 +177,8 @@ private:
     indent::ActiveRange m_activeIndent;
     qreal m_contentWidth = 700;
     QHash<int, FenceCache> m_fenceCache;
+    mutable QHash<int, int> m_listNumbers; // Reading view: ordered item -> its rendered number
+    mutable quint64 m_listNumbersKey = 0;
 };
 
 } // namespace oc

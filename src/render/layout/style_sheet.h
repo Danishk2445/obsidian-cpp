@@ -118,6 +118,12 @@ public:
     qreal listIndent() const { return m_listIndent; }     // --list-indent in px (tab stop in list lines)
     qreal pSpacing() const { return m_pSpacing; }         // --p-spacing px (heading line top padding)
     qreal listSpacing() const { return m_listSpacing; }   // --list-spacing px
+    qreal listIndentEditing() const { return m_listIndentEditing; } // --list-indent-editing px (Live Preview marker padding)
+    qreal listBulletSize() const { return m_listBulletSize; }       // --list-bullet-size px
+    qreal checkboxSize() const { return m_checkboxSize; }           // --checkbox-size px
+    qreal checkboxMarginStart() const { return m_checkboxMarginStart; } // --checkbox-margin-inline-start px (Live Preview)
+    qreal ch() const { return m_ch; }                     // the CSS ch unit of the text font (advance of "0")
+    QColor listMarkerColor() const { return m_listMarker; } // --list-marker-color
     qreal codePaddingX() const { return m_codePadX; }     // code block line left padding
     qreal quoteBarWidth() const { return m_quoteBar; }
     qreal quoteIndent() const { return m_quoteIndent; }
@@ -145,7 +151,8 @@ private:
     qreal m_textSize = 16, m_listIndent = 36, m_pSpacing = 16, m_listSpacing = 1.2, m_codePadX = 16;
     qreal m_quoteBar = 2, m_quoteIndent = 24, m_codeRadius = 4, m_hrThickness = 2;
     qreal m_guideWidth = 1, m_guideActiveWidth = 1;
-    QColor m_codeBg, m_quoteColor, m_selection, m_caret, m_guide, m_guideActive, m_faint, m_muted, m_hr;
+    qreal m_listIndentEditing = 12, m_listBulletSize = 4.8, m_checkboxSize = 16, m_checkboxMarginStart = 13.6, m_ch = 8;
+    QColor m_codeBg, m_quoteColor, m_selection, m_caret, m_guide, m_guideActive, m_faint, m_muted, m_hr, m_listMarker;
     QColor m_tableBorder, m_tableHeaderBg;
 };
 

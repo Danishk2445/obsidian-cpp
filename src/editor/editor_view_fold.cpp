@@ -2,6 +2,7 @@
 #include "editor/editor_view.h"
 
 #include "render/theme/theme.h"
+#include "render/widgets/inline_widgets.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -401,7 +402,12 @@ int EditorView::foldLineAtIndicator(const QPoint& vp)
         return -1;
     // a comfortable hit area: the indicator plus its padding, over the whole line box
     const QRectF hit(r.left() - 4, r.top(), r.width() + 4 + 5, r.height());
-    return hit.contains(vp) ? line : -1;
+    if (!hit.contains(vp))
+        return -1;
+    // a task's checkbox is above it (Reading view: the positioned input paints over the list's collapse indicator)
+    if (const auto w = m_layout.widgetAt(docPt); w && dynamic_cast<const CheckboxWidget*>(w->widget.get()))
+        return -1;
+    return line;
 }
 
 void EditorView::setHoverLine(int line)

@@ -26,6 +26,10 @@ quint64 LineDecoration::signature() const
         h = qHashMulti(h, c);
     for (qreal x : guidePositions)
         h = qHashMulti(h, x, 3);
+    for (qreal x : quoteBars)
+        h = qHashMulti(h, x, 5);
+    for (const FloatWidget& f : floatWidgets)
+        h = qHashMulti(h, f.x, f.from, f.to, f.widget ? f.widget->signature() : 0);
     for (int c : quoteColumns)
         h = qHashMulti(h, c, 7);
     h = qHashMulti(h, guideOffset, activeGuideColumn, hidden, fixedHeight);

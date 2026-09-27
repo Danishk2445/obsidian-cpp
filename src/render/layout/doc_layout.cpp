@@ -8,6 +8,16 @@
 
 namespace oc {
 
+namespace {
+// A float widget's rect (unit coordinates): on the first visual line's baseline, like an inline widget.
+QRectF floatRect(const FloatWidget& f, const DocLayout::UnitLayout& ul, const LineMetrics& lm)
+{
+    const qreal baseline = ul.lines.isEmpty() ? lm.ascent : ul.lines.first().baseline;
+    const QSizeF size = f.widget->size(lm);
+    return QRectF(f.x, baseline - f.widget->ascent(lm), size.width(), size.height());
+}
+} // namespace
+
 DocLayout::DocLayout() = default;
 DocLayout::~DocLayout() = default;
 
@@ -414,9 +424,10 @@ void DocLayout::layoutText(UnitLayout& ul, const LineMetrics& lm)
         const qreal indent = (i == 0 || hang < 0) ? 0 : hang;
         line.setLineWidth(std::max<qreal>(10, avail - indent));
         if (i == 0 && deco.hangingColumn > 0 && line.textLength() < ul.block.display().size()) {
+            // Obsidian measures the prefix's end and floors it (text-indent: -Kpx; padding-inline-start: Kpx)
             const int hd = ul.block.docToDisp(deco.hangingColumn);
             if (hd < line.textStart() + line.textLength())
-                hang = std::min(line.cursorToX(hd), avail * 0.5);
+                hang = std::min(std::floor(line.cursorToX(hd) + 1e-6), avail * 0.5);
         }
         qreal boxH = lm.lineBox;
         qreal extraAbove = 0;
@@ -657,6 +668,8 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         }
         for (qreal x : deco.guidePositions)
             p->fillRect(QRectF(std::round(x), unitTop, ss.guideWidth(), ul->height), ss.guideColor());
+        for (qreal x : deco.quoteBars)
+            p->fillRect(QRectF(std::round(x), unitTop, ss.quoteBarWidth(), ul->height), ss.quoteBarColor());
         if (!ul->block.boxes().isEmpty() && ul->text) {
             p->save();
             p->setRenderHint(QPainter::Antialiasing);
@@ -728,6 +741,10 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             const auto& slot = ul->block.widgets()[w];
             if (slot.widget)
                 slot.widget->paint(p, ul->widgetRects[w].translated(0, unitTop), ss.line(deco.lineStyle));
+        }
+        for (const FloatWidget& f : deco.floatWidgets) {
+            if (!deco.hidden && f.widget)
+                f.widget->paint(p, floatRect(f, *ul, ss.line(deco.lineStyle)).translated(0, unitTop), ss.line(deco.lineStyle));
         }
         top += h;
         ++i;
@@ -957,6 +974,13 @@ std::optional<DocLayout::WidgetHit> DocLayout::widgetAt(const QPointF& pt)
             }
             return h;
         }
+    }
+    for (const FloatWidget& f : ul->deco.floatWidgets) {
+        if (!f.widget || !m_styles)
+            continue;
+        const QRectF r = floatRect(f, *ul, m_styles->line(ul->deco.lineStyle)).translated(0, top);
+        if (r.adjusted(-2, -2, 2, 2).contains(pt))
+            return WidgetHit{u.firstLine, f.widget, r, f.from, f.to};
     }
     return std::nullopt;
 }

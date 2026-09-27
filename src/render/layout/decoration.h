@@ -45,6 +45,16 @@ struct Replace {
     std::shared_ptr<InlineWidget> widget; // Kind::Widget
 };
 
+// A widget outside the text flow, at a fixed x on a line's first visual line (CSS floats and outside markers:
+// Reading view's list bullets, numbers and checkboxes). It sits on the first visual line's baseline like an
+// inline widget; [from, to) are the source columns it stands for (a checkbox click toggles column from + 1).
+struct FloatWidget {
+    qreal x = 0; // px, text column coordinates (may be negative: in the left margin)
+    std::shared_ptr<InlineWidget> widget;
+    int from = 0;
+    int to = 0;
+};
+
 struct LineDecoration {
     enum class CodeEdge : quint8 { None, Top, Middle, Bottom, Single };
 
@@ -54,7 +64,7 @@ struct LineDecoration {
     qreal paddingTop = 0;
     qreal paddingBottom = 0;
     qreal indent = 0;        // left padding (px) applied to every visual line
-    int hangingColumn = -1;  // wrapped lines start at the x of this column (list/quote content)
+    int hangingColumn = -1;  // wrapped lines start at the x of this column, floored to a pixel (Obsidian's hanging indent)
     qreal tabStop = 0;       // px; 0 = tabSize spaces of the base font
     int quoteDepth = 0;      // quote bars drawn at the left (block/reading rendering)
     QList<int> quoteColumns; // live preview: a quote bar at the x of each '>' marker column
@@ -67,6 +77,8 @@ struct LineDecoration {
     QList<int> guideColumns; // indentation guides: at the x of these columns (+ guideOffset), the unit's full height
     int activeGuideColumn = -1; // the guideColumns entry drawn in --indentation-guide-color-active (.cm-active-indent)
     QList<qreal> guidePositions; // guides at a fixed x (px, text column coordinates): Reading view's nested lists
+    QList<qreal> quoteBars;      // quote bars at a fixed x (px, text column coordinates): Reading view's blockquotes
+    QList<FloatWidget> floatWidgets; // widgets outside the text flow (Reading view's list markers)
     // Styles that aren't theme constants (raw HTML `style="color: …"`), referenced by Mark::custom.
     QList<StyleSpec> customStyles;
 

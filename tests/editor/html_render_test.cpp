@@ -373,7 +373,7 @@ TEST(HtmlInline, NestedHtmlBlockRendersInline)
     ASSERT_EQ(n.src.syntax().role(2), md::LineRole::Html);
     const LineDecoration d = n.line(2);
     EXPECT_EQ(d.lineStyle, StyleId::Normal);
-    EXPECT_EQ(n.display(2), QStringLiteral("  nested bold"));
+    EXPECT_EQ(n.display(2), QStringLiteral("nested bold")); // (placed by the list item, not the source indentation)
     // Live preview reveals its elements one by one, like a paragraph's.
     const QString md = QStringLiteral("- item\n\n  <span>one</span> <b>two</b>\n\nend");
     Note lp(md, *env.styles, false, md.indexOf(QStringLiteral("two")));

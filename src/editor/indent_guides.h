@@ -75,6 +75,18 @@ ActiveRange activeRange(const Text& text, int selectionLine);
 // Lines whose active guide differs between two ranges, as [from, to) runs.
 QList<QPair<int, int>> changedLines(const ActiveRange& a, const ActiveRange& b);
 
+// Obsidian's hanging indent (an editor plugin, Live Preview and Source, whatever showIndentGuide says): a line
+// outside code blocks whose start matches the list-item expression above (quote markers and whitespace, then a
+// list marker "- " / "1. " and a task box "[x] ") gets text-indent: -Kpx; padding-inline-start: Kpx, K = the x
+// of the match's end, floored: wrapped lines start under it. Returns the match's length (0: no match).
+int hangingPrefix(QStringView line);
+
+// .HyperMD-list-line-nobullet > .cm-hmd-list-indent > .cm-indent-spacing:last-child: when a list continuation
+// line's leading whitespace ends with a spacing unit (see forEachUnit), that unit gets padding-inline-start:
+// calc(var(--list-indent-editing) + var(--list-marker-space)). Returns its start column, else -1 (the spacing
+// spans exist only while the guides are on).
+int lastSpacingUnit(QStringView line);
+
 // Appends the line's guides to d.guideColumns (unit start columns), marks the active one (d.activeGuideColumn),
 // sets d.guideOffset (px: the CSS margin plus the ::before's 1px content width) and applies .cm-indent's
 // min-width: var(--list-indent) (in ems of the line's font): a four-space unit gets the missing width as letter

@@ -204,19 +204,23 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         return d; // a ```base fence (EmbedRegistry code block languages) shown as its embed
 
     // ---- container markers -----------------------------------------------------------------------
+    // (Reading view hides them all: readingLayout() places the line by its containers' boxes.)
     bool inList = false;
+    bool markerLine = false;
     bool footnoteLine = false;
     int listItemNode = -1;
     for (const md::ContainerMarker& m : tree.containerMarkers(line)) {
         switch (m.kind) {
         case md::ContainerMarker::Kind::Quote: {
             // Obsidian keeps '>' in place (transparent on inactive lines) and draws a bar at its x.
-            d.marks.push_back({m.from, m.to, active ? StyleId::Formatting : StyleId::Invisible});
-            d.quoteColumns.push_back(m.from);
+            if (!m_reading) {
+                d.marks.push_back({m.from, m.to, active ? StyleId::Formatting : StyleId::Invisible});
+                d.quoteColumns.push_back(m.from);
+            }
             break;
         }
         case md::ContainerMarker::Kind::ListMarker: {
-            inList = true;
+            inList = markerLine = true;
             listItemNode = m.node;
             break;
         }
@@ -228,7 +232,7 @@ LineDecoration LivePreviewDecorator::decorate(int line)
             footnoteLine = true;
             const int close = int(lv.indexOf(u']', m.from + 2));
             if (m_reading) {
-                d.replaces.push_back({m.from, m.to, Replace::Kind::Hide, {}, StyleId::Normal, nullptr}); // content only
+                // (content only: readingLayout() hides the label with the line's other container markers)
             } else if (close > m.from + 2 && close + 2 <= m.to) {
                 const qsizetype ls = text.lineStart(line);
                 d.marks.push_back({m.from, close + 2, StyleId::FootnoteMarker});
@@ -250,53 +254,17 @@ LineDecoration LivePreviewDecorator::decorate(int line)
     if (footnoteLine && d.lineStyle == StyleId::Normal)
         d.lineStyle = StyleId::FootnoteLine; // .HyperMD-footnote
 
-    if (inList) {
+    if (inList && !m_reading) {
+        // .cm-line.HyperMD-list-line { tab-size: var(--list-indent) } and --list-spacing above and below; a
+        // continuation line (.HyperMD-list-line-nobullet) has no top padding.
         d.tabStop = m_styles->listIndent();
-        d.hangingColumn = tree.contentColumn(line);
-        d.paddingTop = m_styles->listSpacing();
+        d.paddingTop = markerLine ? m_styles->listSpacing() : 0;
         d.paddingBottom = m_styles->listSpacing();
     }
 
-    // List item marker (bullet / checkbox) on the item's first line.
-    if (listItemNode >= 0 && tree.node(listItemNode).type == NodeType::ListItem && tree.node(listItemNode).fromLine == line) {
-        const md::ListItemInfo li = tree.listItem(listItemNode);
-        const bool task = tree.node(listItemNode).flags & md::FlagTask;
-        const qsizetype ls = text.lineStart(line);
-        if (task && li.taskFrom >= 0) {
-            const int boxTo = li.taskFrom + 3; // "[x]"
-            if (!touches(ls + li.markerFrom, ls + boxTo)) {
-                Replace hideBullet;
-                hideBullet.from = li.markerFrom;
-                hideBullet.to = li.taskFrom;
-                hideBullet.kind = Replace::Kind::Hide;
-                d.replaces.push_back(hideBullet);
-                Replace box;
-                box.from = li.taskFrom;
-                box.to = boxTo;
-                box.kind = Replace::Kind::Widget;
-                const qreal size = m_styles->textSize();
-                box.widget = std::make_shared<CheckboxWidget>(li.taskChar, size, m_styles->textSize() * 0.5);
-                d.replaces.push_back(box);
-                if (li.taskChar != u' ')
-                    d.marks.push_back({boxTo, len, StyleId::TaskDone});
-            } else {
-                d.marks.push_back({li.markerFrom, li.markerTo, StyleId::ListMarker});
-                d.marks.push_back({li.taskFrom, boxTo, StyleId::Formatting});
-            }
-        } else if (li.bullet == u'-' || li.bullet == u'*' || li.bullet == u'+') {
-            if (li.markerTo > li.markerFrom) {
-                Replace r;
-                r.from = li.markerFrom;
-                r.to = li.markerTo;
-                r.kind = Replace::Kind::Widget;
-                const qreal w = QFontMetricsF(m_styles->line(d.lineStyle).font).horizontalAdvance(lv.mid(li.markerFrom, li.markerTo - li.markerFrom).toString());
-                r.widget = std::make_shared<BulletWidget>(m_styles->line(StyleId::Normal).color.isValid() ? m_styles->faint() : m_styles->faint(), w);
-                d.replaces.push_back(r);
-            }
-        } else {
-            d.marks.push_back({li.markerFrom, li.markerTo, StyleId::ListMarker});
-        }
-    }
+    // List item marker (bullet / number / checkbox) on the item's first line.
+    if (!m_reading && listItemNode >= 0 && tree.node(listItemNode).type == NodeType::ListItem && tree.node(listItemNode).fromLine == line)
+        listMarker(line, listItemNode, d);
 
     // ---- block roles -------------------------------------------------------------------------------
     switch (role) {
@@ -363,9 +331,11 @@ LineDecoration LivePreviewDecorator::decorate(int line)
             d.hidden = true;
         break;
     case LineRole::Blank:
-        if (m_reading && d.quoteColumns.isEmpty()) {
-            // Reading view: paragraph spacing instead of empty lines; runs of blank lines collapse.
-            if (previousVisibleLineBlank(line))
+        if (m_reading) {
+            // Reading view: paragraph spacing instead of empty lines; runs of blank lines collapse. In a loose
+            // list the items' paragraphs lose their outer margins (li p:first-of-type / :last-of-type), so a
+            // blank line before an item leaves no gap.
+            if (blankBetweenListItems(line) || previousVisibleLineBlank(line))
                 d.hidden = true;
             else
                 d.fixedHeight = m_styles->pSpacing();
@@ -380,7 +350,17 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         const bool nextCode = line + 1 < tree.lineCount() && isCodeRole(tree.role(line + 1)) && tree.leafAt(line + 1) == leaf;
         d.code = prevCode ? (nextCode ? LineDecoration::CodeEdge::Middle : LineDecoration::CodeEdge::Bottom)
                           : (nextCode ? LineDecoration::CodeEdge::Top : LineDecoration::CodeEdge::Single);
-        d.hangingColumn = -1;
+    } else if (!m_reading) {
+        // wrapped lines hang under the quote / list prefix (indent::hangingPrefix; not in code blocks)
+        if (const int h = indent::hangingPrefix(lv); h > 0)
+            d.hangingColumn = h;
+    }
+
+    // Reading view: the line's place in its blockquotes and list items (CSS boxes, not source columns).
+    ReadingChain chain;
+    if (m_reading) {
+        chain = readingChain(line);
+        readingLayout(line, role, chain, d);
     }
 
     // ---- inline ------------------------------------------------------------------------------------
@@ -409,10 +389,23 @@ LineDecoration LivePreviewDecorator::decorate(int line)
     }
     d.replaces = clean;
     if (m_indentGuides && !d.hidden) {
-        if (m_reading)
-            readingGuides(line, d);
-        else // --indentation-guide-editing-indent: 0.85em, 0 in code blocks (.cm-hmd-codeblock)
+        if (m_reading) {
+            readingGuides(line, chain, d);
+        } else {
+            // --indentation-guide-editing-indent: 0.85em, 0 in code blocks (.cm-hmd-codeblock)
             indent::decorateLine(lv, line, m_activeIndent, isCodeRole(role) ? 0 : 0.85, *m_styles, d);
+            // .HyperMD-list-line-nobullet > .cm-hmd-list-indent > .cm-indent-spacing:last-child { padding-inline-start:
+            // calc(var(--list-indent-editing) + var(--list-marker-space)) }, --list-marker-space: 0.25em in Live Preview
+            if (inList && !markerLine && !isCodeRole(role)) {
+                if (const int col = indent::lastSpacingUnit(lv); col >= 0) {
+                    const qreal em = m_styles->line(d.lineStyle).font.pixelSize();
+                    const qreal pad = m_styles->listIndentEditing() / m_styles->textSize() * em + 0.25 * em;
+                    d.replaces.push_back({col, col, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<SpacerWidget>(pad)});
+                    std::stable_sort(d.replaces.begin(), d.replaces.end(),
+                                     [](const Replace& a, const Replace& b) { return a.from < b.from || (a.from == b.from && a.to < b.to); });
+                }
+            }
+        }
     }
     if (extra)
         extra(line, d);
@@ -469,18 +462,210 @@ LineDecoration LivePreviewDecorator::decorateRun(int fromLine, int toLine)
     return d;
 }
 
-void LivePreviewDecorator::readingGuides(int line, LineDecoration& d) const
+void LivePreviewDecorator::listMarker(int line, int item, LineDecoration& d) const
+{
+    // Obsidian's editor keeps a list line's source indentation; the marker token ("- " / "1. " and the whitespace
+    // after it, .cm-formatting-list-ul / -ol) has padding-inline-start: var(--list-padding-inline-start):
+    // --list-indent-editing (0.75em) in Live Preview, --list-indent-source (0) in Source mode. A bullet's "-" is
+    // a .list-bullet (transparent text, a centred disc) until the selection touches the token; a task's "- " and
+    // "[ ]" are replaced by <label class="task-list-label"> (margin-inline-start: -0.25em) holding the checkbox
+    // (margin-inline-start: var(--checkbox-margin-inline-start); margin-inline-end: 0.25em; vertical-align:
+    // middle; top: -0.1em) -- the replaced "- " leaves no padded span behind. Ordered markers stay text.
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const Text& text = m_doc->text();
+    const QStringView lv = text.lineView(line);
+    const int len = int(lv.size());
+    const md::ListItemInfo li = tree.listItem(item);
+    const qsizetype ls = text.lineStart(line);
+    const LineMetrics& lm = m_styles->line(d.lineStyle);
+    const qreal em = lm.font.pixelSize() > 0 ? lm.font.pixelSize() : m_styles->textSize();
+    const qreal scale = em / m_styles->textSize(); // theme px are for the text size
+    const bool task = (tree.node(item).flags & md::FlagTask) && li.taskFrom >= 0 && li.taskFrom + 3 <= len;
+    const bool bullet = li.bullet == u'-' || li.bullet == u'*' || li.bullet == u'+';
+    const int markerTo = std::clamp<int>(li.markerTo, li.markerFrom, len);
+    int tokenEnd = markerTo; // the CM5 list expression takes the whitespace after the marker too
+    while (tokenEnd < len && (lv[tokenEnd] == u' ' || lv[tokenEnd] == u'\t'))
+        ++tokenEnd;
+    auto padMarker = [&] {
+        d.replaces.push_back({li.markerFrom, li.markerFrom, Replace::Kind::Widget, {}, StyleId::Normal,
+                              std::make_shared<SpacerWidget>(m_styles->listIndentEditing() * scale)});
+    };
+    if (task) {
+        const int boxTo = li.taskFrom + 3; // "[x]"
+        if (!touches(ls + li.markerFrom, ls + boxTo)) {
+            if (bullet) {
+                d.replaces.push_back({li.markerFrom, li.taskFrom, Replace::Kind::Hide, {}, StyleId::Normal, nullptr});
+            } else {
+                padMarker();
+                d.marks.push_back({li.markerFrom, tokenEnd, StyleId::ListMarker});
+            }
+            const qreal size = m_styles->checkboxSize() * scale;
+            const qreal lead = m_styles->checkboxMarginStart() * scale - 0.25 * em;
+            const qreal raise = QFontMetricsF(lm.font).xHeight() / 2 + 0.1 * em; // vertical-align: middle; top: -0.1em
+            d.replaces.push_back({li.taskFrom, boxTo, Replace::Kind::Widget, {}, StyleId::Normal,
+                                  std::make_shared<CheckboxWidget>(li.taskChar, size, lead, 0.25 * em, raise)});
+        } else {
+            padMarker();
+            d.marks.push_back({li.markerFrom, tokenEnd, StyleId::ListMarker});
+            // .cm-s-obsidian span.cm-formatting-task { font-family: var(--font-monospace); color: var(--text-muted) }
+            StyleSpec box;
+            box.format.setFontFamilies(m_styles->spec(StyleId::Monospace).format.fontFamilies().toStringList());
+            box.format.setProperty(QTextFormat::FontPixelSize, int(std::lround(em)));
+            box.format.setForeground(m_styles->muted());
+            d.marks.push_back({li.taskFrom, boxTo, StyleId::Normal, d.addCustomStyle(box)});
+        }
+        // .HyperMD-task-line[data-task="x"], [data-task="X"]: --checklist-done-decoration / --checklist-done-color
+        if (li.taskChar == u'x' || li.taskChar == u'X')
+            d.marks.push_back({boxTo, len, StyleId::TaskDone});
+        return;
+    }
+    padMarker();
+    if (bullet && markerTo > li.markerFrom && !touches(ls + li.markerFrom, ls + tokenEnd)) {
+        // the transparent "-" keeps its width, with the token's tabular-nums (Inter has a tabular hyphen)
+        const qreal w = QFontMetricsF(MarkerTextWidget::fontFor(lm, true)).horizontalAdvance(lv.mid(li.markerFrom, markerTo - li.markerFrom).toString());
+        d.replaces.push_back({li.markerFrom, markerTo, Replace::Kind::Widget, {}, StyleId::Normal,
+                              std::make_shared<BulletWidget>(m_styles->listMarkerColor(), w, w / 2, m_styles->listBulletSize() * scale)});
+        d.marks.push_back({markerTo, tokenEnd, StyleId::ListMarker});
+    } else {
+        d.marks.push_back({li.markerFrom, tokenEnd, StyleId::ListMarker});
+    }
+}
+
+LivePreviewDecorator::ReadingChain LivePreviewDecorator::readingChain(int line) const
+{
+    // .markdown-rendered blockquote { border-inline-start: var(--blockquote-border-thickness) solid;
+    //   padding-inline-start: var(--size-4-6); margin-inline: 0 }
+    // .markdown-rendered ul, ol { padding-inline-start: 0 } -- ul > li, ol > li { margin-inline-start: 3ch }
+    // .markdown-rendered ul ul > li, ol ol > li { margin-inline-start: var(--list-indent) }
+    const md::SyntaxTree& tree = m_doc->syntax();
+    ReadingChain c;
+    int bullets = 0, ordered = 0;
+    bool nestedSame = false, inOrdered = false;
+    for (int id : tree.ancestorsAt(line)) {
+        switch (tree.node(id).type) {
+        case NodeType::BlockQuote:
+        case NodeType::Callout: // (a nested callout shows as a quote)
+            c.quoteBars.push_back(c.x);
+            c.x += m_styles->quoteBarWidth() + m_styles->quoteIndent();
+            break;
+        case NodeType::BulletList:
+            nestedSame = bullets++ > 0;
+            inOrdered = false;
+            c.lists.push_back(id);
+            break;
+        case NodeType::OrderedList:
+            nestedSame = ordered++ > 0;
+            inOrdered = true;
+            c.lists.push_back(id);
+            break;
+        case NodeType::ListItem:
+            c.x += nestedSame ? m_styles->listIndent() : 3 * m_styles->ch();
+            c.items.push_back({id, c.x, inOrdered});
+            break;
+        default:
+            break;
+        }
+    }
+    return c;
+}
+
+void LivePreviewDecorator::readingLayout(int line, LineRole role, const ReadingChain& chain, LineDecoration& d)
+{
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const Text& text = m_doc->text();
+    const QStringView lv = text.lineView(line);
+    const int len = int(lv.size());
+    const qreal em = m_styles->textSize(); // the li's font
+    d.indent = chain.x;
+    d.quoteBars = chain.quoteBars;
+    d.hangingColumn = -1; // wrapped lines start at the box's content edge
+    if (d.hidden || role == LineRole::Blank)
+        return;
+
+    // The source's container markers, indentation and list marker aren't shown; a paragraph's lines lose their
+    // leading spaces and tabs (CommonMark).
+    int hideTo = std::min<int>(tree.contentColumn(line), len);
+    if (role == LineRole::Paragraph || role == LineRole::SetextText || role == LineRole::AtxHeading)
+        while (hideTo < len && (lv[hideTo] == u' ' || lv[hideTo] == u'\t'))
+            ++hideTo;
+
+    for (const ReadingItem& item : chain.items) {
+        const md::BlockNode& n = tree.node(item.node);
+        if (lastContentLine(item.node) == line)
+            d.paddingBottom += m_styles->listSpacing(); // li { padding-bottom: var(--list-spacing) }
+        if (n.fromLine != line)
+            continue;
+        d.paddingTop += m_styles->listSpacing(); // li { padding-top: var(--list-spacing) }
+        const md::ListItemInfo li = tree.listItem(item.node);
+        const bool task = (n.flags & md::FlagTask) && li.taskFrom >= 0 && li.taskFrom + 3 <= len;
+        int textFrom = task ? li.taskFrom + 3 : len;
+        while (textFrom < len && (lv[textFrom] == u' ' || lv[textFrom] == u'\t'))
+            ++textFrom;
+        const qreal box = m_styles->checkboxSize();
+        // .markdown-preview-view .task-list-item-checkbox { position: relative; top: 0.2em; margin-inline-end: 0.6em }
+        // on the baseline (an empty inline-block): its centre is size / 2 - 0.2em above it
+        const qreal boxRaise = box / 2 - 0.2 * em;
+        if (!item.ordered) {
+            if (task) {
+                // ul > li.task-list-item: no bullet (list-style: none, .list-bullet hidden); the checkbox starts the
+                // line with margin-inline-start: calc(var(--checkbox-size) * -1.5), so the text follows it at
+                // x + size + 0.6em - 1.5 * size and wrapped lines start at x
+                d.floatWidgets.push_back({item.x - 1.5 * box, std::make_shared<CheckboxWidget>(li.taskChar, box, 0, 0.5 * box, boxRaise),
+                                          li.taskFrom, li.taskFrom + 3});
+                hideTo = std::max(hideTo, textFrom);
+                if (const qreal gap = box + 0.6 * em - 1.5 * box; gap > 0)
+                    d.replaces.push_back({hideTo, hideTo, Replace::Kind::Widget, {}, StyleId::Normal, std::make_shared<SpacerWidget>(gap)});
+            } else {
+                // .markdown-rendered .list-bullet { float: inline-start; margin-inline-start: -0.8em }: a zero-width
+                // box whose disc (--list-bullet-size) is centred 0.8em before the item's content
+                const qreal dot = m_styles->listBulletSize();
+                d.floatWidgets.push_back({item.x - 0.8 * em - dot / 2, std::make_shared<BulletWidget>(m_styles->listMarkerColor(), dot, dot / 2, dot),
+                                          li.markerFrom, li.markerTo});
+            }
+        } else {
+            // ol > li::marker: "N. " outside the item, its end at the content start (tabular-nums, --list-marker-color);
+            // the numbers count from the list's start whatever the source says
+            auto w = std::make_shared<MarkerTextWidget>(QString::number(listNumber(item.node)) + QStringLiteral(". "), m_styles->listMarkerColor(), true);
+            const qreal advance = w->size(m_styles->line(d.lineStyle)).width();
+            d.floatWidgets.push_back({item.x - advance, std::move(w), li.markerFrom, li.markerTo});
+            if (task) {
+                // (the checkbox rules with the negative margin are for ul > li only: here it's inline at the start)
+                hideTo = std::min(hideTo, int(li.taskFrom));
+                d.replaces.push_back({li.taskFrom, li.taskFrom + 3, Replace::Kind::Widget, {}, StyleId::Normal,
+                                      std::make_shared<CheckboxWidget>(li.taskChar, box, 0, 0.6 * em, boxRaise)});
+                if (textFrom > li.taskFrom + 3)
+                    d.replaces.push_back({li.taskFrom + 3, textFrom, Replace::Kind::Hide, {}, StyleId::Normal, nullptr});
+            }
+        }
+        // ul > li.task-list-item[data-task="x"], [data-task="X"]: --checklist-done-decoration / -color
+        if (task && (li.taskChar == u'x' || li.taskChar == u'X'))
+            d.marks.push_back({textFrom, len, StyleId::TaskDone});
+    }
+    // .markdown-rendered ul, ol { margin-block: var(--p-spacing) } (0 when nested in a list): a list right after
+    // or before another block of its container (no blank line between them) keeps that gap
+    for (int list : chain.lists) {
+        const int container = tree.parent(list);
+        if (container < 0 || tree.node(container).type == NodeType::ListItem)
+            continue;
+        if (tree.node(list).fromLine == line && blockNextTo(line, container, -1))
+            d.paddingTop += m_styles->pSpacing();
+        if (lastContentLine(list) == line && blockNextTo(line, container, 1))
+            d.paddingBottom += m_styles->pSpacing();
+    }
+    if (hideTo > 0)
+        d.replaces.push_back({0, hideTo, Replace::Kind::Hide, {}, StyleId::Normal, nullptr});
+}
+
+void LivePreviewDecorator::readingGuides(int line, const ReadingChain& chain, LineDecoration& d) const
 {
     // .markdown-rendered.show-indentation-guide li > ul::before (and li > ol::before): a line from the top of a
-    // nested list to its bottom, inset -0.85em from the list's start, i.e. under the parent item's bullet. Each
-    // line of the nested list paints its piece over the line's full height, so the pieces connect.
+    // nested list to its bottom, inset-inline-start: var(--indentation-guide-reading-indent) (-0.85em) from the
+    // list's start -- the parent item's content start --, i.e. through the parent's bullet / number / checkbox.
+    // Each line of the nested list paints its piece over the line's full height, so the pieces connect.
     const md::SyntaxTree& tree = m_doc->syntax();
-    const QList<int> ancestors = tree.ancestorsAt(line);
-    for (int id : ancestors) {
-        const md::BlockNode& n = tree.node(id);
-        if (n.type != NodeType::BulletList && n.type != NodeType::OrderedList)
-            continue;
-        const int item = tree.parent(id);
+    for (int list : chain.lists) {
+        const md::BlockNode& n = tree.node(list);
+        const int item = tree.parent(list);
         if (item < 0 || tree.node(item).type != NodeType::ListItem)
             continue;
         if (tree.role(line) == LineRole::Blank) {
@@ -491,25 +676,108 @@ void LivePreviewDecorator::readingGuides(int line, LineDecoration& d) const
             if (next >= n.toLine)
                 continue;
         }
-        d.guidePositions.push_back(markerCenter(item) - m_styles->guideWidth() / 2);
+        for (const ReadingItem& it : chain.items)
+            if (it.node == item)
+                d.guidePositions.push_back(it.x - 0.85 * m_styles->textSize());
     }
 }
 
-qreal LivePreviewDecorator::markerCenter(int item) const
+bool LivePreviewDecorator::blankBetweenListItems(int line) const
 {
-    // The x of the item's bullet / number / checkbox centre on its first line (as decorate() lays it out).
+    // A blank line inside a list (not after its last item) that the next item follows: a loose list, whose items'
+    // paragraphs lose their outer margins in Reading view (li p:first-of-type / li p:last-of-type), so it makes
+    // no gap. Before a paragraph of the same item it's the gap between two paragraphs (kept).
     const md::SyntaxTree& tree = m_doc->syntax();
-    const md::ListItemInfo li = tree.listItem(item);
-    const QStringView lv = m_doc->text().lineView(tree.node(item).fromLine);
-    const QFontMetricsF fm(m_styles->line(StyleId::Normal).font);
-    const qreal tab = m_styles->listIndent(); // list lines' tab stops
-    qreal x = 0;
-    for (int c = 0; c < li.markerFrom && c < lv.size(); ++c)
-        x = lv[c] == u'\t' ? (std::floor(x / tab + 1e-6) + 1) * tab : x + fm.horizontalAdvance(lv[c]);
-    if ((tree.node(item).flags & md::FlagTask) && li.taskFrom >= 0)
-        return x + m_styles->textSize() / 2; // the checkbox replaces the bullet
-    const int markerTo = std::clamp<int>(li.markerTo, li.markerFrom, int(lv.size()));
-    return x + fm.horizontalAdvance(lv.mid(li.markerFrom, markerTo - li.markerFrom).toString()) / 2;
+    int outer = -1;
+    for (int id : tree.ancestorsAt(line)) {
+        const NodeType t = tree.node(id).type;
+        if (t == NodeType::BulletList || t == NodeType::OrderedList) {
+            outer = id;
+            break;
+        }
+    }
+    if (outer < 0)
+        return false;
+    const int end = tree.node(outer).toLine;
+    int next = line + 1;
+    for (int steps = 0; next < end && tree.role(next) == LineRole::Blank; ++next)
+        if (++steps > 1000)
+            return false;
+    if (next >= end)
+        return false;
+    for (const md::ContainerMarker& m : tree.containerMarkers(next))
+        if (m.kind == md::ContainerMarker::Kind::ListMarker)
+            return true;
+    return false;
+}
+
+int LivePreviewDecorator::lastContentLine(int node) const
+{
+    // A node's last line that isn't blank (lists and items may end with blank lines)
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const md::BlockNode& n = tree.node(node);
+    int l = n.toLine - 1;
+    while (l > n.fromLine && tree.role(l) == LineRole::Blank)
+        --l;
+    return l;
+}
+
+bool LivePreviewDecorator::blockNextTo(int line, int container, int dir) const
+{
+    // Is there a rendered block of `container` right before (dir < 0) / after (dir > 0) the line, with no blank line
+    // between them? (After: not a heading or another list, whose own top margin already counts -- the margins
+    // collapse.)
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const int other = line + dir;
+    if (other < 0 || other >= tree.lineCount())
+        return false;
+    if (dir > 0)
+        for (const md::ContainerMarker& m : tree.containerMarkers(other))
+            if (m.kind == md::ContainerMarker::Kind::ListMarker)
+                return false;
+    switch (tree.role(other)) {
+    case LineRole::Blank:
+    case LineRole::FrontmatterOpen:
+    case LineRole::FrontmatterBody:
+    case LineRole::FrontmatterClose:
+    case LineRole::CommentOpen:
+    case LineRole::CommentBody:
+    case LineRole::CommentClose:
+        return false;
+    case LineRole::AtxHeading:
+    case LineRole::SetextText:
+        if (dir > 0)
+            return false;
+        break;
+    default:
+        break;
+    }
+    if (hidesFootnoteDefinitions() && footnotes::inDefinition(tree, other))
+        return false;
+    return tree.ancestorsAt(other).contains(container);
+}
+
+int LivePreviewDecorator::listNumber(int item) const
+{
+    // <ol start="N">: the first item's number, then one more per item
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const quint64 key = qHashMulti(quintptr(m_doc), m_doc->version(), tree.validUpTo(), tree.lineCount());
+    if (key != m_listNumbersKey) {
+        m_listNumbers.clear();
+        m_listNumbersKey = key;
+    }
+    if (const auto it = m_listNumbers.constFind(item); it != m_listNumbers.cend())
+        return it.value();
+    const int list = tree.parent(item);
+    if (list < 0 || tree.node(list).type != NodeType::OrderedList)
+        return 1;
+    int number = tree.list(list).start;
+    for (int id = tree.firstChild(list); id >= 0; id = tree.nextSibling(id), ++number) {
+        m_listNumbers.insert(id, number);
+        if (id == item)
+            return number;
+    }
+    return 1;
 }
 
 void LivePreviewDecorator::paragraphRuns(int fromLine, int toLine, QList<BlockRange>& out) const

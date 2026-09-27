@@ -82,7 +82,10 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     // ---- marks ----
     auto fg = [&](StyleId id, const QColor& c) { s->m_specs[size_t(id)].format.setForeground(c); };
     fg(StyleId::Formatting, faint);
-    fg(StyleId::ListMarker, t.color(QStringLiteral("--list-marker-color"), faint));
+    s->m_listMarker = t.color(QStringLiteral("--list-marker-color"), faint);
+    fg(StyleId::ListMarker, s->m_listMarker);
+    // .cm-formatting-list-ul, .cm-formatting-list-ol { font-variant-numeric: tabular-nums }
+    s->m_specs[size_t(StyleId::ListMarker)].format.setFontFeatures({{QFont::Tag("tnum"), 1}});
     {
         QTextCharFormat& f = s->m_specs[size_t(StyleId::Strong)].format;
         f.setFontWeight(QFont::Bold);
@@ -264,6 +267,11 @@ std::shared_ptr<const StyleSheet> StyleSheet::build(const Theme& t)
     s->m_listIndent = t.px(QStringLiteral("--list-indent"), base, base * 2.25);
     s->m_pSpacing = t.px(QStringLiteral("--p-spacing"), base, 16);
     s->m_listSpacing = t.px(QStringLiteral("--list-spacing"), base, base * 0.075);
+    s->m_listIndentEditing = t.px(QStringLiteral("--list-indent-editing"), base, base * 0.75);
+    s->m_listBulletSize = t.px(QStringLiteral("--list-bullet-size"), base, base * 0.3);
+    s->m_checkboxSize = t.px(QStringLiteral("--checkbox-size"), base, base);
+    s->m_checkboxMarginStart = t.px(QStringLiteral("--checkbox-margin-inline-start"), base, base * 0.85);
+    s->m_ch = QFontMetricsF(textFont).horizontalAdvance(QLatin1Char('0'));
     s->m_codePadX = t.px(QStringLiteral("--size-4-4"), base, 16);
     s->m_codeBg = t.color(QStringLiteral("--code-background"));
     s->m_codeRadius = t.px(QStringLiteral("--code-radius"), base, 4);

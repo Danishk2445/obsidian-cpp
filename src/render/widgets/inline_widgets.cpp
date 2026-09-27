@@ -4,44 +4,52 @@
 #include "render/services/math_renderer.h"
 #include "render/theme/theme.h"
 
+#include <QFontMetricsF>
 #include <QHash>
+#include <QPainter>
 #include <QPainterPath>
 
 #include <cmath>
 
 namespace oc {
 
+QPointF BulletWidget::dotCenter(const QRectF& r, const LineMetrics& lm) const
+{
+    // r.top() + ascent(lm) is the baseline; the line box's centre is (ascent - descent) / 2 above it
+    return QPointF(r.left() + m_center, r.top() + lm.ascent - (lm.ascent - lm.descent) / 2);
+}
+
 void BulletWidget::paint(QPainter* p, const QRectF& r, const LineMetrics& lm) const
 {
-    const qreal d = std::max<qreal>(4.0, lm.font.pixelSize() * 0.3);
-    const QPointF c(r.left() + r.width() / 2.0, r.top() + lm.ascent - lm.font.pixelSize() * 0.33);
     p->save();
     p->setRenderHint(QPainter::Antialiasing);
     p->setPen(Qt::NoPen);
     p->setBrush(m_color);
-    p->drawEllipse(c, d / 2, d / 2);
+    p->drawEllipse(dotCenter(r, lm), m_dot / 2, m_dot / 2);
     p->restore();
 }
 
-quint64 BulletWidget::signature() const { return qHashMulti(1, m_color.rgba(), m_width); }
+quint64 BulletWidget::signature() const { return qHashMulti(1, m_color.rgba(), m_width, m_center, m_dot); }
 
-qreal CheckboxWidget::ascent(const LineMetrics& lm) const
+QSizeF CheckboxWidget::size(const LineMetrics& lm) const
 {
-    // Align the box's vertical centre with the text's x-height centre (CSS: top: 0.2em-ish).
-    const qreal h = size(lm).height();
-    return std::max(lm.ascent, h / 2 + (lm.ascent - lm.descent) / 2 * 0.6);
+    // tall enough for the box wherever it sits (it never grows a text line: raise keeps it inside the line box)
+    return {m_lead + m_size + m_margin, std::max(ascent(lm) + lm.descent, ascent(lm) - m_raise + m_size / 2)};
 }
 
-QRectF CheckboxWidget::boxRect(const QRectF& r) const
+qreal CheckboxWidget::ascent(const LineMetrics& lm) const { return std::max(lm.ascent, m_raise + m_size / 2); }
+
+QRectF CheckboxWidget::boxRect(const QRectF& r, const LineMetrics& lm) const
 {
-    return QRectF(r.left(), r.center().y() - m_size / 2, m_size, m_size);
+    const qreal centerY = r.top() + ascent(lm) - m_raise;
+    return QRectF(r.left() + m_lead, centerY - m_size / 2, m_size, m_size);
 }
 
 void CheckboxWidget::paint(QPainter* p, const QRectF& r, const LineMetrics& lm) const
 {
     const ThemePtr t = currentTheme();
     const qreal s = m_size;
-    const QRectF box(r.left() + 0.5, r.top() + (lm.ascent - lm.font.pixelSize() * 0.38) - s / 2 + 0.5, s - 1, s - 1);
+    const QRectF box = boxRect(r, lm).adjusted(0.5, 0.5, -0.5, -0.5); // a 1px border inside the box
     const qreal radius = t->px(QStringLiteral("--checkbox-radius"), -1, 4);
     p->save();
     p->setRenderHint(QPainter::Antialiasing);
@@ -65,7 +73,33 @@ void CheckboxWidget::paint(QPainter* p, const QRectF& r, const LineMetrics& lm) 
     p->restore();
 }
 
-quint64 CheckboxWidget::signature() const { return qHashMulti(2, m_status, m_size, m_margin); }
+quint64 CheckboxWidget::signature() const { return qHashMulti(2, m_status, m_size, m_lead, m_margin, m_raise); }
+
+quint64 SpacerWidget::signature() const { return qHashMulti(4, m_width); }
+
+QFont MarkerTextWidget::fontFor(const LineMetrics& lm, bool tabularNums)
+{
+    QFont f = lm.font;
+    if (tabularNums)
+        f.setFeature(QFont::Tag("tnum"), 1); // font-variant-numeric: tabular-nums (the UA ::marker style)
+    return f;
+}
+
+QSizeF MarkerTextWidget::size(const LineMetrics& lm) const
+{
+    return {QFontMetricsF(fontFor(lm, m_tabular)).horizontalAdvance(m_text), lm.ascent + lm.descent};
+}
+
+void MarkerTextWidget::paint(QPainter* p, const QRectF& r, const LineMetrics& lm) const
+{
+    p->save();
+    p->setFont(fontFor(lm, m_tabular));
+    p->setPen(m_color);
+    p->drawText(QPointF(r.left(), r.top() + lm.ascent), m_text);
+    p->restore();
+}
+
+quint64 MarkerTextWidget::signature() const { return qHashMulti(5, m_text, m_color.rgba(), m_tabular); }
 
 MathWidget::MathWidget(QString tex, bool display, qreal fontPx, QColor color)
     : m_tex(std::move(tex))
