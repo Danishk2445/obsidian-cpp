@@ -54,6 +54,10 @@ public:
     void focusContent() override;
 
     GraphWidget* graphWidget() const { return m_widget; }
+    // The graph's options in graph.json's shape (Obsidian's dataEngine.getOptions(): what a graph bookmark saves).
+    QJsonObject options() const;
+    // Applies bookmarked options; like Obsidian they also become the graph plugin's options (graph.json).
+    void setOptions(const QJsonObject& options);
     void startTimelapse(); // graph:animate
     // Rebuilds the vault graph now (normally debounced after MetadataCache::resolved).
     void refresh();
