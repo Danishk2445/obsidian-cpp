@@ -6,6 +6,7 @@
 #include "core/vault_session.h"
 #include "render/theme/icons.h"
 #include "render/theme/theme.h"
+#include "ui/graph/graph_view.h"
 #include "ui/overlay/modal.h"
 #include "ui/overlay/overlay_layer.h"
 #include "ui/shell/main_window.h"
@@ -128,7 +129,8 @@ std::unique_ptr<Bookmark> bookmarkForLeaf(WorkspaceLeaf* leaf)
         b->type = QStringLiteral("graph");
         b->ctime = QDateTime::currentMSecsSinceEpoch();
         b->title = QObject::tr("Untitled Graph");
-        b->extra.insert(QStringLiteral("options"), v->state().value(QStringLiteral("options")).toObject());
+        if (auto* gv = qobject_cast<GraphView*>(v))
+            b->extra.insert(QStringLiteral("options"), gv->options());
         return b;
     }
     return nullptr;
@@ -589,8 +591,12 @@ void BookmarksView::open(Bookmark* item, Workspace::NewLeaf mode)
         searchFor(sessionWindow(s), item->query, mode != Workspace::NewLeaf::No);
     } else if (item->type == u"graph") {
         if (ws->viewRegistry() && ws->viewRegistry()->hasView(QStringLiteral("graph")))
-            if (WorkspaceLeaf* l = ws->getLeaf(mode))
+            if (WorkspaceLeaf* l = ws->getLeaf(mode)) {
                 l->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("graph")}});
+                const QJsonObject options = item->extra.value(QStringLiteral("options")).toObject();
+                if (auto* gv = qobject_cast<GraphView*>(l->view()); gv && !options.isEmpty())
+                    gv->setOptions(options); // Obsidian: dataEngine.setOptions() + the plugin's options
+            }
     } else if (item->type == u"url") {
         QDesktopServices::openUrl(QUrl(item->extra.value(QStringLiteral("url")).toString()));
     }

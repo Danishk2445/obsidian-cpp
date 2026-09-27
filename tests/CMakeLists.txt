@@ -92,3 +92,23 @@ oc_add_test(ui_note_embeds_test SOURCES ui/note_embeds_test.cpp ui/note_embeds_s
 oc_add_test(ui_editor_options_test SOURCES ui/editor_options_test.cpp ui/media_test_support.h DEPS oc_ui Qt6::Pdf Qt6::Test GUI)
 oc_add_test(core_bases_test SOURCES core/bases_expr_test.cpp core/bases_file_test.cpp core/bases_query_test.cpp core/bases_test_support.h DEPS oc_core Qt6::Test GUI)
 oc_add_test(perf_bases_test SOURCES perf/bases_perf_test.cpp DEPS oc_core LABELS perf)
+
+# Binary-level smoke tests (tests/app/run_app.cmake): the app on a fresh fixture copy with isolated XDG dirs.
+function(oc_add_app_test name)
+    cmake_parse_arguments(A "" "FIXTURE;SCRIPT;CONFIG" "ARGS" ${ARGN})
+    set(config "")
+    if(A_CONFIG)
+        set(config -DCONFIG=${CMAKE_CURRENT_SOURCE_DIR}/app/${A_CONFIG})
+    endif()
+    add_test(NAME ${name}
+             COMMAND ${CMAKE_COMMAND} -DAPP=$<TARGET_FILE:obsidian-cpp> -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${A_FIXTURE}
+                     -DWORK=${CMAKE_CURRENT_BINARY_DIR}/app/${name} -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/app/${A_SCRIPT}
+                     ${config} "-DARGS=${A_ARGS}" -P ${CMAKE_CURRENT_SOURCE_DIR}/app/run_app.cmake)
+    set_tests_properties(${name} PROPERTIES LABELS app)
+endfunction()
+# --open / obsidian://open?file= resolve a link path like Obsidian's "open" URI action: bare name + #heading.
+oc_add_app_test(app_open_linkpath_test FIXTURE vault-basic SCRIPT open_linkpath.txt ARGS --open "Beta#Beta")
+# Files & links → Default file to open: applied at startup, and a launch that opens a note itself wins.
+oc_add_app_test(app_opening_behavior_test FIXTURE vault-basic SCRIPT open_linkpath.txt CONFIG open_behavior_file)
+oc_add_app_test(app_opening_behavior_open_wins_test FIXTURE vault-basic SCRIPT expect_formatting.txt CONFIG open_behavior_file
+                ARGS --open Formatting.md)

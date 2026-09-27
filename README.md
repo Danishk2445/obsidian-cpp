@@ -60,3 +60,5 @@ cmake --preset perf && cmake --build --preset perf && OC_PERF_ASSERT=1 ctest --p
 - `docs/ARCHITECTURE.md`, `docs/INTERFACES.md` — module layout and the stable interfaces between modules.
 - `tools/gen_vault.py` — synthetic vaults for perf work; `tools/monkey.py` — random-input crash hunting on a scratch
   copy of a vault; `build/rel/oc-vault-stats <vault>` — read-only link / index statistics.
+- Tests by label: unit and GUI tests (default), `perf` (timing gates), `app` (the binary itself on a fresh fixture
+  copy with isolated XDG dirs and an optional seeded vault config — `tests/app/run_app.cmake`).

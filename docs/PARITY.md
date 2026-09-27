@@ -123,8 +123,9 @@ Open parity questions:
 - ✅ Backlinks in document: the backlinks pane below the text (border, header buttons at the right, natural height),
   per view ("backlinks" / "backlinkOpts" state), backlink:toggle-backlinks-in-document, the Backlinks option
   for new views.
-- ⬜ URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
-  saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
+- ✅ Graph bookmarks keep the graph's options and apply them when opened (they become graph.json's options too).
+- ⬜ URL bookmarks are kept and shown but can't be created here (Obsidian creates them from the web viewer, which is
+  out of scope); leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
   the very top adds no blank line before it.
@@ -209,7 +210,10 @@ Open parity questions:
   padding). Obsidian's `.HyperMD-list-line-nobullet .cm-indent-spacing:last-child` padding, the min-width of a TAB
   after a quote marker, and Bases' list-view guides aren't reproduced. A hard break is detected lexically (a code
   span or HTML tag across the line end isn't told apart).
-- 🟡 Stored but not applied yet: RTL, URI callbacks, native menus, editing-mode status bar toggle
+- ✅ Show editing mode in status bar (the "editor-status" core plugin switch hides the mode toggle).
+- 🟡 Stored but not applied yet: RTL, native menus (menus are always Qt menus styled like Obsidian's). URI callbacks:
+  Obsidian only calls x-success for the "new" and "hook-get-address" actions, and the clone handles "open" only (a
+  link path, "#subpath" included, like Obsidian's).
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ⬜ Ribbon item reordering, community themes, translucency, zoom level, custom app icon
 

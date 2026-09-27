@@ -650,9 +650,18 @@ void Application::openPath(MainWindow* w, const QString& path, const QString& mo
     TFile* f = session->vault()->file(path);
     if (!f && !path.contains(u'.'))
         f = session->vault()->file(path + u".md"_s); // obsidian://open?file=Note (no extension)
+    // Like Obsidian's "open" URI action (getFirstLinkpathDest): a link path, "Note#Heading" included.
+    QJsonObject eState;
+    if (!f) {
+        const auto [linkpath, subpath] = LinkResolver::splitSubpath(path);
+        const QString dest = session->metadata() ? session->metadata()->resolver().resolve(linkpath, QString()) : QString();
+        f = dest.isEmpty() ? nullptr : session->vault()->file(dest);
+        if (f && !subpath.isEmpty())
+            eState.insert(QStringLiteral("subpath"), subpath);
+    }
     if (f && !f->isMarkdown()) {
         // images, PDFs, media, canvases, ...: the view registered for the extension
-        workspace->openFile(f, Workspace::NewLeaf::No);
+        workspace->openFile(f, Workspace::NewLeaf::No, eState);
     } else if (f) {
         QJsonObject state{{QStringLiteral("file"), f->path()}};
         if (mode == u"reading")
@@ -662,7 +671,7 @@ void Application::openPath(MainWindow* w, const QString& path, const QString& mo
             state.insert(QStringLiteral("source"), mode == u"source");
         }
         WorkspaceLeaf* leaf = workspace->getLeaf(Workspace::NewLeaf::No);
-        leaf->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("markdown")}, {QStringLiteral("state"), state}});
+        leaf->setViewState(QJsonObject{{QStringLiteral("type"), QStringLiteral("markdown")}, {QStringLiteral("state"), state}}, eState);
         workspace->setActiveLeaf(leaf, true);
     } else {
         qWarning("oc: --open: no such file in the vault: %s", qPrintable(path));

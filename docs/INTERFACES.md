@@ -70,6 +70,10 @@ Interfaces other modules/agents build against. Change deliberately and update al
   FileManager::editFile). `src/core/util/owned_menu.h`: `ownedMenu(owner)` for every parented popup menu: `exec()`
   runs a nested loop in which the owner can be destroyed (an item, a file deleted underneath, deferred deletes), so
   never a stack `QMenu m(owner)`; touch the owner after `exec()` only through a QPointer.
+- `src/core/util/threads.h`: `startInPool(pool, fn)` and `postToMainThread(fn)` — use them instead of
+  `QThreadPool::start()` / a queued `invokeMethod(ctx, fn)` from a worker. The system Qt isn't instrumented, so
+  ThreadSanitizer can't see those hand-offs (tsan preset: `ctest --preset tsan`, suppressions in tools/tsan.supp);
+  posted functions check their objects with a QPointer made on the GUI thread.
 - `FileView` (view.h) now has an explicit constructor: it forgets `m_file` when the vault deletes it (after the
   workspace's own handler), so a view pending `deleteLater()`, a preview or an embed never reads a freed TFile.
 

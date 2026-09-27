@@ -26,6 +26,6 @@ function(oc_add_test name)
   target_compile_definitions(${name} PRIVATE OC_SOURCE_DIR="${CMAKE_SOURCE_DIR}" OC_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
   add_test(NAME ${name} COMMAND ${name})
   set_tests_properties(${name} PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1;ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0;OC_TESTING=1"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=1;ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0;TSAN_OPTIONS=suppressions=${PROJECT_SOURCE_DIR}/tools/tsan.supp:second_deadlock_stack=1;OC_TESTING=1"
     LABELS "${A_LABELS}")
 endfunction()

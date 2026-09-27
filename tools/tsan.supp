@@ -1,0 +1,13 @@
+# ThreadSanitizer suppressions for the tsan preset (OC_SANITIZE=thread).
+# The system Qt is not instrumented: its internal locking (QThreadPool, QMutex, atomics, QImage/raster helpers that
+# run on Qt's own pool) is invisible, so accesses made inside Qt libraries are reported as races with each other.
+# Our own hand-offs through Qt (QThreadPool::start, queued invokeMethod) are annotated instead (core/util/tsan.h).
+called_from_lib:libQt6Core.so.6
+called_from_lib:libQt6Gui.so.6
+called_from_lib:libQt6Widgets.so.6
+called_from_lib:libQt6Concurrent.so.6
+called_from_lib:libglib-2.0.so.0
+# Qt's pool threads are still alive at exit (QThreadPool expiry).
+thread:QThread::start
+# QtConcurrent's map/reduce templates synchronise through Qt's (uninstrumented) atomics; only the spike test uses them.
+race:QtConcurrent::

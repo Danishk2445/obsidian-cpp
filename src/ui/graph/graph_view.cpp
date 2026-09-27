@@ -298,6 +298,15 @@ void GraphView::onOpen()
 
 void GraphView::onClose() { m_widget->runner()->setPaused(true); }
 
+QJsonObject GraphView::options() const { return m_widget->settings().toJson(graph::GraphSettings::Variant::Global); }
+
+void GraphView::setOptions(const QJsonObject& options)
+{
+    m_widget->setSettings(graph::GraphSettings::fromJson(options));
+    if (VaultSession* s = session(); s && s->config())
+        s->config()->setObject(kGraphConfig, m_widget->settings().toJson(graph::GraphSettings::Variant::Global));
+}
+
 void GraphView::populatePaneMenu(QMenu* menu)
 {
     menu->addAction(IconProvider::instance().icon(QStringLiteral("image"), 16), tr("Copy screenshot"), this, [this] { m_controller->copyScreenshot(); });

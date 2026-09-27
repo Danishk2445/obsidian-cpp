@@ -8,6 +8,7 @@ Native C++23 / Qt 6.11 clone of Obsidian. Plan: `/home/danish/.claude/plans/make
 cmake --preset dev && cmake --build --preset dev && ctest --preset dev     # Debug + ASan/UBSan
 cmake --preset rel && cmake --build --preset rel                            # RelWithDebInfo (screenshots, perf)
 ctest --preset perf                                                          # perf gates (label "perf")
+cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan    # TSan, label "threads" (tools/tsan.supp)
 ```
 Tests run offscreen (`QT_QPA_PLATFORM=offscreen`). GUI gtests use `oc_add_test(... GUI)`.
 

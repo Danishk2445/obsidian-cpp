@@ -1,9 +1,12 @@
 #include "core/search/search_engine.h"
 
+#include "core/util/threads.h"
+
 #include <QElapsedTimer>
 #include <QMetaObject>
 #include <QObject>
 #include <QRunnable>
+#include <QPointer>
 #include <QThreadPool>
 
 #include <algorithm>
@@ -12,33 +15,7 @@
 #include <condition_variable>
 #include <mutex>
 
-// ThreadSanitizer cannot see QThreadPool's internal locking (Qt is not instrumented), so the hand-off of a runnable
-// to a pool thread is annotated explicitly; no-ops in other builds.
-#if defined(__SANITIZE_THREAD__)
-#define OC_TSAN_ENABLED 1
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer)
-#define OC_TSAN_ENABLED 1
-#endif
-#endif
-#ifdef OC_TSAN_ENABLED
-extern "C" void __tsan_acquire(void* addr);
-extern "C" void __tsan_release(void* addr);
-#endif
-
 namespace oc::search {
-namespace {
-
-#ifdef OC_TSAN_ENABLED
-char g_poolHandoff; // the annotation address shared by all hand-offs
-inline void tsanRelease() { __tsan_release(&g_poolHandoff); }
-inline void tsanAcquire() { __tsan_acquire(&g_poolHandoff); }
-#else
-inline void tsanRelease() {}
-inline void tsanAcquire() {}
-#endif
-
-} // namespace
 
 SearchSource SearchSource::fromDocuments(QList<std::shared_ptr<const SearchDocument>> documents)
 {
@@ -53,6 +30,7 @@ struct SearchJob::Private {
     SearchQuery query;
     SearchSource source;
     SearchCallbacks callbacks;
+    QPointer<QObject> contextGuard; // callbacks.context, checked on the GUI thread before a queued delivery
     SearchEngineOptions options;
     QElapsedTimer timer;
 
@@ -149,14 +127,11 @@ struct SearchJob::Private {
         p.firstResultNs.compare_exchange_strong(none, p.timer.nsecsElapsed(), std::memory_order_relaxed);
         if (!p.callbacks.onResults)
             return;
-        if (QObject* context = p.callbacks.context) {
-            QMetaObject::invokeMethod(
-                context,
-                [job, batch = std::move(batch)]() mutable {
-                    if (!job->d->canceled.load(std::memory_order_relaxed))
-                        job->d->callbacks.onResults(std::move(batch));
-                },
-                Qt::QueuedConnection);
+        if (p.callbacks.context) {
+            postToMainThread([job, batch = std::move(batch)]() mutable {
+                if (job->d->contextGuard && !job->d->canceled.load(std::memory_order_relaxed))
+                    job->d->callbacks.onResults(std::move(batch));
+            });
             return;
         }
         std::lock_guard lock(p.deliverMutex);
@@ -171,8 +146,11 @@ struct SearchJob::Private {
         flush(job, true);
         const SearchStats stats = p.snapshot();
         if (p.callbacks.onFinished) {
-            if (QObject* context = p.callbacks.context) {
-                QMetaObject::invokeMethod(context, [job, stats] { job->d->callbacks.onFinished(stats); }, Qt::QueuedConnection);
+            if (p.callbacks.context) {
+                postToMainThread([job, stats] {
+                    if (job->d->contextGuard)
+                        job->d->callbacks.onFinished(stats);
+                });
             } else {
                 std::lock_guard lock(p.deliverMutex);
                 p.callbacks.onFinished(stats);
@@ -257,6 +235,7 @@ std::shared_ptr<SearchJob> SearchEngine::search(const SearchQuery& query, Search
     p.query = query;
     p.source = std::move(source);
     p.callbacks = std::move(callbacks);
+    p.contextGuard = p.callbacks.context;
     p.options = options;
     p.options.batchSize = std::max(1, options.batchSize);
     p.options.batchIntervalMs = std::max(0, options.batchIntervalMs);
@@ -272,10 +251,10 @@ std::shared_ptr<SearchJob> SearchEngine::search(const SearchQuery& query, Search
     QList<QRunnable*> runnables;
     for (int w = 0; w < workers; ++w)
         runnables.push_back(QRunnable::create([job] {
-            tsanAcquire();
+            tsan::acquire();
             SearchJob::Private::runWorker(job);
         }));
-    tsanRelease(); // everything above (job state, runnables) happens before the workers run
+    tsan::release(); // everything above (job state, runnables) happens before the workers run
     for (QRunnable* r : std::as_const(runnables))
         m_pool->start(r);
     return job;
