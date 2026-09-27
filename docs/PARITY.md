@@ -123,8 +123,9 @@ Open parity questions:
 - ✅ Backlinks in document: the backlinks pane below the text (border, header buttons at the right, natural height),
   per view ("backlinks" / "backlinkOpts" state), backlink:toggle-backlinks-in-document, the Backlinks option
   for new views.
-- ⬜ URL bookmarks are kept and shown but can't be created here, graph bookmarks open the graph without its
-  saved options; leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
+- ✅ Graph bookmarks keep the graph's options and apply them when opened (they become graph.json's options too).
+- ⬜ URL bookmarks are kept and shown but can't be created here (Obsidian creates them from the web viewer, which is
+  out of scope); leaf groups aren't persisted (a "... for the current file" view follows its note until restart).
 - Differences: unresolved outgoing links are also dimmed (Obsidian: icon only); dropping onto a collapsed bookmark
   group puts the item inside it (Obsidian: after it unless you wait for it to expand); moving an outline section to
   the very top adds no blank line before it.

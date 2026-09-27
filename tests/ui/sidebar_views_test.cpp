@@ -11,6 +11,7 @@
 #include "ui/views/file_explorer/file_explorer_view.h"
 #include "ui/views/sidebar/all_properties_view.h"
 #include "ui/views/sidebar/backlink_view.h"
+#include "ui/graph/graph_view.h"
 #include "ui/views/sidebar/bookmarks_view.h"
 #include "ui/views/sidebar/outgoing_link_view.h"
 #include "ui/views/sidebar/outline_view.h"
@@ -629,6 +630,45 @@ TEST_F(SidebarTest, BookmarksViewAndModel)
     key(t, Qt::Key_Delete);
     settle();
     EXPECT_FALSE(model->contains(file));
+}
+
+// Obsidian's graph bookmarks keep the graph's options (dataEngine.getOptions()); opening one applies them, and they
+// become the graph plugin's options too.
+TEST_F(SidebarTest, GraphBookmarksKeepTheGraphOptions)
+{
+    registerGraphViews(*registry);
+    BookmarkModel* model = sessionBookmarks(session.get());
+    WorkspaceLeaf* leaf = window->workspace()->getLeaf(Workspace::NewLeaf::Tab);
+    leaf->setViewState(QJsonObject{{"type", "graph"}});
+    auto* gv = qobject_cast<GraphView*>(leaf->view());
+    ASSERT_TRUE(gv);
+    window->workspace()->setActiveLeaf(leaf, true);
+    gv->setOptions(QJsonObject{{"search", "tag:#misc"}, {"repelStrength", 7}});
+    EXPECT_EQ(session->config()->object("graph").value("repelStrength").toDouble(), 7);
+    ASSERT_TRUE(commands->execute("bookmarks:bookmark-current-view"));
+    Modal* modal = nullptr;
+    for (Modal* m : window->overlay()->findChildren<Modal*>())
+        if (m->isOpen())
+            modal = m;
+    ASSERT_TRUE(modal);
+    modal->button(modal->defaultButton())->click();
+    settle();
+    ASSERT_EQ(model->items().size(), 1u);
+    Bookmark* b = model->items()[0].get();
+    EXPECT_EQ(b->type, "graph");
+    EXPECT_EQ(b->extra.value("options").toObject().value("search").toString(), "tag:#misc");
+    EXPECT_EQ(b->extra.value("options").toObject().value("repelStrength").toDouble(), 7);
+    // other options now; the bookmark brings its own back
+    gv->setOptions(QJsonObject{{"search", ""}, {"repelStrength", 2}});
+    auto* view = side<BookmarksView>("bookmarks", Workspace::Side::Left);
+    ASSERT_TRUE(view);
+    view->open(b, Workspace::NewLeaf::No);
+    settle();
+    auto* opened = qobject_cast<GraphView*>(window->workspace()->activeRootLeaf()->view());
+    ASSERT_TRUE(opened);
+    EXPECT_EQ(opened->options().value("search").toString(), "tag:#misc");
+    EXPECT_EQ(opened->options().value("repelStrength").toDouble(), 7);
+    EXPECT_EQ(session->config()->object("graph").value("repelStrength").toDouble(), 7);
 }
 
 TEST_F(SidebarTest, BookmarkCommandsAndModal)
