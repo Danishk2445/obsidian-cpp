@@ -1,6 +1,7 @@
 #include "render/services/image_cache.h"
 
 #include "core/util/busy.h"
+#include "core/util/threads.h"
 
 #include <QFileInfo>
 #include <QImageReader>
@@ -61,7 +62,7 @@ std::shared_ptr<const QImage> ImageCache::image(const QString& absPath, int maxW
     m_pending.insert(pendingKey);
     Busy::begin();
     QPointer<ImageCache> self(this);
-    QThreadPool::globalInstance()->start([self, absPath, w, dpr, nat, key, pendingKey] {
+    startInPool(QThreadPool::globalInstance(), [self, absPath, w, dpr, nat, key, pendingKey] {
         QImage out;
         const QSize target(int(w * dpr), int(qint64(w) * nat.height() / std::max(1, nat.width()) * dpr));
         if (absPath.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) {
@@ -80,17 +81,15 @@ std::shared_ptr<const QImage> ImageCache::image(const QString& absPath, int maxW
                 out = out.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
         out.setDevicePixelRatio(dpr);
-        QMetaObject::invokeMethod(
-            self.data(),
-            [self, absPath, key, pendingKey, img = std::move(out)]() mutable {
-                Busy::end();
-                if (!self)
-                    return;
-                self->m_pending.remove(pendingKey);
-                self->m_entries[absPath].scaled.insert(key, std::make_shared<const QImage>(std::move(img)));
-                emit self->imageReady(absPath);
-            },
-            Qt::QueuedConnection);
+        // (the cache may be gone by then: checked on the GUI thread)
+        postToMainThread([self, absPath, key, pendingKey, img = std::move(out)]() mutable {
+            Busy::end();
+            if (!self)
+                return;
+            self->m_pending.remove(pendingKey);
+            self->m_entries[absPath].scaled.insert(key, std::make_shared<const QImage>(std::move(img)));
+            emit self->imageReady(absPath);
+        });
     });
     return nullptr;
 }

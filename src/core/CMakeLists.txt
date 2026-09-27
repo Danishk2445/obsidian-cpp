@@ -50,6 +50,8 @@ oc_add_library(oc_core
     properties/vault_properties.cpp
     recovery/file_recovery.cpp
     recovery/snapshot_store.cpp
+    util/threads.cpp
+    util/threads.h
     util/word_count.cpp
     vault/fs_scan.cpp
     vault/fs_watcher.cpp

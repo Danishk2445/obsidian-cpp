@@ -36,8 +36,8 @@ struct SearchCallbacks {
     std::function<void(QList<SearchResult> batch)> onResults;
     // Called exactly once, after the last batch, also when the search was canceled.
     std::function<void(const SearchStats& stats)> onFinished;
-    // With a context, both callbacks are queued to its thread, and batches still queued when the search is
-    // canceled are dropped. The context must outlive the search (cancel and wait, or destroy the engine, first).
+    // With a context (a GUI-thread object), both callbacks are queued to the GUI thread (postToMainThread) and
+    // dropped once the context is destroyed or the search canceled.
     // Without one, they run on the worker threads (serialized); onFinished may run before search() returns.
     QObject* context = nullptr;
 };

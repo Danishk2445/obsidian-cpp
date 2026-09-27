@@ -1,6 +1,7 @@
 #include "ui/views/media/pdf_file.h"
 
 #include "core/util/busy.h"
+#include "core/util/threads.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -302,7 +303,7 @@ void PdfFile::pump()
     const QSizeF pts = pagePointSize(key.page);
     const quint64 gen = m_generation;
     QPointer<PdfFile> self(this);
-    renderPool()->start([self, doc, key, gen, pts] {
+    startInPool(renderPool(), [self, doc, key, gen, pts] {
         const int w = key.width;
         const int h = std::max(1, int(std::lround(w * pts.height() / std::max(1.0, pts.width()))));
         QPdfDocumentRenderOptions opts;
@@ -317,15 +318,12 @@ void PdfFile::pump()
         }
         if (key.themed)
             themePdfImage(page, key.background);
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [self, key, gen, img = std::move(page)]() mutable {
-                if (self)
-                    self->finished(key, gen, std::move(img));
-                else
-                    Busy::end();
-            },
-            Qt::QueuedConnection);
+        postToMainThread([self, key, gen, img = std::move(page)]() mutable {
+            if (self)
+                self->finished(key, gen, std::move(img));
+            else
+                Busy::end();
+        });
     });
 }
 

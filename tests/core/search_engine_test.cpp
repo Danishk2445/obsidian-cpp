@@ -4,6 +4,7 @@
 
 #include <QEventLoop>
 #include <QThread>
+#include <QCoreApplication>
 #include <QThreadPool>
 #include <QTimer>
 #include <gtest/gtest.h>
@@ -138,9 +139,12 @@ TEST(SearchEngine, StreamsEveryMatchOnceInBatches)
 TEST(SearchEngine, UsesTheGivenPoolAndThreadLimit)
 {
     const DocList docs = makeDocs(64);
-    QThreadPool pool;
-    pool.setMaxThreadCount(3);
-    SearchEngine engine(&pool);
+    // Lives until the app ends: a pool destroyed here hands its threads' pthread ids to the next test's threads,
+    // which trips ThreadSanitizer's thread registry (CHECK failed ... live_.try_emplace) in the tsan preset.
+    auto* pool = new QThreadPool(qApp);
+    pool->setExpiryTimeout(-1);
+    pool->setMaxThreadCount(3);
+    SearchEngine engine(pool);
     Collector c;
     SearchEngineOptions options;
     options.maxThreads = 2;

@@ -5,8 +5,10 @@
 
 #include "core/canvas/canvas_links.h"
 #include "core/util/busy.h"
+#include "core/util/threads.h"
 #include "text/codec.h"
 
+#include <QPointer>
 #include <QThreadPool>
 #include <QtConcurrent>
 
@@ -94,7 +96,7 @@ void MetadataCache::parseAsync(const QStringList& paths)
     // Read on the GUI thread? No: reading may be slow (FUSE); do read+parse on the pool.
     ContentProvider provider = m_provider;
     std::shared_ptr<Workers> workers = m_workers;
-    MetadataCache* self = this; // alive while a chunk runs: ~MetadataCache waits for them
+    QPointer<MetadataCache> guard(this); // results reach the GUI thread later: checked there
     const int batch = 16;
     for (qsizetype i = 0; i < paths.size(); i += batch) {
         const QStringList chunk = paths.mid(i, batch);
@@ -104,7 +106,7 @@ void MetadataCache::parseAsync(const QStringList& paths)
             std::lock_guard lock(workers->mutex);
             ++workers->running;
         }
-        QThreadPool::globalInstance()->start([chunk, provider, workers, self] {
+        startInPool(QThreadPool::globalInstance(), [chunk, provider, workers, guard] {
             QList<Result> results;
             for (const QString& p : chunk) {
                 if (!workers->alive)
@@ -118,23 +120,23 @@ void MetadataCache::parseAsync(const QStringList& paths)
                     results.push_back({p, parseBytes(*bytes)});
             }
             if (workers->alive) {
-                // a queued call on `self`: dropped if it is destroyed before the call runs
-                QMetaObject::invokeMethod(
-                    self,
-                    [self, results = std::move(results)]() mutable {
-                        Busy::end();
-                        for (Result& r : results) {
-                            if (r.canvas)
-                                self->applyCanvasResult(r.path, std::move(r.canvasLinks));
-                            else
-                                self->applyResult(r.path, std::move(r.meta));
-                        }
-                        if (--self->m_pending == 0) {
-                            self->m_ready = true;
-                            emit self->resolved();
-                        }
-                    },
-                    Qt::QueuedConnection);
+                // dropped if the cache is destroyed first (its destructor ends the pending Busy scopes)
+                postToMainThread([guard, results = std::move(results)]() mutable {
+                    MetadataCache* self = guard.data();
+                    if (!self)
+                        return;
+                    Busy::end();
+                    for (Result& r : results) {
+                        if (r.canvas)
+                            self->applyCanvasResult(r.path, std::move(r.canvasLinks));
+                        else
+                            self->applyResult(r.path, std::move(r.meta));
+                    }
+                    if (--self->m_pending == 0) {
+                        self->m_ready = true;
+                        emit self->resolved();
+                    }
+                });
             }
             std::lock_guard lock(workers->mutex);
             if (--workers->running == 0)
