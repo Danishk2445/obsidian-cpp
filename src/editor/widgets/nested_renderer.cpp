@@ -14,6 +14,7 @@ NestedRenderer::NestedRenderer(const Text& text, StyleSheetPtr styles, int depth
     m_decorator->setReading(true);
     m_decorator->setNestingDepth(depth);
     if (parent) {
+        m_decorator->copyRenderOptions(*parent); // indentation guides, strict line breaks
         m_decorator->isResolved = parent->isResolved;
         m_decorator->resolveAttachment = parent->resolveAttachment;
         // footnote references in a callout body are numbered with the note's (Reading view only: the editor

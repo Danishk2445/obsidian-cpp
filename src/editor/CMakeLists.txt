@@ -12,6 +12,7 @@ oc_add_library(oc_editor
     html/html_block.cpp
     html/html_inline.cpp
     html/html_parse.cpp
+    indent_guides.cpp
     markdown_commands.cpp
     plugins/greentext_guard.cpp
     search/doc_searcher.cpp

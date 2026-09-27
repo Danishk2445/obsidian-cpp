@@ -346,7 +346,8 @@ private:
     QHash<QString, MediaHost> m_media;
     void updateMediaWidgets();
     bool overFocusedMedia(const QPointF& scenePos) const;
-    std::unique_ptr<LivePreviewDecorator> m_resolver;
+    std::unique_ptr<LivePreviewDecorator> m_resolver; // also carries the cards' rendering options (app.json)
+    QMetaObject::Connection m_renderOptionsConn;
 
     // interaction
     std::unique_ptr<Drag> m_drag;

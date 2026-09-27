@@ -75,6 +75,8 @@ bool exportPdf(const Text& body, const QString& title, const QString& outPath, c
     LivePreviewDecorator deco(&source);
     deco.setStyleSheet(styles.get());
     deco.setReading(true);
+    deco.setIndentGuides(ctx.showIndentGuide);
+    deco.setStrictLineBreaks(ctx.strictLineBreaks);
     deco.setContentWidth(contentW);
     deco.isResolved = ctx.isResolved;
     deco.resolveAttachment = ctx.resolveAttachment;

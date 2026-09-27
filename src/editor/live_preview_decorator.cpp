@@ -255,14 +255,6 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         d.hangingColumn = tree.contentColumn(line);
         d.paddingTop = m_styles->listSpacing();
         d.paddingBottom = m_styles->listSpacing();
-        // indentation guides at each leading tab stop
-        int col = 0;
-        while (col < len && (lv[col] == u'\t' || lv[col] == u' ')) {
-            if (lv[col] == u'\t')
-                d.guideColumns.push_back(col);
-            ++col;
-        }
-        d.guideOffset = m_styles->textSize() * 0.85 - m_styles->listIndent() * 0; // --indentation-guide-editing-indent
     }
 
     // List item marker (bullet / checkbox) on the item's first line.
@@ -416,9 +408,151 @@ LineDecoration LivePreviewDecorator::decorate(int line)
         lastTo = std::max(lastTo, r.to);
     }
     d.replaces = clean;
+    if (m_indentGuides && !d.hidden) {
+        if (m_reading)
+            readingGuides(line, d);
+        else // --indentation-guide-editing-indent: 0.85em, 0 in code blocks (.cm-hmd-codeblock)
+            indent::decorateLine(lv, line, m_activeIndent, isCodeRole(role) ? 0 : 0.85, *m_styles, d);
+    }
     if (extra)
         extra(line, d);
     return d;
+}
+
+LineDecoration LivePreviewDecorator::decorateRun(int fromLine, int toLine)
+{
+    // Strict line breaks (Reading view): the lines of a paragraph as one line. Each soft break (the previous line's
+    // trailing whitespace, the line break, the next line's container markers and leading whitespace, all stripped
+    // by CommonMark) shows as one space; line-level properties (list / quote layout, guides) are the first line's.
+    LineDecoration d = decorate(fromLine);
+    if (!m_doc)
+        return d;
+    const Text& text = m_doc->text();
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const qsizetype base = text.lineStart(fromLine);
+    for (int l = fromLine + 1; l < toLine; ++l) {
+        LineDecoration n = decorate(l);
+        const int shift = int(text.lineStart(l) - base);
+        const QStringView prev = text.lineView(l - 1);
+        int trail = int(prev.size());
+        while (trail > 0 && (prev[trail - 1] == u' ' || prev[trail - 1] == u'\t'))
+            --trail;
+        int sepFrom = int(text.lineStart(l - 1) - base) + trail;
+        for (const Replace& r : std::as_const(d.replaces))
+            sepFrom = std::max(sepFrom, r.to);
+        sepFrom = std::min(sepFrom, shift - 1); // at least the line break
+        const QStringView cur = text.lineView(l);
+        int lead = std::min<int>(tree.contentColumn(l), int(cur.size()));
+        while (lead < cur.size() && (cur[lead] == u' ' || cur[lead] == u'\t'))
+            ++lead;
+        int sepTo = shift + lead;
+        for (const Replace& r : std::as_const(n.replaces))
+            sepTo = std::min(sepTo, shift + r.from);
+        sepTo = std::max(sepTo, shift);
+        d.replaces.push_back({sepFrom, sepTo, Replace::Kind::Text, QStringLiteral(" "), StyleId::Normal, nullptr});
+        const quint16 customBase = quint16(d.customStyles.size());
+        for (Replace r : std::as_const(n.replaces)) {
+            r.from += shift;
+            r.to += shift;
+            d.replaces.push_back(std::move(r));
+        }
+        for (Mark m : std::as_const(n.marks)) {
+            m.from += shift;
+            m.to += shift;
+            if (m.custom > 0)
+                m.custom += customBase;
+            d.marks.push_back(m);
+        }
+        d.customStyles += n.customStyles;
+        d.paddingBottom = n.paddingBottom;
+    }
+    return d;
+}
+
+void LivePreviewDecorator::readingGuides(int line, LineDecoration& d) const
+{
+    // .markdown-rendered.show-indentation-guide li > ul::before (and li > ol::before): a line from the top of a
+    // nested list to its bottom, inset -0.85em from the list's start, i.e. under the parent item's bullet. Each
+    // line of the nested list paints its piece over the line's full height, so the pieces connect.
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const QList<int> ancestors = tree.ancestorsAt(line);
+    for (int id : ancestors) {
+        const md::BlockNode& n = tree.node(id);
+        if (n.type != NodeType::BulletList && n.type != NodeType::OrderedList)
+            continue;
+        const int item = tree.parent(id);
+        if (item < 0 || tree.node(item).type != NodeType::ListItem)
+            continue;
+        if (tree.role(line) == LineRole::Blank) {
+            // blank lines after the nested list's last item aren't part of it
+            int next = line + 1;
+            while (next < n.toLine && tree.role(next) == LineRole::Blank)
+                ++next;
+            if (next >= n.toLine)
+                continue;
+        }
+        d.guidePositions.push_back(markerCenter(item) - m_styles->guideWidth() / 2);
+    }
+}
+
+qreal LivePreviewDecorator::markerCenter(int item) const
+{
+    // The x of the item's bullet / number / checkbox centre on its first line (as decorate() lays it out).
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const md::ListItemInfo li = tree.listItem(item);
+    const QStringView lv = m_doc->text().lineView(tree.node(item).fromLine);
+    const QFontMetricsF fm(m_styles->line(StyleId::Normal).font);
+    const qreal tab = m_styles->listIndent(); // list lines' tab stops
+    qreal x = 0;
+    for (int c = 0; c < li.markerFrom && c < lv.size(); ++c)
+        x = lv[c] == u'\t' ? (std::floor(x / tab + 1e-6) + 1) * tab : x + fm.horizontalAdvance(lv[c]);
+    if ((tree.node(item).flags & md::FlagTask) && li.taskFrom >= 0)
+        return x + m_styles->textSize() / 2; // the checkbox replaces the bullet
+    const int markerTo = std::clamp<int>(li.markerTo, li.markerFrom, int(lv.size()));
+    return x + fm.horizontalAdvance(lv.mid(li.markerFrom, markerTo - li.markerFrom).toString()) / 2;
+}
+
+void LivePreviewDecorator::paragraphRuns(int fromLine, int toLine, QList<BlockRange>& out) const
+{
+    // Strict line breaks: runs of paragraph lines joined by soft breaks, starting in [fromLine, toLine). Hard breaks
+    // (two trailing spaces, an unescaped trailing backslash) end a run; a code span or HTML tag across the break
+    // isn't told apart (rare).
+    const md::SyntaxTree& tree = m_doc->syntax();
+    const Text& text = m_doc->text();
+    auto isHardBreak = [&](int l) {
+        const QStringView v = text.lineView(l);
+        if (v.size() >= 2 && v.endsWith(u"  "))
+            return true;
+        int slashes = 0;
+        for (qsizetype i = v.size() - 1; i >= 0 && v[i] == u'\\'; --i)
+            ++slashes;
+        return slashes % 2 == 1;
+    };
+    auto visit = [&](int id) {
+        const md::BlockNode& n = tree.node(id);
+        if (n.type != NodeType::Paragraph || n.toLine - n.fromLine < 2 || n.toLine <= fromLine)
+            return;
+        for (int p = tree.parent(id); p > 0; p = tree.parent(p)) {
+            const NodeType t = tree.node(p).type;
+            if (t == NodeType::Callout && tree.parent(p) == 0)
+                return; // rendered by the callout widget (a nested rendering with its own runs)
+            if (t == NodeType::FootnoteDef && hidesFootnoteDefinitions())
+                return; // not in the flow
+        }
+        int start = n.fromLine;
+        for (int l = n.fromLine; l < n.toLine; ++l) {
+            if (l + 1 < n.toLine && !isHardBreak(l))
+                continue;
+            if (l > start && start >= fromLine && start < toLine)
+                out.push_back(BlockRange{start, l + 1, nullptr, true});
+            start = l + 1;
+        }
+    };
+    const int first = tree.leafAt(fromLine);
+    if (first >= 0 && tree.node(first).fromLine < fromLine)
+        visit(first); // a paragraph running into the window (a run after a hard break may start in it)
+    for (int id = tree.firstNodeAtOrAfter(fromLine); id < tree.nodeCount() && tree.node(id).fromLine < toLine; ++id)
+        visit(id);
 }
 
 void LivePreviewDecorator::inlineDecorations(int line, int leaf, LineDecoration& d)
@@ -741,6 +875,11 @@ void LivePreviewDecorator::inlineDecorationsFor(const md::LeafContent& content, 
         case InlineType::Escape:
             marksOf(id, !act);
             break;
+        case InlineType::HardBreak:
+            // "\" at the end of a line: Reading view renders the break without it (Live Preview keeps the source)
+            if (reading && it->content().at(n.from) == u'\\')
+                addHide(a, a + 1);
+            break;
         default:
             break;
         }
@@ -831,7 +970,7 @@ void LivePreviewDecorator::blockRanges(int fromLine, int toLine, QList<BlockRang
         if (touches(a, b))
             continue; // being edited: show source
         const QString src = text.slice(a, b);
-        const quint64 key = qHashMulti(uint(n.type), src, m_depth, m_reading, m_styles->generation(), a);
+        const quint64 key = qHashMulti(uint(n.type), src, m_depth, m_reading, m_styles->generation(), a, m_indentGuides, m_strictLineBreaks);
         std::shared_ptr<BlockWidget> w = m_blockCache.value(key);
         if (!w) {
             if (isTable) {
@@ -850,6 +989,12 @@ void LivePreviewDecorator::blockRanges(int fromLine, int toLine, QList<BlockRang
             m_blockCache.insert(key, w);
         }
         out.push_back(BlockRange{n.fromLine, n.toLine, w});
+    }
+    if (m_reading && m_strictLineBreaks) {
+        const qsizetype blocks = out.size();
+        paragraphRuns(fromLine, toLine, out);
+        if (out.size() > blocks) // merge with the block widgets (they never overlap: runs skip rendered blocks)
+            std::stable_sort(out.begin(), out.end(), [](const BlockRange& a, const BlockRange& b) { return a.fromLine < b.fromLine; });
     }
 }
 
@@ -996,7 +1141,7 @@ std::shared_ptr<BlockWidget> LivePreviewDecorator::trailer()
         --last;
     const qreal gap = last >= 0 && tree.role(last) == LineRole::Blank ? m_styles->pSpacing() : 0;
     const qreal topGap = std::max<qreal>(0, 32 - gap);
-    const quint64 key = qHashMulti(m_footnotesSerial, m_styles->generation(), topGap);
+    const quint64 key = qHashMulti(m_footnotesSerial, m_styles->generation(), topGap, m_indentGuides, m_strictLineBreaks);
     if (!m_footnoteSection || key != m_footnoteSectionKey) {
         const StyleSheetPtr styles(std::shared_ptr<const StyleSheet>(), m_styles); // non-owning alias
         m_footnoteSection = std::make_shared<footnotes::SectionWidget>(idx, tree, text, styles, this, topGap);

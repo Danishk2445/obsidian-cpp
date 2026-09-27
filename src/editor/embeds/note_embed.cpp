@@ -355,10 +355,18 @@ bool NoteEmbeds::valid(NoteEmbedLayout& l)
     const StyleSheetPtr styles = currentStyles(&theme);
     if (!styles || styles->generation() != l.m_styleKey)
         return false;
+    if (renderOptions(l.m_request.absPath) != l.m_options)
+        return false; // "showIndentGuide" / "strictLineBreaks" changed
     for (auto it = l.m_deps.cbegin(); it != l.m_deps.cend(); ++it)
         if (contentHash(it.key()) != it.value())
             return false;
     return true;
+}
+
+int NoteEmbeds::renderOptions(const QString& absPath) const
+{
+    const NoteEmbedHost* host = hostFor(absPath);
+    return host ? (host->showIndentGuide() ? 1 : 0) | (host->strictLineBreaks() ? 2 : 0) : 1;
 }
 
 void NoteEmbeds::trim()
@@ -402,6 +410,7 @@ std::shared_ptr<NoteEmbedLayout> NoteEmbeds::build(const EmbedRequest& request, 
     l->m_print = EmbedPrintScope::active();
     l->m_depth = int(chain.size()) + 1;
     l->m_linkGeneration = m_linkGeneration;
+    l->m_options = renderOptions(request.absPath);
     l->m_styles = currentStyles(&l->m_theme);
     if (!l->m_styles || !l->m_theme) {
         l->m_size = QSizeF(width, 1);
@@ -504,6 +513,10 @@ std::shared_ptr<NoteEmbedLayout> NoteEmbeds::build(const EmbedRequest& request, 
         deco.setStyleSheet(l->m_styles.get());
         deco.setReading(true);
         deco.setNestingDepth(l->m_depth);
+        if (host) { // the embedded note's vault options (.markdown-embed .show-indentation-guide, breaks)
+            deco.setIndentGuides(host->showIndentGuide());
+            deco.setStrictLineBreaks(host->strictLineBreaks());
+        }
         deco.setContentWidth(l->m_contentWidth);
         // links in the embedded note resolve from it
         std::weak_ptr<NoteEmbedHost> weakHost;

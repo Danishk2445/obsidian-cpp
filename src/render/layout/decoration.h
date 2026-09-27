@@ -64,7 +64,9 @@ struct LineDecoration {
     bool hidden = false;     // line not shown at all (reading view comments, folds)
     qreal fixedHeight = -1;  // >= 0: the line's unit is exactly this tall (reading view blank lines)
     bool hrRule = false;     // draw a horizontal rule across the line (live preview)
-    QList<int> guideColumns; // indentation guide positions (columns) for list lines
+    QList<int> guideColumns; // indentation guides: at the x of these columns (+ guideOffset), the unit's full height
+    int activeGuideColumn = -1; // the guideColumns entry drawn in --indentation-guide-color-active (.cm-active-indent)
+    QList<qreal> guidePositions; // guides at a fixed x (px, text column coordinates): Reading view's nested lists
     // Styles that aren't theme constants (raw HTML `style="color: …"`), referenced by Mark::custom.
     QList<StyleSpec> customStyles;
 
@@ -103,6 +105,9 @@ struct BlockRange {
     int fromLine = 0;
     int toLine = 0; // exclusive
     std::shared_ptr<BlockWidget> widget;
+    // No widget: lines [fromLine, toLine) (at least two) are laid out as one text unit decorated by
+    // LineDecorator::decorateRun() (Reading view with strict line breaks: a paragraph's lines flow together).
+    bool textRun = false;
 };
 
 // Produces decorations for lines. Implementations: source-mode styling (block tree), live preview,
@@ -113,8 +118,19 @@ public:
     virtual LineDecoration decorate(int line) = 0;
     virtual StyleId quickLineStyle(int line) = 0;
     virtual qreal quickVerticalPadding(int line) { Q_UNUSED(line); return 0; }
-    // Block widgets starting in [fromLine, toLine), sorted and non-overlapping.
+    // Block widgets (and text runs) starting in [fromLine, toLine), sorted and non-overlapping.
     virtual void blockRanges(int fromLine, int toLine, QList<BlockRange>& out) { Q_UNUSED(fromLine); Q_UNUSED(toLine); Q_UNUSED(out); }
+    // A text run (BlockRange::textRun) as one line: its text is lines [fromLine, toLine) joined with '\n' and the
+    // columns are offsets from the first line's start. Decorators that return text runs implement it (the
+    // default decorates the first line only); DocLayout shows a '\n' that no replace covers as a space.
+    virtual LineDecoration decorateRun(int fromLine, int toLine)
+    {
+        Q_UNUSED(toLine);
+        return decorate(fromLine);
+    }
+    // True while blockRanges() may return text runs: a relaid region then also re-queries the text unit before it
+    // (an edit can join a paragraph with the one above).
+    virtual bool hasTextRuns() const { return false; }
     // A block shown after the last line (Reading view's footnotes section), or nullptr. Queried whenever the
     // layout's text or decorations change, so it must be cheap when nothing changed.
     virtual std::shared_ptr<BlockWidget> trailer() { return nullptr; }

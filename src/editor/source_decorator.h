@@ -1,5 +1,6 @@
 #pragma once
 
+#include "editor/indent_guides.h"
 #include "render/layout/decoration.h"
 
 #include <KSyntaxHighlighting/Definition>
@@ -25,6 +26,12 @@ public:
     void setDocument(const md::DocSource* doc) { m_doc = doc; m_fenceCache.clear(); }
     void setStyleSheet(const StyleSheet* ss) { m_styles = ss; }
 
+    // Obsidian's indentation guides (app.json "showIndentGuide", editor/indent_guides.h), offset by
+    // --indentation-guide-source-indent; the active range is the list item owning the main selection.
+    void setIndentGuides(bool on) { m_guides = on; }
+    bool indentGuides() const { return m_guides; }
+    void setActiveIndent(const indent::ActiveRange& r) { m_activeIndent = r; }
+
     LineDecoration decorate(int line) override;
     StyleId quickLineStyle(int line) override;
     qreal quickVerticalPadding(int line) override;
@@ -44,6 +51,8 @@ private:
 
     const md::DocSource* m_doc;
     const StyleSheet* m_styles = nullptr;
+    bool m_guides = true;
+    indent::ActiveRange m_activeIndent;
     QHash<int, FenceCache> m_fenceCache; // key: fence opening line
 };
 

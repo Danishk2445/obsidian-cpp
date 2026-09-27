@@ -202,10 +202,33 @@ Open parity questions:
 - ✅ Delete attachments with files ("deleteUnlinkedAttachments"): after a file is deleted, the attachments it linked
   that nothing else links are deleted ("always"), offered in a checklist, all checked ("ask"), or kept ("never").
   The checklist is a flat list of paths (Obsidian also has a file tree and a gallery view).
+- ✅ Indentation guides ("showIndentGuide", applied live): in Live Preview and Source every line's leading
+  `[\s>]+` is split like Obsidian's CodeMirror plugin (a TAB or four spaces = a guide, `>` + a space skipped, shorter
+  space runs = spacing without a guide, the character after them skipped), non-list lines and code blocks included;
+  the guide spans the whole line (wrapped lines, list padding) at --indentation-guide-editing-indent (0.85em, 0 in code
+  blocks) / --indentation-guide-source-indent (0.25em) + the 1px box, --indentation-guide-color; the list item owning
+  the main selection (continuation lines walk up, its body = marker-width continuations and deeper lines) draws its
+  body's guide in --indentation-guide-color-active, recomputed once per selection / edit (only lines whose guide
+  changes are re-decorated). `.cm-indent`'s min-width: var(--list-indent) widens four-space units (so space-indented
+  lists nest like tab-indented ones) and TABs outside list lines. Reading view, hover previews, note embeds, Live
+  Preview callouts, canvas cards and PDF export draw `li > ul::before`: a line down each nested list (blank lines
+  between its items included) under the parent item's bullet / number / checkbox.
+- ✅ Strict line breaks ("strictLineBreaks", applied live): off (default), every line break inside a paragraph is a
+  line break; on, Reading view, hover previews, note embeds, Live Preview's rendered callouts, canvas cards and PDF
+  export join a paragraph's lines up to each hard break (two trailing spaces, a trailing backslash) and show each soft
+  break as a space (the lines' container markers and surrounding whitespace dropped). Live Preview's own lines keep
+  their breaks, like Obsidian (its markdown renderer's `breaks` option doesn't reach CodeMirror). A backslash hard
+  break's `\` no longer shows in rendered views.
+- Differences (guides / breaks): Live Preview list bullets have no --list-indent-editing (0.75em) lead padding in this
+  clone, so Live Preview guides (at Obsidian's 0.85em) fall under the parent's text start rather than through its
+  bullet; the Reading view guide is placed under the clone's own bullet (its list geometry isn't Obsidian's `ul`
+  padding). Obsidian's `.HyperMD-list-line-nobullet .cm-indent-spacing:last-child` padding, the min-width of a TAB
+  after a quote marker, and Bases' list-view guides aren't reproduced. A hard break is detected lexically (a code
+  span or HTML tag across the line end isn't told apart).
 - ✅ Show editing mode in status bar (the "editor-status" core plugin switch hides the mode toggle).
-- 🟡 Stored but not applied yet: indentation guides, RTL, strict line breaks, native menus (menus are always
-  Qt menus styled like Obsidian's). URI callbacks: Obsidian only calls x-success for the "new" and
-  "hook-get-address" actions, and the clone handles "open" only (a link path, "#subpath" included, like Obsidian's).
+- 🟡 Stored but not applied yet: RTL, native menus (menus are always Qt menus styled like Obsidian's). URI callbacks:
+  Obsidian only calls x-success for the "new" and "hook-get-address" actions, and the clone handles "open" only (a
+  link path, "#subpath" included, like Obsidian's).
 - 🟡 CSS snippets: only their CSS custom properties (body/:root/.theme-light/.theme-dark) are applied
 - ✅ Ribbon items reorder by dragging (5px threshold); the order is saved with the layout ("left-ribbon".ocOrder —
   Obsidian keeps it as hiddenItems' key order) and items it doesn't know go first. The "Ribbon menu configuration"

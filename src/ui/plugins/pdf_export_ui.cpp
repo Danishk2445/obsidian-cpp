@@ -83,6 +83,10 @@ PdfExportContext contextFor(VaultSession* s, const QString& sourcePath)
         const QString dest = mc->resolver().resolve(LinkResolver::splitSubpath(linkpath).first, sourcePath);
         return dest.isEmpty() ? QString() : session->vault()->absolutePath(dest);
     };
+    if (const VaultConfig* cfg = s ? s->vaultConfig() : nullptr) {
+        ctx.showIndentGuide = cfg->flag(QStringLiteral("showIndentGuide"));
+        ctx.strictLineBreaks = cfg->flag(QStringLiteral("strictLineBreaks"));
+    }
     return ctx;
 }
 

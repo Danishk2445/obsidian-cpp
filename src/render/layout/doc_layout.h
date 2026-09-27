@@ -77,10 +77,13 @@ public:
     int lineAtY(double y) const;                    // first line of the unit at y
     bool isLaidOut(int line) const;
     bool isInBlock(int line) const;                 // covered by a block widget
+    // First line of the unit containing `line`: a block widget's, or a text run's (lines laid out as one text
+    // unit, BlockRange::textRun, whose layout columns are offsets from that line's start).
+    int unitStart(int line) const;
 
     bool ensureLaidOut(double y0, double y1);       // true if any height changed
     void evictOutside(double y0, double y1);
-    const UnitLayout* layoutFor(int line);          // text units only (nullptr for block units)
+    const UnitLayout* layoutFor(int line);          // text units only (nullptr for block units); see unitStart()
 
     struct PaintContext {
         QList<SelRange> selection;
@@ -139,7 +142,7 @@ private:
     void rebuildHeights();
     double estimateHeight(const Unit& u);
     bool measure(int unitIndex);
-    std::shared_ptr<UnitLayout> buildLayout(int line);
+    std::shared_ptr<UnitLayout> buildLayout(const Unit& u);
     void layoutText(UnitLayout& ul, const LineMetrics& lm);
     int visualLineIndex(const UnitLayout& ul, int dispPos) const;
     void restructure(int fromLine, int oldToLine, int newToLine);

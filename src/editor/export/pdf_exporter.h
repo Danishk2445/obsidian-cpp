@@ -21,6 +21,9 @@ struct PdfExportSettings {
 struct PdfExportContext {
     std::function<bool(const QString& target)> isResolved;
     std::function<QString(const QString& linkpath)> resolveAttachment;
+    // The vault's app.json options the reading view renders with (Obsidian prints the reading view).
+    bool showIndentGuide = true;
+    bool strictLineBreaks = false;
 };
 
 // Renders `text` like the reading view (light colours) and writes a paginated PDF.

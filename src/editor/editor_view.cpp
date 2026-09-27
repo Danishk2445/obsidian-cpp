@@ -114,12 +114,16 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
     m_sel = Selection::cursor(0);
     m_lp->setSelection(m_sel);
     m_revealed = m_sel;
+    m_activeIndent = {};
+    m_decorator->setActiveIndent({});
+    m_lp->setActiveIndent({});
     m_scrollTop = 0;
     if (m_doc) {
         m_docConn = connect(m_doc.get(), &Document::changed, this, &EditorView::onDocumentChanged);
         m_syntaxConn = connect(m_doc.get(), &Document::syntaxProgress, this, &EditorView::onSyntaxProgress);
         m_roConn = connect(m_doc.get(), &Document::readOnlyChanged, this, [this] { viewport()->update(); });
         m_layout.setText(m_doc->text());
+        updateActiveIndent({});
     } else {
         m_layout.setText(Text());
     }
@@ -136,6 +140,10 @@ void EditorView::setMode(Mode mode)
     m_lp->setSelection(m_sel);
     m_revealed = m_sel;
     m_layout.setDecorator(activeDecorator());
+    m_activeIndent = {};
+    m_decorator->setActiveIndent({});
+    m_lp->setActiveIndent({});
+    updateActiveIndent({}); // (everything is re-decorated below)
     viewport()->setCursor(mode == Mode::Reading ? Qt::ArrowCursor : Qt::IBeamCursor);
     m_layout.invalidateAll();
     updateGeometryAndLayout();
@@ -164,6 +172,46 @@ void EditorView::setShowLineNumbers(bool on)
     m_lineNumbers = on;
     updateGeometryAndLayout();
     viewport()->update();
+}
+
+void EditorView::setShowIndentGuides(bool on)
+{
+    if (m_indentGuides == on)
+        return;
+    m_indentGuides = on;
+    m_decorator->setIndentGuides(on);
+    m_lp->setIndentGuides(on);
+    updateActiveIndent(m_activeIndent);
+    m_layout.invalidateAll();
+    updateGeometryAndLayout();
+    viewport()->update();
+}
+
+void EditorView::setStrictLineBreaks(bool on)
+{
+    if (m_strictLineBreaks == on)
+        return;
+    m_strictLineBreaks = on;
+    m_lp->setStrictLineBreaks(on);
+    if (m_mode != Mode::Source) { // Reading view's paragraphs (and Live Preview's rendered callouts)
+        m_layout.invalidateAll();
+        updateGeometryAndLayout();
+        viewport()->update();
+    }
+}
+
+bool EditorView::updateActiveIndent(indent::ActiveRange previous)
+{
+    indent::ActiveRange now;
+    if (m_doc && m_indentGuides && m_mode != Mode::Reading)
+        now = indent::activeRange(m_doc->text(), m_doc->text().lineAt(m_sel.main().from()));
+    m_activeIndent = now;
+    m_decorator->setActiveIndent(now);
+    m_lp->setActiveIndent(now);
+    const QList<QPair<int, int>> changed = indent::changedLines(previous, now);
+    for (const auto& [from, to] : changed)
+        m_layout.invalidateLines(from, to);
+    return !changed.isEmpty();
 }
 
 double EditorView::gutterWidth() const
@@ -988,6 +1036,21 @@ void EditorView::onDocumentChanged(const DocUpdate& u)
         scrollToPos(m_sel.main().head);
     if (m_mode == Mode::LivePreview && m_drag == DragUnit::None)
         syncRevealSelection(m_revealed.map(u.tr.changes.desc()));
+    {
+        // the old active range in the new coordinates (its lines outside the edit only moved)
+        indent::ActiveRange mapped = m_activeIndent;
+        if (mapped.itemLine >= 0) {
+            auto mapLine = [&](int l) {
+                if (l >= u.before.lineCount())
+                    return u.after.lineCount();
+                return u.after.lineAt(u.tr.changes.mapPos(u.before.lineStart(l), 1));
+            };
+            mapped.itemLine = mapLine(mapped.itemLine);
+            mapped.endLine = std::max(mapped.itemLine + 1, mapLine(mapped.endLine));
+        }
+        if (updateActiveIndent(mapped))
+            ensureVisibleLayout();
+    }
     viewport()->update();
     restartBlink();
     emit selectionChanged();
@@ -1005,6 +1068,8 @@ void EditorView::onSyntaxProgress(const md::TreeUpdate& u)
 
 void EditorView::invalidateSelectionLines(const Selection& a, const Selection& b)
 {
+    if (m_indentGuides && m_mode != Mode::Reading && m_doc && updateActiveIndent(m_activeIndent))
+        ensureVisibleLayout();
     if (m_mode != Mode::LivePreview || m_drag != DragUnit::None)
         return; // source/reading decorations don't depend on the selection; reveal is frozen while dragging
     syncRevealSelection(a);

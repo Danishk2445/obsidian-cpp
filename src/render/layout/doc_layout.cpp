@@ -130,9 +130,11 @@ void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
         m_decorator->blockRanges(fromLine, toLine, blocks);
     int line = fromLine;
     for (const BlockRange& b : blocks) {
-        if (b.fromLine < line || b.toLine <= b.fromLine || !b.widget)
+        if (b.fromLine < line || b.toLine <= b.fromLine || (!b.widget && !(b.textRun && b.toLine - b.fromLine > 1)))
             continue;
-        // A block touching folded lines is shown as plain lines (its hidden part stays hidden).
+        if (b.textRun && b.toLine > m_text.lineCount())
+            continue; // (the decorator's document is ahead of the layout's text, e.g. before setText())
+        // A block (or text run) touching folded lines is shown as plain lines (its hidden part stays hidden).
         if (anyHidden(b.fromLine, b.toLine))
             continue;
         for (; line < b.fromLine && line < toLine; ++line)
@@ -140,7 +142,7 @@ void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
         Unit u;
         u.firstLine = b.fromLine;
         u.lineCount = b.toLine - b.fromLine;
-        u.block = b.widget;
+        u.block = b.textRun ? nullptr : b.widget;
         out.push_back(u);
         line = b.toLine;
     }
@@ -208,7 +210,10 @@ void DocLayout::restructure(int from, int oldTo, int newTo)
         setText(m_text);
         return;
     }
-    const int uFrom = m_lineToUnit[size_t(std::clamp(from, 0, oldLines - 1))];
+    int uFrom = m_lineToUnit[size_t(std::clamp(from, 0, oldLines - 1))];
+    // A text run may now begin in the text unit above (a paragraph joined with the one before it).
+    if (m_decorator && m_decorator->hasTextRuns() && uFrom > 0 && !m_units[size_t(uFrom - 1)].block)
+        --uFrom;
     int uTo = m_lineToUnit[size_t(std::clamp(std::max(from, oldTo - 1), 0, oldLines - 1))] + 1;
     int L0 = m_units[size_t(uFrom)].firstLine;
     int L1old = m_units[size_t(uTo - 1)].firstLine + m_units[size_t(uTo - 1)].lineCount;
@@ -304,6 +309,7 @@ bool DocLayout::isLaidOut(int line) const
     return u.block ? u.measured : u.layout != nullptr;
 }
 bool DocLayout::isInBlock(int line) const { return !m_units.empty() && m_units[size_t(unitOfLine(line))].block != nullptr; }
+int DocLayout::unitStart(int line) const { return m_units.empty() ? line : m_units[size_t(unitOfLine(line))].firstLine; }
 
 int DocLayout::laidOutCount() const
 {
@@ -324,7 +330,9 @@ double DocLayout::estimateHeight(const Unit& u)
     const int line = u.firstLine;
     const StyleId ls = m_decorator->quickLineStyle(line);
     const LineMetrics& lm = m_styles->line(ls);
-    const int len = m_text.lineLength(line);
+    int len = m_text.lineLength(line);
+    for (int l = line + 1; l < line + u.lineCount; ++l) // a text run: its lines flow together
+        len += 1 + m_text.lineLength(l);
     int visual = 1;
     if (len > 0) {
         const double w = len * lm.avgCharWidth;
@@ -334,13 +342,29 @@ double DocLayout::estimateHeight(const Unit& u)
     return visual * lm.lineBox + m_decorator->quickVerticalPadding(line);
 }
 
-std::shared_ptr<DocLayout::UnitLayout> DocLayout::buildLayout(int line)
+std::shared_ptr<DocLayout::UnitLayout> DocLayout::buildLayout(const Unit& u)
 {
     auto ul = std::make_shared<UnitLayout>();
-    ul->deco = m_decorator ? m_decorator->decorate(line) : LineDecoration{};
-    const LineMetrics& lm = m_styles->line(ul->deco.lineStyle);
-    ul->block = DisplayBlock::build(m_text.lineView(line), ul->deco, *m_styles);
-    layoutText(*ul, lm);
+    const int line = u.firstLine;
+    if (u.lineCount > 1) {
+        // A text run: one line of the joined text; a line break no replace covers shows as a space.
+        ul->deco = m_decorator ? m_decorator->decorateRun(line, line + u.lineCount) : LineDecoration{};
+        const QString joined = m_text.slice(m_text.lineStart(line), m_text.lineEnd(line + u.lineCount - 1));
+        QList<Replace>& reps = ul->deco.replaces;
+        qsizetype ri = 0;
+        for (qsizetype i = joined.indexOf(u'\n'); i >= 0; i = joined.indexOf(u'\n', i + 1)) {
+            while (ri < reps.size() && reps[ri].to <= i)
+                ++ri;
+            if (ri < reps.size() && reps[ri].from <= i)
+                continue; // covered
+            reps.insert(ri, Replace{int(i), int(i) + 1, Replace::Kind::Text, QStringLiteral(" "), StyleId::Normal, nullptr});
+        }
+        ul->block = DisplayBlock::build(joined, ul->deco, *m_styles);
+    } else {
+        ul->deco = m_decorator ? m_decorator->decorate(line) : LineDecoration{};
+        ul->block = DisplayBlock::build(m_text.lineView(line), ul->deco, *m_styles);
+    }
+    layoutText(*ul, m_styles->line(ul->deco.lineStyle));
     return ul;
 }
 
@@ -480,7 +504,7 @@ bool DocLayout::measure(int ui)
             }
             u.layout = m_hiddenLayout;
         } else {
-            u.layout = buildLayout(u.firstLine);
+            u.layout = buildLayout(u);
         }
         u.height = u.layout->height;
         u.measured = true;
@@ -580,6 +604,7 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         const LineDecoration& deco = ul->deco;
         const qreal unitTop = top;
         const int line = unit.firstLine;
+        const int lastLine = unit.firstLine + unit.lineCount - 1; // a text run spans several lines
 
         if (deco.code != LineDecoration::CodeEdge::None) {
             const QRectF r(deco.indent, unitTop, m_width - deco.indent, ul->height);
@@ -621,12 +646,17 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
             p->fillRect(QRectF(deco.indent, std::round(y - ss.hrThickness() / 2), m_width - deco.indent, ss.hrThickness()), ss.hrColor());
         }
         if (!deco.guideColumns.isEmpty() && ul->text && ul->text->lineCount() > 0) {
+            // indentation guides: the unit's full height (wrapped lines and padding included)
             const QTextLine first = ul->text->lineAt(0);
             for (int col : deco.guideColumns) {
+                const bool active = col == deco.activeGuideColumn;
                 const qreal x = first.cursorToX(ul->block.docToDisp(col)) + deco.guideOffset;
-                p->fillRect(QRectF(std::round(x), unitTop, 1, ul->height), ss.guideColor());
+                p->fillRect(QRectF(std::round(x), unitTop, active ? ss.guideActiveWidth() : ss.guideWidth(), ul->height),
+                            active ? ss.guideActiveColor() : ss.guideColor());
             }
         }
+        for (qreal x : deco.guidePositions)
+            p->fillRect(QRectF(std::round(x), unitTop, ss.guideWidth(), ul->height), ss.guideColor());
         if (!ul->block.boxes().isEmpty() && ul->text) {
             p->save();
             p->setRenderHint(QPainter::Antialiasing);
@@ -667,7 +697,7 @@ void DocLayout::paint(QPainter* p, const PaintContext& ctx)
         QList<QTextLayout::FormatRange> selFormats;
         bool extendEol = false;
         if (ctx.drawSelection && ul->text) {
-            const qsizetype ls = m_text.lineStart(line), le = m_text.lineEnd(line);
+            const qsizetype ls = m_text.lineStart(line), le = m_text.lineEnd(lastLine);
             for (const SelRange& r : ctx.selection) {
                 if (r.empty() || r.to() < ls || r.from() > le + 1)
                     continue;
@@ -768,7 +798,7 @@ QRectF DocLayout::caretRect(qsizetype pos, int assoc)
     if (u.block || !u.layout)
         return QRectF(0, top, 1, normal.ascent + normal.descent);
     const UnitLayout* ul = u.layout.get();
-    const int col = int(pos - m_text.lineStart(line));
+    const int col = int(pos - m_text.lineStart(u.firstLine));
     const int disp = ul->block.docToDisp(col, assoc);
     int li = visualLineIndex(*ul, disp);
     if (assoc < 0 && li > 0 && disp == ul->lines[li].dispStart)
@@ -792,7 +822,7 @@ qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int
     int lineCountHere = 1;
     if (!u.block && u.layout) {
         const UnitLayout* ul = u.layout.get();
-        const int disp = ul->block.docToDisp(int(pos - m_text.lineStart(line)), assoc);
+        const int disp = ul->block.docToDisp(int(pos - m_text.lineStart(u.firstLine)), assoc);
         li = visualLineIndex(*ul, disp);
         if (assoc < 0 && li > 0 && disp == ul->lines[li].dispStart)
             --li;
@@ -807,7 +837,7 @@ qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int
         d = std::clamp(d, vl.dispStart, vl.dispStart + vl.dispLength);
         if (targetVl + 1 < lineCountHere && d == vl.dispStart + vl.dispLength && vl.dispLength > 0)
             d = std::max(vl.dispStart, d - 1);
-        return m_text.lineStart(line) + ul->block.dispToDoc(d, -1);
+        return m_text.lineStart(u.firstLine) + ul->block.dispToDoc(d, -1);
     }
     // Move to the neighbouring unit.
     int tu = ui + direction;
@@ -838,7 +868,7 @@ qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int
 
 qsizetype DocLayout::visualLineStart(qsizetype pos)
 {
-    const int line = m_text.lineAt(pos);
+    const int line = unitStart(m_text.lineAt(pos));
     const UnitLayout* ul = layoutFor(line);
     if (!ul)
         return m_text.lineStart(line);
@@ -849,10 +879,10 @@ qsizetype DocLayout::visualLineStart(qsizetype pos)
 
 qsizetype DocLayout::visualLineEnd(qsizetype pos)
 {
-    const int line = m_text.lineAt(pos);
+    const int line = unitStart(m_text.lineAt(pos));
     const UnitLayout* ul = layoutFor(line);
     if (!ul)
-        return m_text.lineEnd(line);
+        return m_text.lineEnd(m_text.lineAt(pos));
     const int disp = ul->block.docToDisp(int(pos - m_text.lineStart(line)));
     const int li = visualLineIndex(*ul, disp);
     const VisualLine& vl = ul->lines[li];
@@ -882,9 +912,10 @@ QList<QRectF> DocLayout::rangeRects(qsizetype from, qsizetype to)
             continue;
         }
         const UnitLayout* ul = u.layout.get();
+        line = u.firstLine + u.lineCount - 1; // a text run: all of its lines at once
         if (!ul)
             continue;
-        const qsizetype ls = m_text.lineStart(line);
+        const qsizetype ls = m_text.lineStart(u.firstLine);
         const int a = ul->block.docToDisp(int(std::max(from, ls) - ls));
         const int b = ul->block.docToDisp(int(std::min(to, m_text.lineEnd(line)) - ls));
         for (int li = 0; li < ul->lines.size(); ++li) {

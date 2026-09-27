@@ -172,6 +172,25 @@ TEST(EditorPerf, GiantDocument)
     const double jumpEndMs = t.nsecsElapsed() / 1e6;
     std::printf("[perf] Ctrl+End jump + paint: %.2f ms\n", jumpEndMs);
 
+    // Reading view with strict line breaks: the whole document's paragraph runs (text units over several lines),
+    // then scrolling through them.
+    view.setStrictLineBreaks(true);
+    t.restart();
+    view.setMode(EditorView::Mode::Reading);
+    view.setScrollTop(view.layout().lineTop(mid));
+    view.viewport()->render(&img);
+    const double strictMs = t.nsecsElapsed() / 1e6;
+    std::vector<double> strictFrames;
+    for (int i = 0; i < 60; ++i) {
+        t.restart();
+        view.setScrollTop(view.scrollTop() + 450);
+        view.viewport()->render(&img);
+        strictFrames.push_back(t.nsecsElapsed() / 1e6);
+    }
+    const Stats ss = stats(strictFrames);
+    std::printf("[perf] Reading view, strict line breaks: switch + paint %.2f ms; scroll frame p50 %.2f ms, p95 %.2f ms\n", strictMs,
+                ss.p50, ss.p95);
+
     if (assertPerf()) {
         EXPECT_LT(loadMs + firstPaintMs, 250.0 + 150.0); // first paint budget (load incl. full parse)
         EXPECT_LT(ks.p95, 8.0);
