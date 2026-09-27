@@ -1,9 +1,11 @@
 // Workspace widget tests with synthetic input: tab clicks, middle click, close/pin buttons, the "+"
 // button, tab drag & drop (drop regions and resulting model changes), view header navigation,
-// resize handles and theme changes.
+// resize handles and theme changes; stacked tab groups (spine / pane geometry, scrolling, activation,
+// closing, drops, the tab list's Stack / Unstack).
 
 #include "ui/workspace_test_support.h"
 
+#include "core/util/busy.h"
 #include "ui/shell/main_window.h"
 #include "ui/shell/ribbon.h"
 #include "ui/widgets/icon_button.h"
@@ -11,8 +13,11 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QScrollBar>
 #include <QTest>
+#include <QTimer>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 using namespace oc;
 using namespace oc::test;
@@ -585,4 +590,370 @@ TEST_F(WorkspaceWindowTest, RibbonAndRightToggleDropIntoTheSidedocks)
     QWidget* leftToggle = ribbon->sidebarToggle();
     EXPECT_EQ(t.rect, QRect(ws->widget()->mapFromGlobal(leftToggle->mapToGlobal(QPoint(0, 0))), leftToggle->size()));
     window.reset(); // the window deletes the workspace (before the session goes away)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Stacked tabs (Obsidian's .workspace-tabs.mod-stacked)
+// ---------------------------------------------------------------------------------------------
+
+class StackedTabsTest : public WorkspaceWidgetTest {
+protected:
+    void SetUp() override
+    {
+        QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false); // scrolls jump to their end
+        WorkspaceWidgetTest::SetUp();
+    }
+    // A root group of `n` graph tabs (A, B, ...), the last one current, stacked. The root is 900 x 800
+    // (the 1200px host less the 300px left sidedock).
+    WorkspaceTabs* buildStacked(int n = 3)
+    {
+        m_ws->activeRootLeaf()->setViewState(graph("A"));
+        for (int i = 1; i < n; ++i)
+            m_ws->getLeaf(NewLeaf::Tab)->setViewState(graph(QString(QChar('A' + i))));
+        WorkspaceTabs* t = rootTabs(m_ws.get());
+        EXPECT_TRUE(m_ws->setStacked(t->current(), true));
+        QCoreApplication::processEvents();
+        return t;
+    }
+    QRect spineRect(WorkspaceTabs* t, int i) const { return t->w->spine(i) ? t->w->spine(i)->geometry() : QRect(); }
+    QRect paneRect(WorkspaceTabs* t, int i) const { return d()->leafWidget(t->leaves[i])->geometry(); }
+    bool paneShown(WorkspaceTabs* t, int i) const { return d()->leafWidget(t->leaves[i])->isVisible(); }
+    static int zIndex(QWidget* w) { return int(w->parentWidget()->children().indexOf(w)); }
+    static void flush()
+    {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+    }
+    static void wheel(QWidget* w, QPoint angle, Qt::KeyboardModifiers mods = Qt::NoModifier)
+    {
+        const QPointF pos = QRectF(w->rect()).center();
+        QWheelEvent ev(pos, w->mapToGlobal(pos), QPoint(), angle, Qt::NoButton, mods, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(w, &ev);
+    }
+    // Drags the spine of tab `index` to a workspace-widget point.
+    void dragSpine(WorkspaceTabs* from, int index, QPoint wsTarget)
+    {
+        StackedTabHeader* s = from->w->spine(index);
+        ASSERT_TRUE(s);
+        const QPoint start = s->titleRect().center();
+        sendMouse(s, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+        sendMouse(s, QEvent::MouseMove, start + QPoint(0, 4), Qt::NoButton, Qt::LeftButton); // under the threshold
+        EXPECT_FALSE(d()->drag.active);
+        sendMouse(s, QEvent::MouseMove, start + QPoint(0, 12), Qt::NoButton, Qt::LeftButton);
+        EXPECT_TRUE(d()->drag.active);
+        const QPoint target = s->mapFromGlobal(ws()->mapToGlobal(wsTarget));
+        sendMouse(s, QEvent::MouseMove, target, Qt::NoButton, Qt::LeftButton);
+        sendMouse(s, QEvent::MouseButtonRelease, target, Qt::LeftButton, Qt::NoButton);
+        EXPECT_FALSE(d()->drag.active);
+        flush();
+    }
+    // Opens the group's tab list and triggers the item titled `text`.
+    bool pickFromTabList(WorkspaceTabs* t, const QString& text)
+    {
+        bool found = false;
+        QTimer::singleShot(50, [&] {
+            auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            if (!menu)
+                return;
+            for (QAction* act : menu->actions())
+                if (act->text() == text && !found) {
+                    found = true;
+                    act->trigger();
+                }
+            menu->close();
+        });
+        header(t)->tabListButton()->click();
+        flush();
+        return found;
+    }
+};
+
+TEST_F(StackedTabsTest, SpinesAndPanesStickLikeObsidian)
+{
+    WorkspaceTabs* t = buildStacked();
+    TabGroupWidget* g = t->w;
+    ASSERT_EQ(g->size(), QSize(900, 800));
+    ASSERT_TRUE(g->isStacked());
+    // The header row keeps "+" (after the empty 12px strip) and the tab list; the tabs are spines.
+    EXPECT_EQ(header(t)->tabCount(), 0);
+    EXPECT_EQ(header(t)->newTabButton()->x(), 8 + 12 - 4);
+    EXPECT_TRUE(header(t)->tabListButton()->isVisible());
+    // Spines 40px (--tab-stacked-header-width); panes 700px (--tab-stacked-pane-width, within
+    // [max(300, 900 - 120) / 3, max(300, 900 - 120)]); the 2220px strip overflows: a 12px scroll bar.
+    EXPECT_EQ(g->stackHeaderWidth(), 40);
+    EXPECT_DOUBLE_EQ(g->stackPaneWidth(), 700);
+    EXPECT_EQ(g->stackMaxScroll(), 3 * 740 - 900);
+    ASSERT_TRUE(g->stackScrollBar()->isVisible());
+    EXPECT_EQ(g->stackScrollBar()->geometry(), QRect(0, 788, 900, 12));
+    EXPECT_EQ(g->stackScrollBar()->maximum(), 1320);
+    // C (current) was scrolled into view: the strip's end. Spines 0 and 1 stick at the left, B shows
+    // 80px under them before C's spine, A is entirely covered (hidden, like Obsidian's .is-hidden).
+    EXPECT_EQ(g->stackScroll(), 1320);
+    EXPECT_EQ(spineRect(t, 0), QRect(0, 40, 40, 748));
+    EXPECT_EQ(spineRect(t, 1), QRect(40, 40, 40, 748));
+    EXPECT_EQ(spineRect(t, 2), QRect(160, 40, 40, 748));
+    EXPECT_EQ(paneRect(t, 1), QRect(80, 40, 700, 748));
+    EXPECT_EQ(paneRect(t, 2), QRect(200, 40, 700, 748));
+    EXPECT_FALSE(paneShown(t, 0));
+    EXPECT_TRUE(paneShown(t, 1));
+    EXPECT_TRUE(paneShown(t, 2));
+    // Later spines and panes paint over earlier ones.
+    EXPECT_LT(zIndex(d()->leafWidget(t->leaves[1])), zIndex(g->spine(2)));
+    EXPECT_LT(zIndex(g->spine(2)), zIndex(d()->leafWidget(t->leaves[2])));
+    EXPECT_LT(zIndex(d()->leafWidget(t->leaves[2])), zIndex(g->stackScrollBar()));
+    // Every pane has its view header.
+    EXPECT_TRUE(d()->leafWidget(t->leaves[1])->header()->isVisible());
+
+    // At the start: A shows; B's spine follows it, C's sticks at the right edge; C (current) stays shown.
+    g->setStackScroll(0);
+    EXPECT_EQ(spineRect(t, 0).x(), 0);
+    EXPECT_EQ(paneRect(t, 0), QRect(40, 40, 700, 748));
+    EXPECT_EQ(spineRect(t, 1).x(), 740);
+    EXPECT_EQ(paneRect(t, 1).x(), 780);
+    EXPECT_EQ(spineRect(t, 2).x(), 860);
+    EXPECT_TRUE(paneShown(t, 0));
+    EXPECT_TRUE(paneShown(t, 1));
+    EXPECT_TRUE(paneShown(t, 2));
+    EXPECT_EQ(g->stackScrollBar()->value(), 0);
+    // Halfway: A sticks after its spine, B slides over it.
+    g->setStackScroll(400);
+    EXPECT_EQ(paneRect(t, 0).x(), 40);
+    EXPECT_EQ(spineRect(t, 1).x(), 340);
+    EXPECT_EQ(paneRect(t, 1).x(), 380);
+    EXPECT_EQ(spineRect(t, 2).x(), 860);
+    EXPECT_EQ(g->stackScrollBar()->value(), 400);
+    // Out of range: clamped.
+    g->setStackScroll(5000);
+    EXPECT_EQ(g->stackScroll(), 1320);
+
+    // The scroll bar, horizontal wheels and Shift + wheel scroll; plain vertical wheels don't (they
+    // belong to the panes). (Real wheel events over a spine or a pane that doesn't scroll sideways reach the
+    // group; synthesized ones don't propagate, so they go to the group here.)
+    g->stackScrollBar()->setValue(500);
+    EXPECT_EQ(g->stackScroll(), 500);
+    wheel(g, QPoint(-120, 0));
+    EXPECT_EQ(g->stackScroll(), 560);
+    wheel(g, QPoint(0, -120));
+    EXPECT_EQ(g->stackScroll(), 560);
+    wheel(g, QPoint(0, -120), Qt::ShiftModifier);
+    EXPECT_EQ(g->stackScroll(), 620);
+
+    // A single tab fills the strip: no scrolling.
+    m_ws->closeLeaves({t->leaves[0], t->leaves[1]});
+    flush();
+    ASSERT_EQ(describe(t), "T(C*)");
+    EXPECT_DOUBLE_EQ(g->stackPaneWidth(), 860);
+    EXPECT_EQ(g->stackMaxScroll(), 0);
+    EXPECT_FALSE(g->stackScrollBar()->isVisible());
+    EXPECT_EQ(spineRect(t, 0), QRect(0, 40, 40, 760));
+    EXPECT_EQ(paneRect(t, 0), QRect(40, 40, 860, 760));
+}
+
+TEST_F(StackedTabsTest, SpinePaintsItsParts)
+{
+    WorkspaceTabs* t = buildStacked();
+    StackedTabHeader* s = t->w->spine(0);
+    ASSERT_TRUE(s);
+    // Obsidian's spine column: close (20px) at the top after 8px, the icon (22px) 2px below, then the title
+    // down to the 16px bottom padding.
+    EXPECT_EQ(s->closeRect(), QRect(10, 8, 20, 20));
+    EXPECT_EQ(s->iconRect(), QRect(9, 30, 22, 22));
+    EXPECT_EQ(s->titleRect(), QRect(8, 54, 24, 748 - 16 - 54));
+    const QImage img = s->grab().toImage();
+    const QRgb bg = currentTheme()->color("--background-primary").rgba();
+    EXPECT_EQ(img.pixel(2, 400), bg);
+    // Ink in the close button, the icon and the title's first letter.
+    auto inked = [&](const QRect& r) {
+        for (int y = r.top(); y <= r.bottom(); ++y)
+            for (int x = r.left(); x <= r.right(); ++x)
+                if (img.pixel(x, y) != bg)
+                    return true;
+        return false;
+    };
+    EXPECT_TRUE(inked(s->closeRect()));
+    EXPECT_TRUE(inked(s->iconRect()));
+    EXPECT_TRUE(inked(QRect(12, 58, 16, 10)));
+    EXPECT_FALSE(inked(QRect(0, 200, 40, 300))); // "A" is short
+}
+
+TEST_F(StackedTabsTest, ClickingASpineActivatesAndRevealsItsPane)
+{
+    WorkspaceTabs* t = buildStacked();
+    TabGroupWidget* g = t->w;
+    click(g->spine(0), g->spine(0)->titleRect().center());
+    EXPECT_EQ(m_ws->activeLeaf(), t->leaves[0]);
+    EXPECT_EQ(t->currentTab, 0);
+    EXPECT_EQ(g->stackScroll(), 0);
+    EXPECT_TRUE(paneShown(t, 0));
+    // Commands move the current tab and reveal it: B needs its pane and C's spine in view.
+    m_ws->nextTab();
+    EXPECT_EQ(g->stackScroll(), 3 * 40 + 2 * 700 - 900);
+    EXPECT_EQ(paneRect(t, 1), QRect(160, 40, 700, 748));
+    EXPECT_EQ(spineRect(t, 2).x(), 860);
+    m_ws->goToTab(2);
+    EXPECT_EQ(g->stackScroll(), 1320);
+    m_ws->previousTab();
+    EXPECT_EQ(g->stackScroll(), 700); // B as far left as it goes (A covered)
+    // The current tab's spine reveals its pane after a manual scroll.
+    g->setStackScroll(0);
+    click(g->spine(1), g->spine(1)->titleRect().center());
+    EXPECT_EQ(g->stackScroll(), 620);
+    // Clicking into a partly covered pane activates (and reveals) it.
+    m_ws->goToTab(2);
+    ASSERT_EQ(g->stackScroll(), 1320);
+    ASSERT_TRUE(paneShown(t, 1));
+    click(t->leaves[1]->view(), QPoint(20, 200));
+    EXPECT_EQ(m_ws->activeLeaf(), t->leaves[1]);
+    EXPECT_EQ(g->stackScroll(), 700);
+    // "+" appends an empty tab and scrolls to it.
+    header(t)->newTabButton()->click();
+    flush();
+    ASSERT_EQ(t->leaves.size(), 4);
+    EXPECT_EQ(g->stackScroll(), g->stackMaxScroll());
+    EXPECT_EQ(m_ws->activeLeaf(), t->leaves[3]);
+    EXPECT_TRUE(g->spine(3)->isVisible());
+}
+
+TEST_F(StackedTabsTest, SpinesCloseUnpinAndUndo)
+{
+    WorkspaceTabs* t = buildStacked(4);
+    TabGroupWidget* g = t->w;
+    StackedTabHeader* sb = g->spine(1);
+    click(sb, sb->closeRect().center()); // every spine has its close button
+    flush();
+    EXPECT_EQ(describe(t), "T(A,C,D*)");
+    EXPECT_EQ(g->spine(1)->leaf()->displayText(), "C");
+    click(g->spine(0), g->spine(0)->titleRect().center(), Qt::MiddleButton);
+    flush();
+    EXPECT_EQ(describe(t), "T(C,D*)");
+    ASSERT_EQ(g->spine(2), nullptr);
+    // A pinned tab's pin replaces the close button: it unpins.
+    WorkspaceLeaf* c = t->leaves[0];
+    c->setPinned(true);
+    click(g->spine(0), g->spine(0)->closeRect().center());
+    EXPECT_FALSE(c->isPinned());
+    EXPECT_EQ(describe(t), "T(C,D*)");
+    // Undo close: A comes back where it was, current and in view.
+    m_ws->undoCloseLeaf();
+    flush();
+    EXPECT_EQ(describe(t), "T(A*,C,D)");
+    EXPECT_EQ(g->spine(0)->leaf()->displayText(), "A");
+    EXPECT_EQ(g->stackScroll(), 0);
+    EXPECT_TRUE(paneShown(t, 0));
+}
+
+TEST_F(StackedTabsTest, DropsIntoAndOutOfAStackedGroup)
+{
+    buildTwoGroups();
+    WorkspaceTabs* A = rootTabs(m_ws.get(), 0);
+    WorkspaceTabs* X = rootTabs(m_ws.get(), 1);
+    ASSERT_TRUE(m_ws->setStacked(A->leaves[0], true));
+    flush();
+    TabGroupWidget* g = A->w;
+    ASSERT_EQ(g->width(), 450);
+    // 450px: panes max(300, 450 - 120) = 330; C current at the end: spines at 0, 40, 80.
+    EXPECT_DOUBLE_EQ(g->stackPaneWidth(), 330);
+    EXPECT_EQ(g->stackScroll(), 120 + 990 - 450);
+    EXPECT_EQ(spineRect(A, 2).x(), 80);
+    WorkspaceLeaf* x = X->leaves[0];
+    const QRect ar(g->mapTo(ws(), QPoint(0, 0)), g->size());
+    // Obsidian's getDropDirection() for a stacked group: its strip takes tabs between the spines (no left /
+    // right split there), its lower third splits down...
+    Target t = targetAt(x, QPoint(ar.x() + 10, ar.y() + 300));
+    EXPECT_EQ(t.tabs, A);
+    EXPECT_EQ(t.edge, DropEdge::Center);
+    EXPECT_EQ(t.index, 0);
+    EXPECT_EQ(t.rect, QRect(ar.x() - 5, ar.y() + 40, 10, spineRect(A, 0).height()));
+    t = targetAt(x, QPoint(ar.x() + 30, ar.y() + 300));
+    EXPECT_EQ(t.index, 1);
+    EXPECT_EQ(t.rect.x(), ar.x() + 40 - 5);
+    t = targetAt(x, QPoint(ar.right() - 10, ar.y() + 300));
+    EXPECT_EQ(t.edge, DropEdge::Center);
+    EXPECT_EQ(t.index, 3);
+    t = targetAt(x, QPoint(ar.x() + 225, ar.bottom() - 20));
+    EXPECT_EQ(t.edge, DropEdge::Bottom);
+    // ...and its header row still splits left / right, or up from its upper third.
+    t = targetAt(x, QPoint(ar.x() + 10, ar.y() + 25));
+    EXPECT_EQ(t.edge, DropEdge::Left);
+    t = targetAt(x, QPoint(ar.right() - 10, ar.y() + 25));
+    EXPECT_EQ(t.edge, DropEdge::Right);
+    t = targetAt(x, QPoint(ar.x() + 225, ar.y() + 5));
+    EXPECT_EQ(t.edge, DropEdge::Top);
+    t = targetAt(x, QPoint(ar.x() + 225, ar.y() + 25));
+    EXPECT_EQ(t.edge, DropEdge::Center);
+
+    // X's tab dropped after A's spine joins the stack there, current and in view.
+    dragTab(X, 0, QPoint(ar.x() + 30, ar.y() + 300));
+    EXPECT_EQ(describe(d()->root), "V[T(A,X*,B,C)]");
+    ASSERT_TRUE(A->w->isStacked());
+    EXPECT_EQ(A->w->spine(1)->leaf(), x);
+    EXPECT_EQ(m_ws->activeLeaf(), x);
+    EXPECT_TRUE(paneShown(A, 1));
+    // A spine dragged onto the header row's right edge splits it off (a new, unstacked group).
+    const QRect ar2(A->w->mapTo(ws(), QPoint(0, 0)), A->w->size());
+    dragSpine(A, 2, QPoint(ar2.right() - 10, ar2.y() + 25));
+    EXPECT_EQ(describe(d()->root), "V[T(A,X*,C),T(B*)]");
+    EXPECT_TRUE(rootTabs(m_ws.get(), 0)->w->isStacked());
+    EXPECT_FALSE(rootTabs(m_ws.get(), 1)->stacked);
+    // Reordering within the stack: C's spine dropped before A's.
+    const QRect ar3(A->w->mapTo(ws(), QPoint(0, 0)), A->w->size());
+    const QRect s0 = spineRect(A, 0);
+    dragSpine(A, 2, QPoint(ar3.x() + s0.x() + 5, ar3.y() + 300));
+    EXPECT_EQ(describe(A), "T(C*,A,X)");
+    EXPECT_EQ(A->w->spine(0)->leaf()->displayText(), "C");
+}
+
+TEST_F(StackedTabsTest, TabListStacksAndUnstacks)
+{
+    buildTwoGroups();
+    WorkspaceTabs* A = rootTabs(m_ws.get(), 0);
+    ASSERT_FALSE(A->stacked);
+    EXPECT_TRUE(pickFromTabList(A, "Stack tabs"));
+    EXPECT_TRUE(A->stacked);
+    EXPECT_TRUE(A->w->isStacked());
+    EXPECT_FALSE(rootTabs(m_ws.get(), 1)->stacked); // just that group
+    ASSERT_TRUE(A->w->spine(2));
+    EXPECT_EQ(A->w->stackScroll(), A->w->stackMaxScroll()); // the current tab (C) in view
+    EXPECT_TRUE(pickFromTabList(A, "Unstack tabs"));
+    EXPECT_FALSE(A->stacked);
+    flush();
+    // Back to ordinary tabs: the header has them again and only the current pane shows, full size.
+    EXPECT_FALSE(A->w->isStacked());
+    EXPECT_EQ(header(A)->tabCount(), 3);
+    EXPECT_EQ(A->w->spine(0), nullptr);
+    EXPECT_FALSE(A->w->stackScrollBar()->isVisible());
+    for (int i = 0; i < 3; ++i)
+        EXPECT_EQ(paneShown(A, i), i == A->currentTab);
+    EXPECT_EQ(paneRect(A, A->currentTab), QRect(0, 40, A->w->width(), A->w->height() - 40));
+    EXPECT_EQ(header(A)->newTabButton()->x(), header(A)->tabRect(2).right() + 1 + 6);
+
+    // Sidebar groups keep ordinary tabs (their tab list isn't shown; the flag only round-trips).
+    WorkspaceTabs* side = d()->left->children.first()->asTabs();
+    EXPECT_FALSE(m_ws->setStacked(side->leaves[0], true));
+    d()->setStacked(side, true);
+    flush();
+    EXPECT_TRUE(side->stacked);
+    EXPECT_FALSE(side->w->isStacked());
+    EXPECT_EQ(header(side)->tabCount(), 3);
+}
+
+TEST_F(StackedTabsTest, SmoothScrollingEndsAtTheTarget)
+{
+    WorkspaceTabs* t = buildStacked();
+    TabGroupWidget* g = t->w;
+    const bool general = QApplication::isEffectEnabled(Qt::UI_General);
+    QApplication::setEffectEnabled(Qt::UI_General, true);
+    QApplication::setEffectEnabled(Qt::UI_AnimateCombo, true);
+    m_ws->goToTab(0);
+    EXPECT_GT(g->stackScroll(), 0); // on its way
+    EXPECT_FALSE(Busy::idle());     // headless runs wait for it
+    EXPECT_TRUE(QTest::qWaitFor([&] { return g->stackScroll() == 0 && Busy::idle(); }, 3000));
+    // A manual scroll stops it.
+    m_ws->goToTab(2);
+    g->setStackScroll(100);
+    EXPECT_TRUE(Busy::idle());
+    QTest::qWait(50);
+    EXPECT_EQ(g->stackScroll(), 100);
+    QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
+    QApplication::setEffectEnabled(Qt::UI_General, general);
 }

@@ -20,6 +20,7 @@
 #include <functional>
 
 class QMenu;
+class QScrollBar;
 
 namespace oc {
 
@@ -28,6 +29,7 @@ class IconButton;
 class LeafWidget;
 class PopoutWindow;
 class SplitWidget;
+class StackedTabHeader;
 class TabGroupWidget;
 class TabHeaderBar;
 class TAbstractFile;
@@ -87,7 +89,10 @@ public:
 
     QList<WorkspaceLeaf*> leaves;
     int currentTab = 0;
-    bool stacked = false; // round-tripped; stacked rendering is not implemented
+    // Obsidian's isStacked ("stacked": true): the tabs show as vertical headers ("spines") before their
+    // panes in a horizontally scrolling strip. Rendered for groups of the root split and the pop-outs; a
+    // sidedock group keeps the flag (round-tripped) but shows ordinary sidebar tabs.
+    bool stacked = false;
     // The widget is deleted later than the model item (deleteLater: it may be handling the event that
     // removed the item); the destructor detaches it from the model so it never touches a freed item.
     QPointer<TabGroupWidget> w;
@@ -143,6 +148,9 @@ struct Workspace::Impl {
     bool quitting = false;                   // the main window is closing: pop-outs keep their leaves
     bool focusNewTab = true;                 // app.json "focusNewTab"
     bool showViewHeader = true;              // appearance.json "showViewHeader"
+    // Obsidian's lastTabGroupStacked: whether the last tab group that lost its last tab was stacked; a
+    // root split left without leaves gets a new group like it.
+    bool lastTabGroupStacked = false;
     WorkspaceSplit* closingWindow = nullptr; // closeWindow() in progress
     QPointer<WorkspaceWidget> widget;
     QPointer<DropOverlay> overlay;
@@ -245,6 +253,7 @@ struct Workspace::Impl {
 
     // ---- operations (UI, commands and tests) ----------------------------------------------------
     void selectTab(WorkspaceTabs* tabs, int index);
+    void setStacked(WorkspaceTabs* tabs, bool stacked); // Obsidian's WorkspaceTabs.setStacked()
     void moveLeaf(WorkspaceLeaf* leaf, WorkspaceTabs* target, int index);
     bool splitLeafTo(WorkspaceLeaf* leaf, WorkspaceTabs* target, DropEdge edge);
     void moveLeafToSide(WorkspaceLeaf* leaf, WorkspaceSplit* side);
@@ -405,6 +414,9 @@ public:
     void setTop(bool top);
     bool isTop() const { return m_top; }
     void setRightReserve(int px);
+    // A stacked group's header row keeps only "+" and the tab list: its tabs are the group's spines.
+    void setStacked(bool stacked);
+    bool isStacked() const { return m_stacked; }
     void relayout();
 
     int tabCount() const { return int(m_tabs.size()); }
@@ -418,6 +430,8 @@ public:
     InsertLocation insertLocation(int x) const;
     IconButton* newTabButton() const { return m_newTab; }
     IconButton* tabListButton() const { return m_tabList; }
+    // Obsidian's onOpenTabHeaderMenu (also for a stacked group's spines).
+    void showTabMenu(int index, const QPoint& globalPos);
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -444,7 +458,6 @@ private:
     void paintSideTab(QPainter& p, int index, const TabGeom& g);
     void updateHover(const QPoint& pos);
     void refreshDragRegion();
-    void showTabMenu(int index, const QPoint& globalPos);
     void showTabList();
     WorkspaceLeaf* leafAt(int index) const;
     bool closeVisible(int index) const;
@@ -453,6 +466,7 @@ private:
     WorkspaceTabs* m_group;
     bool m_sidedock = false;
     bool m_top = false;
+    bool m_stacked = false;
     int m_reserve = 0;
     QVector<TabGeom> m_tabs;
     double m_scroll = 0;
@@ -470,25 +484,116 @@ private:
     IconButton* m_tabList = nullptr;
 };
 
+// A tab group: its header row and its leaves (the current one; every one when stacked).
+//
+// Stacked (Obsidian's .workspace-tabs.mod-stacked, WorkspaceTabs.updateSlidingTabs / onContainerScroll /
+// scrollIntoView): below the header row the group is a horizontally scrolling strip of
+// [spine 0][pane 0][spine 1][pane 1]... Spines are --tab-stacked-header-width (40px) wide; panes are
+// --tab-stacked-pane-width (700px), at least (visible width - spines) / n and at most max(300, visible width -
+// spines). Everything is position: sticky — spine i sticks at the left after the spines before it and at the
+// right before the spines after it, pane i at the left after spines 0..i — so later panes slide over earlier
+// ones, which stay under their neighbours' spines (with --tab-stacked-shadow). A 12px scroll bar shows
+// while the strip overflows. Panes entirely out of view or covered are hidden (except the current one); a
+// new current tab is scrolled into view.
 class TabGroupWidget : public QWidget {
     Q_OBJECT
 public:
     TabGroupWidget(WorkspaceImpl* d, WorkspaceTabs* tabs);
+    ~TabGroupWidget() override;
     void sync();
     void detachModel(); // the model item is being deleted
     TabHeaderBar* header() const { return m_header; }
     WorkspaceTabs* tabs() const { return m_tabs; }
     void releaseLeaves();
+    void updateTabs(); // titles, icons, pins or focus changed: repaint the header and the spines
+
+    // Where a tab dropped at x (group coordinates) goes — Obsidian's getTabInsertLocation(): between the
+    // header's tabs, or between the spines of a stacked group (a 10px band, in group coordinates).
+    TabHeaderBar::InsertLocation insertLocation(int x) const;
+
+    // ---- stacked --------------------------------------------------------------------------------
+    bool isStacked() const { return m_stacked; } // rendered stacked (the model flag, not in a sidedock)
+    int stackScroll() const { return m_scroll; }
+    int stackMaxScroll() const;
+    void setStackScroll(int x);             // clamped; stops a running scroll animation
+    // Obsidian's scrollIntoView(): the smallest scroll showing the pane with the spines after it (smooth
+    // when animations are enabled).
+    void revealTab(int index, bool animate);
+    StackedTabHeader* spine(int index) const { return m_spines.value(index); }
+    QScrollBar* stackScrollBar() const { return m_hbar; }
+    int stackHeaderWidth() const;          // --tab-stacked-header-width
+    double stackPaneWidth() const;         // after Obsidian's min / max clamp
 
 protected:
     void resizeEvent(QResizeEvent*) override;
+    void showEvent(QShowEvent*) override;
     void paintEvent(QPaintEvent*) override;
+    void wheelEvent(QWheelEvent*) override;
 
 private:
+    struct StackMetrics {
+        double header = 40, pane = 700, client = 0, content = 0;
+        int areaHeight = 0, barHeight = 0, maxScroll = 0;
+    };
+    StackMetrics stackMetrics() const;
     void layoutChildren();
+    void layoutStacked();
+    void syncSpines();
+    void restack();
+    void animateScrollTo(int x);
+    void stopScrollAnimation();
+
     WorkspaceImpl* d;
     WorkspaceTabs* m_tabs;
     TabHeaderBar* m_header;
+    bool m_stacked = false;
+    QList<StackedTabHeader*> m_spines;   // one per leaf, in tab order
+    QList<QWidget*> m_shadows;           // --tab-stacked-shadow of each spine (painted over the pane before it)
+    QScrollBar* m_hbar = nullptr;
+    int m_scroll = 0;
+    QVariantAnimation* m_scrollAnim = nullptr;
+    bool m_animBusy = false;             // oc::Busy held while the scroll animates (headless runs wait)
+    QPointer<WorkspaceLeaf> m_revealed;  // the current tab last scrolled into view
+    bool m_revealPending = false;        // reveal once the group has its size
+};
+
+// The tab header of a stacked group (Obsidian's .mod-stacked .workspace-tab-header, writing-mode
+// vertical-lr): a spine as tall as the strip with, from the top, the close button (the pin of a pinned
+// tab), the view icon and the title reading top to bottom. Click: activate (and scroll into view); middle
+// click / close: close; drag: move the tab; context menu: the tab menu.
+class StackedTabHeader : public QWidget {
+    Q_OBJECT
+public:
+    StackedTabHeader(WorkspaceImpl* d, TabGroupWidget* group, WorkspaceLeaf* leaf);
+    WorkspaceLeaf* leaf() const { return m_leaf; }
+    void detach(); // its leaf left the group (the widget is deleted later)
+    QRect closeRect() const; // the close button, or a pinned tab's pin
+    QRect iconRect() const;
+    QRect titleRect() const; // the (rotated) title's box
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void leaveEvent(QEvent*) override;
+    void contextMenuEvent(QContextMenuEvent*) override;
+    bool event(QEvent*) override;
+
+private:
+    void updateHover(const QPoint& pos);
+    int index() const;
+    WorkspaceImpl* d;
+    QPointer<TabGroupWidget> m_group;
+    QPointer<WorkspaceLeaf> m_leaf;
+    bool m_hover = false;
+    bool m_hoverClose = false;
+    bool m_hoverIcon = false;
+    Qt::MouseButton m_pressButton = Qt::NoButton;
+    QPoint m_pressPos;
+    bool m_pressed = false;
+    bool m_pressClose = false;
+    bool m_dragging = false;
 };
 
 // Title area of the view header: "folder / sub / basename" breadcrumb, centered and elided.

@@ -220,6 +220,22 @@ Interfaces other modules/agents build against. Change deliberately and update al
   (no global positions) a tab leaving its window continues as a native `QDrag` (MIME
   `application/x-obsidian-cpp-leaf`) accepted by an event filter on each window's QWindow.
 - Scenario verb `screenshot-popout [n] <png>` (src/app/scenario_runner.h).
+- `PopoutWindow`, additive: `setAlwaysOnTop(bool)` / `isAlwaysOnTop()` / signal `alwaysOnTopChanged(bool)`
+  (Qt::WindowStaysOnTopHint on the live window; command `window:toggle-always-on-top` in `registerAppCommands`,
+  available for the focused, non-maximized pop-out only; not saved; ignored by Wayland compositors).
+
+## Stacked tabs (additive)
+- `Workspace::isStacked(leaf)` / `setStacked(leaf, bool)` (Obsidian's WorkspaceTabs.setStacked(); false for a
+  sidebar leaf or one without a group) — the leaf's tab group, workspace.json `"stacked": true` on the tabs node.
+  Command `workspace:toggle-stacked-tabs` (registerAppCommands) and "Stack tabs" / "Unstack tabs" in the tab list.
+  A root split emptied of its tabs gets a group stacked like the last group that lost its last tab.
+- Internals (workspace_p.h, not frozen): `WorkspaceTabs::stacked`, `Impl::setStacked()`,
+  `Impl::lastTabGroupStacked`; `TabGroupWidget` lays out the strip (`isStacked()`, `stackScroll()` /
+  `setStackScroll()` / `stackMaxScroll()`, `revealTab(index, animate)`, `spine(i)`, `stackScrollBar()`,
+  `insertLocation(x)` = Obsidian's getTabInsertLocation over header tabs or spines); `StackedTabHeader` is a spine
+  (`closeRect()` / `iconRect()` / `titleRect()`); `TabHeaderBar::setStacked()` keeps only "+" and the tab list,
+  `showTabMenu()` is public (spines open the tab menu). Smooth scrolling holds `oc::Busy` while it runs and is off
+  under the offscreen platform unless `Qt::UI_AnimateCombo` (with `UI_General`) is enabled.
 
 ## Bases (additive)
 - `src/core/bases` (new, `oc::bases`): the `.base` model (`BaseFile` / `BaseView` / `Filter`, Obsidian's YAML

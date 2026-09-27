@@ -7,7 +7,7 @@
 //    "floating"?: {"id", "type":"floating", "children":[{"type":"window", ...}]},  (pop-outs, see below)
 //    "active": "<leaf id>", "lastOpenFiles": [...]}
 // Nodes: {"id","type":"split","direction":"vertical"|"horizontal","width"?,"collapsed"?,"children":[...]},
-//        {"id","type":"tabs","currentTab"?,"children":[...]}, {"id","type":"leaf","state":{"type","state","icon","title"}}
+//        {"id","type":"tabs","currentTab"?,"stacked"?,"children":[...]}, {"id","type":"leaf","state":{"type","state","icon","title"}}
 // ("vertical" = children side by side, as in Obsidian.)
 
 #include <QJsonObject>
@@ -161,6 +161,16 @@ public:
     bool focusNewTab() const;
     void setShowViewHeader(bool on);
     bool showViewHeader() const;
+
+    // ---- Stacked tabs — additive --------------------------------------------------------------------
+    // Obsidian's WorkspaceTabs.setStacked() (workspace:toggle-stacked-tabs, "Stack tabs" / "Unstack tabs"
+    // in a tab group's tab list): the tabs of `leaf`'s group show as vertical headers ("spines") before
+    // their panes in a horizontally scrolling strip; workspace.json "stacked": true on the tab group. Only
+    // groups of the root split and the pop-outs can be stacked (setStacked() returns false for a sidebar
+    // leaf or a leaf without a group). Like Obsidian, a root split left without tabs gets a new group
+    // stacked like the last group that lost its last tab.
+    bool isStacked(const WorkspaceLeaf* leaf) const;
+    bool setStacked(WorkspaceLeaf* leaf, bool stacked);
 
     // ---- Pop-out windows — additive ---------------------------------------------------------------
     // Obsidian's floating split: separate windows (workspace.json "floating": {"type": "floating",

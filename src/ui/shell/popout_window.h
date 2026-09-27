@@ -45,6 +45,13 @@ public:
     // (0, 0) on Wayland, where windows can't place themselves) and client size.
     QRect normalGeometryForSave() const { return m_normal.isNull() ? QRect(pos(), size()) : m_normal; }
 
+    // Obsidian's window:toggle-always-on-top (Electron's setAlwaysOnTop): Qt::WindowStaysOnTopHint, applied
+    // to the live window (X11: _NET_WM_STATE_ABOVE; no re-creation, no flicker). Not saved (Obsidian doesn't
+    // either). Wayland: xdg-shell has no "keep above" request, so compositors (KWin included) ignore it
+    // for a pop-out; the flag is still kept and reported.
+    void setAlwaysOnTop(bool on);
+    bool isAlwaysOnTop() const;
+
     // The pop-out showing `w` (null when `w` is in another kind of window).
     static PopoutWindow* of(const QWidget* w);
 
@@ -54,6 +61,7 @@ signals:
     void closeRequested();
     void activated();
     void geometryChanged();
+    void alwaysOnTopChanged(bool on);
 
 protected:
     void closeEvent(QCloseEvent*) override;

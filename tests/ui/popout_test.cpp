@@ -1,8 +1,9 @@
 // Pop-out windows (Obsidian's floating workspace windows): the workspace model (moving / opening tabs in
 // new windows, getLeaf across windows, closing, undo), workspace.json round trips and restore on
 // restart, tab drags between windows and out of every window, the active leaf following window focus,
-// menus and modals of a window that goes away; with a full session: the window commands, hotkeys and
-// the command palette inside a pop-out, link opening from a pop-out, notices and page previews there.
+// menus and modals of a window that goes away, a stacked tab group in a pop-out; with a full session: the
+// window commands (always on top, stacked tabs), hotkeys and the command palette inside a pop-out, link
+// opening from a pop-out, notices and page previews there.
 #include "ui/navigation_test_support.h"
 #include "ui/workspace_test_support.h"
 
@@ -23,9 +24,11 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWindow>
 
 using namespace oc;
 using namespace oc::test;
@@ -471,6 +474,66 @@ TEST_F(PopoutTest, TabDragsBetweenWindows)
     EXPECT_EQ(QApplication::overrideCursor(), nullptr);
 }
 
+TEST_F(PopoutTest, StackedGroupInAPopout)
+{
+    QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false); // reveals jump
+    const auto leaves = buildRoot();
+    PopoutWindow* p = m_ws->moveLeafToPopout(leaves[0], QRect(1300, 40, 900, 600));
+    ASSERT_TRUE(p);
+    WorkspaceTabs* t = winTabs();
+    for (const char* name : {"Y", "Z"})
+        d()->appendNewTab(t)->setViewState(graph(name));
+    flush();
+    ASSERT_EQ(describe(t), "T(A,Y,Z*)");
+    ASSERT_TRUE(m_ws->setStacked(t->leaves[0], true));
+    flush();
+    // The pop-out's group renders stacked; its header row (the title bar) keeps "+" and the tab list.
+    ASSERT_TRUE(t->w->isStacked());
+    EXPECT_EQ(t->w->window(), p);
+    EXPECT_TRUE(t->w->header()->isTop());
+    EXPECT_EQ(t->w->header()->tabCount(), 0);
+    for (int i = 0; i < 3; ++i)
+        ASSERT_TRUE(t->w->spine(i)) << i;
+    EXPECT_TRUE(t->w->spine(2)->isVisible());
+    EXPECT_EQ(t->w->stackScroll(), t->w->stackMaxScroll()); // Z (current) in view
+    EXPECT_FALSE(d()->root->children.first()->asTabs()->stacked); // the main window's group isn't
+
+    // workspace.json: in the floating split's window, restored on the next start.
+    const QJsonObject json = m_ws->serialize();
+    const QJsonObject winGroup = json["floating"].toObject()["children"].toArray()[0].toObject()["children"].toArray()[0].toObject();
+    EXPECT_EQ(winGroup["stacked"], QJsonValue(true));
+    ASSERT_TRUE(m_ws->restore(json));
+    flush();
+    WorkspaceTabs* t2 = winTabs();
+    ASSERT_TRUE(t2);
+    EXPECT_TRUE(t2->w->isStacked());
+    ASSERT_TRUE(t2->w->spine(0));
+    EXPECT_EQ(t2->w->spine(0)->leaf()->displayText(), "A");
+    EXPECT_EQ(t2->w->window(), m_ws->popoutWindows().value(0));
+    EXPECT_EQ(t2->w->stackScroll(), t2->w->stackMaxScroll());
+
+    // A spine dragged into the main window's tab strip moves the tab there.
+    StackedTabHeader* sy = t2->w->spine(1);
+    ASSERT_EQ(sy->leaf()->displayText(), "Y");
+    const QPoint start = sy->titleRect().center();
+    sendMouse(sy, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    sendMouse(sy, QEvent::MouseMove, start + QPoint(0, 12), Qt::NoButton, Qt::LeftButton);
+    ASSERT_TRUE(d()->drag.active);
+    const QPoint target = sy->mapFromGlobal(afterLastTab(rootTabs(m_ws.get())));
+    sendMouse(sy, QEvent::MouseMove, target, Qt::NoButton, Qt::LeftButton);
+    sendMouse(sy, QEvent::MouseButtonRelease, target, Qt::LeftButton, Qt::NoButton);
+    flush();
+    EXPECT_EQ(describe(d()->root), "V[T(B,C,Y*)]");
+    EXPECT_EQ(describe(win()), "V[T(A,Z*)]");
+    EXPECT_TRUE(winTabs()->w->isStacked());
+    EXPECT_EQ(winTabs()->w->spine(2), nullptr);
+    // Closing the stacked pop-out closes its tabs (with the window).
+    m_ws->closePopout(m_ws->popoutWindows().value(0));
+    flush();
+    EXPECT_TRUE(m_ws->popoutWindows().isEmpty());
+    EXPECT_EQ(describe(d()->root), "V[T(B,C,Y*)]");
+}
+
 TEST_F(PopoutTest, NativeDropsIntoAWindow)
 {
     // Wayland: a tab leaving its window continues as a native drag; the window it is dropped on
@@ -666,6 +729,71 @@ TEST(PopoutSession, MoveAndOpenInNewWindowCommands)
     flush();
     EXPECT_EQ(env.workspace->popoutWindows().size(), 1);
     EXPECT_TRUE(env.window->isVisible());
+}
+
+TEST(PopoutSession, StackedTabsAndAlwaysOnTopCommands)
+{
+    NavigationEnv env;
+    env.openNote("Welcome.md");
+    const Command* stack = env.commands->find("workspace:toggle-stacked-tabs");
+    const Command* onTop = env.commands->find("window:toggle-always-on-top");
+    ASSERT_TRUE(stack && onTop);
+    EXPECT_EQ(stack->name, "Toggle stacked tabs");
+    EXPECT_EQ(stack->icon, "layers");
+    EXPECT_EQ(onTop->name, "Toggle window always on top");
+
+    // workspace:toggle-stacked-tabs: the active leaf's group (not in a sidebar).
+    activate(env.window);
+    WorkspaceLeaf* welcome = env.workspace->activeLeaf();
+    ASSERT_TRUE(welcome);
+    ASSERT_TRUE(env.commands->execute("workspace:toggle-stacked-tabs"));
+    EXPECT_TRUE(env.workspace->isStacked(welcome));
+    EXPECT_TRUE(welcome->tabs()->w->isStacked());
+    ASSERT_TRUE(env.commands->execute("workspace:toggle-stacked-tabs"));
+    EXPECT_FALSE(env.workspace->isStacked(welcome));
+    WorkspaceLeaf* files = env.workspace->leavesOfType("file-explorer").value(0);
+    ASSERT_TRUE(files);
+    env.workspace->setActiveLeaf(files, false);
+    EXPECT_FALSE(env.commands->isAvailable("workspace:toggle-stacked-tabs"));
+    env.workspace->setActiveLeaf(welcome, false);
+
+    // window:toggle-always-on-top: never for the main window.
+    EXPECT_FALSE(env.commands->isAvailable("window:toggle-always-on-top"));
+    ASSERT_TRUE(env.commands->execute("workspace:move-to-new-window"));
+    flush();
+    PopoutWindow* p = onlyPopout(env);
+    ASSERT_TRUE(p);
+    activate(p);
+    const QRect before = p->geometry();
+    const Qt::WindowFlags flags = p->windowFlags();
+    QSignalSpy changed(p, &PopoutWindow::alwaysOnTopChanged);
+    ASSERT_TRUE(env.commands->execute("window:toggle-always-on-top"));
+    EXPECT_TRUE(p->isAlwaysOnTop());
+    EXPECT_TRUE(p->windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+    ASSERT_TRUE(p->windowHandle());
+    EXPECT_TRUE(p->windowHandle()->flags().testFlag(Qt::WindowStaysOnTopHint));
+    EXPECT_EQ(p->windowFlags(), flags | Qt::WindowStaysOnTopHint); // the rest (frame) kept
+    EXPECT_TRUE(p->isVisible()); // changed in place: not hidden / re-created
+    EXPECT_EQ(p->geometry(), before);
+    EXPECT_EQ(changed.count(), 1);
+    ASSERT_TRUE(env.commands->execute("window:toggle-always-on-top"));
+    EXPECT_FALSE(p->isAlwaysOnTop());
+    EXPECT_FALSE(p->windowHandle()->flags().testFlag(Qt::WindowStaysOnTopHint));
+    EXPECT_EQ(changed.count(), 2);
+    // The stacked tabs command works in a pop-out too.
+    ASSERT_TRUE(env.commands->execute("workspace:toggle-stacked-tabs"));
+    EXPECT_TRUE(env.workspace->isStacked(env.workspace->activeLeaf()));
+    EXPECT_EQ(env.workspace->popoutOf(env.workspace->activeLeaf()), p);
+    // Not while the pop-out is maximized (Obsidian), nor once the main window has the focus again.
+    p->showMaximized();
+    flush();
+    if (p->isMaximized()) {
+        EXPECT_FALSE(env.commands->isAvailable("window:toggle-always-on-top"));
+    }
+    p->showNormal();
+    flush();
+    activate(env.window);
+    EXPECT_FALSE(env.commands->isAvailable("window:toggle-always-on-top"));
 }
 
 TEST(PopoutSession, HotkeysAndCommandPaletteInsideAPopout)
