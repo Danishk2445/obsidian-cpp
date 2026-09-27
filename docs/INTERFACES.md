@@ -156,6 +156,13 @@ Interfaces other modules/agents build against. Change deliberately and update al
   file drags from the file explorer are offered to any widget under the pointer that has the invokable
   `bool ocFileDrag(QStringList paths, QPoint globalPos, bool drop)` (the canvas) before the workspace's split targets.
 
+## Workspace app options (additive)
+- `Workspace::setFocusNewTab(bool)` (app.json "focusNewTab", Obsidian's `createLeafInTabGroup`): `getLeaf(NewLeaf::Tab)`
+  activates the new tab only when on; `Workspace::openFile(file, NewLeaf::Tab)` then leaves a background tab in the
+  background. `newTab()` ("+", workspace:new-tab), splits, `openNewFile()` and `duplicateLeaf()` always activate.
+- `Workspace::setShowViewHeader(bool)` (appearance.json "showViewHeader"): hides every view header (root and pop-outs).
+  Both are applied by `SettingsController::applyOptions()`.
+
 ## Pop-out windows (additive)
 - `Workspace` (src/ui/workspace/workspace.h), additive: `openPopoutLeaf(geometry)` (= `getLeaf(NewLeaf::Window)`),
   `moveLeafToPopout(leaf, geometry)`, `popoutWindows()`, `popoutOf(leaf)`, `containerLeaves(leaf)` (Obsidian's

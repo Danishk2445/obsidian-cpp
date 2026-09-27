@@ -1016,7 +1016,8 @@ SettingsController::SettingsController(MainWindow* window)
     if (VaultConfig* cfg = m_session ? m_session->vaultConfig() : nullptr) {
         static const QSet<QString> keys = {QStringLiteral("showRibbon"),      QStringLiteral("smartIndentList"), QStringLiteral("autoPairBrackets"),
                                            QStringLiteral("autoPairMarkdown"), QStringLiteral("useTab"),          QStringLiteral("tabSize"),
-                                           QStringLiteral("spellcheck"),       QStringLiteral("spellcheckLanguages")};
+                                           QStringLiteral("spellcheck"),       QStringLiteral("spellcheckLanguages"),
+                                           QStringLiteral("showViewHeader"),   QStringLiteral("focusNewTab")};
         connect(cfg, &VaultConfig::configChanged, this, [this](const QString& key) {
             if (key.isEmpty() || keys.contains(key))
                 applyOptions();
@@ -1155,6 +1156,10 @@ void SettingsController::applyOptions()
         return;
     if (Ribbon* r = m_window->ribbon())
         r->setVisible(cfg->flag(QStringLiteral("showRibbon")));
+    if (Workspace* ws = m_window->workspace()) {
+        ws->setShowViewHeader(cfg->flag(QStringLiteral("showViewHeader")));
+        ws->setFocusNewTab(cfg->flag(QStringLiteral("focusNewTab")));
+    }
     mdcmd::Settings& md = mdcmd::settings();
     md.smartIndentList = cfg->flag(QStringLiteral("smartIndentList"));
     md.autoPairBrackets = cfg->flag(QStringLiteral("autoPairBrackets"));

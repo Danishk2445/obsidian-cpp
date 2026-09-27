@@ -2044,7 +2044,8 @@ WorkspaceLeaf* Workspace::getLeaf(NewLeaf mode)
         WorkspaceLeaf* recent = activeRootLeaf();
         WorkspaceTabs* t = recent ? recent->m_tabs : nullptr;
         WorkspaceLeaf* leaf = d->createLeafInGroup(t);
-        setActiveLeaf(leaf, false);
+        if (d->focusNewTab)
+            setActiveLeaf(leaf, false);
         return leaf;
     }
     case NewLeaf::Window:
@@ -2127,10 +2128,31 @@ void Workspace::openFile(TFile* file, NewLeaf mode, const QJsonObject& eState)
     WorkspaceLeaf* leaf = getLeaf(mode);
     if (!leaf)
         return;
+    // Obsidian's openFile() activates only the active leaf: a new tab left in the background ("focusNewTab"
+    // off) stays there.
+    const bool background = mode == NewLeaf::Tab && leaf != d->active;
     leaf->openFile(file, {}, eState);
+    if (background)
+        return;
     setActiveLeaf(leaf, true);
     d->updateActiveFile(file);
 }
+
+void Workspace::setFocusNewTab(bool on) { d->focusNewTab = on; }
+bool Workspace::focusNewTab() const { return d->focusNewTab; }
+
+void Workspace::setShowViewHeader(bool on)
+{
+    if (d->showViewHeader == on)
+        return;
+    d->showViewHeader = on;
+    iterateAllLeaves([this](WorkspaceLeaf* leaf) {
+        if (LeafWidget* lw = d->leafWidget(leaf))
+            lw->refresh();
+    });
+}
+
+bool Workspace::showViewHeader() const { return d->showViewHeader; }
 
 QList<WorkspaceLeaf*> Workspace::leavesOfType(const QString& type) const
 {
