@@ -5,3 +5,4 @@ tests/oracle/private/
 *.swp
 /.claude/
 __pycache__/
+CLAUDE.local.md

@@ -22,14 +22,14 @@ QT_QPA_PLATFORM=offscreen build/rel/obsidian-cpp --vault <copy-of-vault> --no-re
 Synthetic perf vault: `tools/gen_vault.py --out $S/vaults/synthetic` (giant 5.5 MB note, 14k-char lines, fences, lists…).
 
 ## Invariants (do not break)
-- NEVER open, write or test against the user's real vault (`/run/media/danish/New Volume/stuff/obsidian/obsidian-notes`).
+- NEVER open, write or test against the user's real vault (path in `CLAUDE.local.md`, not committed).
   Use `tests/fixtures/*` or a scratch copy. Never touch `<vault>/.obsidian/` (config is fully separate).
 - Clone state lives in `~/.config/obsidian-cpp`, `~/.local/share/obsidian-cpp`, `~/.cache/obsidian-cpp` (per vault id);
   nothing new is ever written inside a vault except user content (notes, attachments, .trash).
 - Byte-exact saves: never rewrite a file that wasn't edited; preserve EOLs/BOM/final newline/trailing spaces/tabs.
 - No Obsidian code/assets copied; only behaviour + design-token values (resources/themes) are mirrored.
 - Frozen interfaces (docs/INTERFACES.md) change only deliberately, with all users updated.
-- Local git only; never push.
+- Public GitHub repo (`origin`): commit locally; push only when the user asks.
 
 ## Layout
 `src/core` (vault, config, metadata, search, commands) · `src/text` (Text/ChangeSet/History/codec) ·
