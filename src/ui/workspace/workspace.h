@@ -153,6 +153,15 @@ public:
     int sideWidth(Side side) const;
     void setSideWidth(Side side, int px);
 
+    // ---- App options — additive (applied by the SettingsController) -----------------------------------
+    // "focusNewTab" (Obsidian's createLeafInTabGroup): getLeaf(NewLeaf::Tab) activates the new tab; off, links
+    // and files opened in a new tab load in the background. "showViewHeader": the header above every view
+    // (body.show-view-header).
+    void setFocusNewTab(bool on);
+    bool focusNewTab() const;
+    void setShowViewHeader(bool on);
+    bool showViewHeader() const;
+
     // ---- Pop-out windows — additive ---------------------------------------------------------------
     // Obsidian's floating split: separate windows (workspace.json "floating": {"type": "floating",
     // "children": [{"type": "window", "direction", "children", "x", "y", "width", "height", "maximize",

@@ -141,6 +141,8 @@ struct Workspace::Impl {
     QString floatingId;
     QJsonObject floatingExtra;
     bool quitting = false;                   // the main window is closing: pop-outs keep their leaves
+    bool focusNewTab = true;                 // app.json "focusNewTab"
+    bool showViewHeader = true;              // appearance.json "showViewHeader"
     WorkspaceSplit* closingWindow = nullptr; // closeWindow() in progress
     QPointer<WorkspaceWidget> widget;
     QPointer<DropOverlay> overlay;

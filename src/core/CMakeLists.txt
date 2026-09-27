@@ -1,5 +1,13 @@
 oc_add_library(oc_core
   SOURCES
+    bases/base_data.cpp
+    bases/base_expr.cpp
+    bases/base_file.cpp
+    bases/base_functions.cpp
+    bases/base_query.cpp
+    bases/base_runner.cpp
+    bases/base_value.cpp
+    bases/base_yaml.cpp
     bookmarks/bookmarks.cpp
     canvas/canvas_document.cpp
     canvas/canvas_geometry.cpp

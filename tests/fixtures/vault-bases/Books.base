@@ -1,0 +1,49 @@
+filters:
+  and:
+    - file.hasTag("book")
+formulas:
+  pages_per_star: (pages / rating).round()
+  age: today().year - published.year
+properties:
+  note.author:
+    displayName: Author
+  formula.pages_per_star:
+    displayName: Pages per star
+views:
+  - type: table
+    name: All books
+    order:
+      - file.name
+      - author
+      - status
+      - rating
+      - pages
+      - genre
+      - published
+      - owned
+      - formula.pages_per_star
+    sort:
+      - property: rating
+        direction: DESC
+    summaries:
+      pages: Sum
+      rating: Average
+  - type: cards
+    name: Gallery
+    order:
+      - file.name
+      - author
+      - rating
+      - status
+    image: note.cover
+    cardSize: 180
+    imageAspectRatio: 0.5
+  - type: list
+    name: Reading list
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - author
+      - status

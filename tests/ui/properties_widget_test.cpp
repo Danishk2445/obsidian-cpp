@@ -611,9 +611,11 @@ TEST_F(PropertiesTest, AllPropertiesMenuRenameAndDelete)
     // reserved properties can't be renamed or deleted
     QMenu reserved;
     view->populateMenu(&reserved, QStringLiteral("tags"));
-    for (QAction* a : reserved.actions())
-        if (a->text() == "Rename" || a->text() == "Delete property")
+    for (QAction* a : reserved.actions()) {
+        if (a->text() == "Rename" || a->text() == "Delete property") {
             EXPECT_FALSE(a->isEnabled());
+        }
+    }
 }
 
 // ---- screenshots (OC_SHOT_DIR) ----------------------------------------------------------------------

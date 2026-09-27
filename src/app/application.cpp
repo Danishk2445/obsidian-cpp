@@ -37,6 +37,7 @@
 #include "ui/plugins/note_composer_ui.h"
 #include "ui/plugins/pdf_export_ui.h"
 #include "ui/plugins/rename_subpath.h"
+#include "ui/shell/opening_behavior.h"
 #include "ui/picker/vault_picker.h"
 #include "ui/settings/settings_modal.h"
 #include "ui/settings/settings_pages.h"
@@ -52,6 +53,7 @@
 #include "ui/views/markdown/note_embed_view.h"
 #include "ui/views/markdown/properties/properties_commands.h"
 #include "ui/views/canvas/canvas_registration.h"
+#include "ui/views/bases/bases_plugin.h"
 #include "ui/views/media/media_views.h"
 #include "ui/views/sidebar/sidebar_registration.h"
 #include "ui/workspace/placeholder_views.h"
@@ -65,6 +67,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <utility>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLocale>
@@ -265,9 +268,12 @@ void Application::handleRequest(const QJsonObject& request)
     qInfo("oc: request from another launch: vault=%s open=%s", qPrintable(request.value(QStringLiteral("vault")).toString()),
           qPrintable(request.value(QStringLiteral("open")).toString()));
     const QString vault = request.value(QStringLiteral("vault")).toString();
+    const QString open = request.value(QStringLiteral("open")).toString();
     MainWindow* w = nullptr;
     if (!vault.isEmpty()) {
+        m_requestOpensFile = !open.isEmpty(); // no "Default file to open" for a vault opened on a file
         w = openVault(vault);
+        m_requestOpensFile = false;
     } else {
         for (const auto& win : std::as_const(m_windows))
             if (win)
@@ -279,7 +285,6 @@ void Application::handleRequest(const QJsonObject& request)
     }
     if (!w)
         return;
-    const QString open = request.value(QStringLiteral("open")).toString();
     if (!open.isEmpty())
         openPath(w, open, request.value(QStringLiteral("mode")).toString());
     w->show();
@@ -548,6 +553,7 @@ void Application::populateWindow(MainWindow* w)
     registerSettingsCommands(*commands, w); // app:open-settings (Mod+,), also the ribbon's gear
     registerExportPdfCommand(*commands, w);  // workspace:export-pdf
     registerCanvasCommands(*commands, w);    // canvas:new-file, export-as-image, ...
+    registerBases(w);                        // .base view, base embeds / code blocks, bases:* commands
     rename_subpath::registerCommands(*commands, w); // editor:rename-heading + editor menu "Rename this heading/block ID..."
     installCoreFileMenu();                   // Copy path, Open in default app, Rename..., linked views, ...
     SettingsController* settings = SettingsController::of(w);
@@ -622,9 +628,13 @@ void Application::populateWindow(MainWindow* w)
     wireStatusBar(w);
     installCorePluginSwitches(w); // disabled core plugins: no commands, ribbon actions, status items, views
 
-    // --open <note> [--mode ...]: open a note in the active tab (headless screenshots, CLI).
-    if (!m_opts.open.isEmpty())
-        openPath(w, m_opts.open, m_opts.mode);
+    // Files & links → Default file to open, unless this launch opens a note itself (Obsidian's OBS_ACT).
+    if (m_opts.open.isEmpty() && !m_requestOpensFile)
+        runOpeningBehavior(w, session->vaultConfig()->get(QStringLiteral("openBehavior")).toString());
+    // --open <note> [--mode ...]: open a note in the active tab (headless screenshots, CLI). Only the first window;
+    // vaults opened later from the picker or the switcher run their own opening behaviour.
+    if (const QString open = std::exchange(m_opts.open, QString()); !open.isEmpty())
+        openPath(w, open, m_opts.mode);
 }
 
 void Application::openPath(MainWindow* w, const QString& path, const QString& mode)

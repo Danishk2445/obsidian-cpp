@@ -56,7 +56,10 @@ QList<QPair<QString, QString>> searchParams(const QString& subpath)
 // ---------------------------------------------------------------------------------------------
 QString EmbedRequest::key() const
 {
-    return absPath + QLatin1Char('\n') + subpath + QLatin1Char('\n') + (display == Display::Popover ? u'p' : u'i');
+    QString k = absPath + QLatin1Char('\n') + subpath + QLatin1Char('\n') + (display == Display::Popover ? u'p' : u'i');
+    if (!language.isEmpty())
+        k += QLatin1Char('\n') + language + QLatin1Char(':') + QString::number(qHash(source), 16);
+    return k;
 }
 
 bool EmbedRequest::hasParam(const QString& name) const
@@ -126,6 +129,26 @@ void EmbedRegistry::unregisterExtensions(const QStringList& extensions)
 std::shared_ptr<EmbedProvider> EmbedRegistry::provider(const QString& extension) const { return m_providers.value(extension.toLower()); }
 
 void EmbedRegistry::notifyChanged(const QString& absPath) { emit changed(absPath); }
+
+void EmbedRegistry::registerCodeBlockLanguage(const QString& language, std::shared_ptr<EmbedProvider> provider)
+{
+    m_codeBlocks.insert(language.toLower(), std::move(provider));
+}
+
+void EmbedRegistry::unregisterCodeBlockLanguage(const QString& language) { m_codeBlocks.remove(language.toLower()); }
+
+std::shared_ptr<EmbedProvider> EmbedRegistry::codeBlockProvider(const QString& language) const { return m_codeBlocks.value(language.toLower()); }
+
+std::shared_ptr<InlineWidget> makeCodeBlockEmbedWidget(const QString& language, const QString& source, qreal maxWidth)
+{
+    std::shared_ptr<EmbedProvider> p = EmbedRegistry::instance().codeBlockProvider(language);
+    if (!p)
+        return nullptr;
+    EmbedRequest r;
+    r.language = language.toLower();
+    r.source = source;
+    return std::make_shared<EmbedWidget>(std::move(r), std::move(p), maxWidth);
+}
 
 std::shared_ptr<InlineWidget> makeEmbedWidget(const QString& absPath, const QString& target, const QString& subpath, int width,
                                               int height, qreal maxWidth)

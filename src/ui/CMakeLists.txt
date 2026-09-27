@@ -43,6 +43,7 @@ oc_add_library(oc_ui
     shell/app_commands.cpp
     shell/empty_view.cpp
     shell/main_window.cpp
+    shell/opening_behavior.cpp
     shell/popout_window.cpp
     shell/popout_window.h
     shell/ribbon.cpp
@@ -66,6 +67,30 @@ oc_add_library(oc_ui
     views/canvas/canvas_widget.cpp
     views/canvas/canvas_widget.h
     views/canvas/canvas_widget_p.h
+    views/bases/bases_cards.cpp
+    views/bases/bases_cards.h
+    views/bases/bases_controller.cpp
+    views/bases/bases_controller.h
+    views/bases/bases_embed.cpp
+    views/bases/bases_embed.h
+    views/bases/bases_layout.cpp
+    views/bases/bases_layout.h
+    views/bases/bases_list.cpp
+    views/bases/bases_list.h
+    views/bases/bases_menus.cpp
+    views/bases/bases_menus.h
+    views/bases/bases_plugin.cpp
+    views/bases/bases_plugin.h
+    views/bases/bases_render.cpp
+    views/bases/bases_render.h
+    views/bases/bases_style.cpp
+    views/bases/bases_style.h
+    views/bases/bases_table.cpp
+    views/bases/bases_table.h
+    views/bases/bases_view.cpp
+    views/bases/bases_view.h
+    views/bases/bases_widgets.cpp
+    views/bases/bases_widgets.h
     views/file_explorer/file_actions.cpp
     views/file_explorer/file_actions.h
     views/file_explorer/file_explorer_view.cpp

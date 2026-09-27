@@ -227,7 +227,8 @@ public:
     void applyAppearance();
 
     // Applies the app.json / appearance.json options that live in process-wide or window state rather
-    // than being read on use: the ribbon's visibility ("showRibbon"), the editing behaviours of
+    // than being read on use: the ribbon's visibility ("showRibbon"), the workspace's "showViewHeader" and
+    // "focusNewTab", the editing behaviours of
     // mdcmd::settings() (smart lists, auto-pairing, tabs, tab size) and the spellchecker (on/off, first
     // language). Called on every VaultConfig::configChanged; call it once at startup too.
     void applyOptions();

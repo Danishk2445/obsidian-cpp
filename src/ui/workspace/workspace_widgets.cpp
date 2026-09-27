@@ -1307,7 +1307,7 @@ void LeafWidget::setView(View* view)
 void LeafWidget::refresh()
 {
     const bool inRoot = m_leaf->tabs() && !m_leaf->isInSidedock();
-    const bool want = inRoot && m_view && m_view->showsViewHeader();
+    const bool want = inRoot && m_view && m_view->showsViewHeader() && d->showViewHeader;
     if (want && !m_header)
         m_header = new ViewHeader(d, m_leaf, this);
     if (m_header) {

@@ -92,6 +92,7 @@ public:
 private:
     bool touches(qsizetype from, qsizetype to) const;
     bool lineActive(int line) const;
+    bool codeBlockEmbed(int line, int leaf, md::LineRole role, LineDecoration& d); // registered code block languages
     void inlineDecorations(int line, int leaf, LineDecoration& d);
     int m_depth = 0;
     QHash<quint64, std::shared_ptr<BlockWidget>> m_blockCache;

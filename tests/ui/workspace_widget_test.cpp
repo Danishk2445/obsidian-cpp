@@ -178,6 +178,52 @@ TEST_F(WorkspaceWidgetTest, NewTabButtonAppendsAnEmptyTab)
     EXPECT_EQ(m_ws->activeLeaf(), A->leaves.last());
 }
 
+TEST_F(WorkspaceWidgetTest, FocusNewTabOffOpensNewTabsInTheBackground)
+{
+    WorkspaceLeaf* a = m_ws->activeRootLeaf();
+    a->setViewState(graph("A"));
+    auto note = makeFile("Note.md");
+    m_ws->setFocusNewTab(false);
+    m_ws->openFile(note.get(), NewLeaf::Tab); // Mod+click on a link
+    WorkspaceTabs* tabs = rootTabs(m_ws.get(), 0);
+    ASSERT_EQ(tabs->leaves.size(), 2);
+    EXPECT_EQ(m_ws->activeLeaf(), a);
+    EXPECT_EQ(tabs->currentTab, 0);
+    auto fileOf = [](WorkspaceLeaf* l) { return l->viewState().value("state").toObject().value("file").toString(); };
+    EXPECT_EQ(fileOf(tabs->leaves[1]), "Note.md"); // loaded in the background
+    // "+" / workspace:new-tab and splits still focus their new leaf.
+    WorkspaceLeaf* t = m_ws->newTab();
+    EXPECT_EQ(m_ws->activeLeaf(), t);
+    t->setViewState(graph("T"));
+    EXPECT_EQ(m_ws->activeLeaf(), t);
+    // On (the default): the new tab becomes the active one.
+    m_ws->setFocusNewTab(true);
+    auto other = makeFile("Other.md");
+    m_ws->openFile(other.get(), NewLeaf::Tab);
+    EXPECT_EQ(fileOf(m_ws->activeLeaf()), "Other.md");
+}
+
+TEST_F(WorkspaceWidgetTest, ShowViewHeaderOffHidesEveryViewHeader)
+{
+    buildTwoGroups();
+    WorkspaceLeaf* x = m_ws->activeLeaf();
+    ASSERT_TRUE(d()->leafWidget(x)->header()->isVisible());
+    m_ws->setShowViewHeader(false);
+    QCoreApplication::processEvents();
+    EXPECT_FALSE(d()->leafWidget(x)->header()->isVisible());
+    EXPECT_EQ(d()->leafWidget(x)->header()->isHidden(), true);
+    EXPECT_EQ(x->view()->geometry().top(), 0); // the view takes the header's space
+    // Leaves created while it's off get no header either.
+    WorkspaceLeaf* n = m_ws->getLeaf(NewLeaf::Tab);
+    n->setViewState(graph("N"));
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(!d()->leafWidget(n)->header() || d()->leafWidget(n)->header()->isHidden());
+    m_ws->setShowViewHeader(true);
+    QCoreApplication::processEvents();
+    EXPECT_TRUE(d()->leafWidget(n)->header()->isVisible());
+    EXPECT_GT(n->view()->geometry().top(), 0);
+}
+
 TEST_F(WorkspaceWidgetTest, DropRegionsFollowObsidian)
 {
     buildTwoGroups();

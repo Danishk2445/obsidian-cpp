@@ -11,8 +11,6 @@ using namespace Qt::StringLiterals;
 
 namespace {
 
-QString tr(const char* s) { return QCoreApplication::translate("oc::CanvasSettings", s); }
-
 // Obsidian merges the plugin's data over {snapToObjects: true, snapToGrid: true}; the other options
 // default when missing.
 const QJsonObject& defaults()
