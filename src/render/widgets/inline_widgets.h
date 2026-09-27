@@ -68,8 +68,8 @@ private:
     qreal m_width;
 };
 
-// A short text drawn in the line's font (Reading view's ordered list numbers, `ol > li::marker`): `format`'s
-// foreground and font features (tabular-nums) apply.
+// A short text drawn in the line's font and `color` (Reading view's ordered list numbers, `ol > li::marker`), with
+// tabular figures when asked (the UA's ::marker style).
 class MarkerTextWidget : public InlineWidget {
 public:
     MarkerTextWidget(QString text, QColor color, bool tabularNums) : m_text(std::move(text)), m_color(color), m_tabular(tabularNums) {}
