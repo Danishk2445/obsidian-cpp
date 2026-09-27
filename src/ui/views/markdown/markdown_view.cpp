@@ -1064,11 +1064,14 @@ void MarkdownView::renameFromTitle(const QString& raw)
         return;
     }
     QString err;
+    QPointer<MarkdownView> self(this); // renameFile() may ask about updating links: a nested event loop
+    QPointer<NoticeManager> noticesGuard(notices);
     const bool ok = s->fileManager() ? s->fileManager()->renameFile(m_file, newPath, &err) : s->vault()->rename(m_file, newPath, &err);
     if (!ok) {
-        if (notices)
-            notices->show(err);
-        updateTitle();
+        if (noticesGuard)
+            noticesGuard->show(err);
+        if (self)
+            updateTitle();
     }
 }
 

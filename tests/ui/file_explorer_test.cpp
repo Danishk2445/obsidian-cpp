@@ -552,6 +552,33 @@ TEST_F(SharedAttachmentTest, AttachmentsStillLinkedElsewhereStay)
     EXPECT_TRUE(exists("attachments/image.png"));
 }
 
+// Monkey seed 11002: Enter in the inline title renames the note, and the "Update links?" prompt runs a nested event
+// loop in which the note's view (and its title) can be destroyed; the key handler went on with a dead `this`.
+TEST_F(FileExplorerTest, RenamingFromTheTitleSurvivesTheViewDyingDuringTheLinkPrompt)
+{
+    m_ws->openFile(m_vault->file("Math.md")); // Welcome.md links [[Math]]: the rename asks
+    QApplication::processEvents();
+    auto* mv = qobject_cast<MarkdownView*>(m_ws->activeRootLeaf()->view());
+    ASSERT_TRUE(mv);
+    QPointer<MarkdownView> view(mv);
+    WorkspaceLeaf* leaf = m_ws->activeRootLeaf();
+    bool asked = false;
+    m_fm->setConfirmLinkUpdate([&](int, int) {
+        asked = true;
+        leaf->detach(); // the view is replaced and deleted while the prompt is up
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return FileManager::LinkUpdateChoice::DoNotUpdate;
+    });
+    InlineTitle* title = mv->inlineTitle();
+    title->beginRename(true);
+    QTest::keyClicks(title, "Algebra");
+    QTest::keyClick(title, Qt::Key_Return);
+    EXPECT_TRUE(asked);
+    EXPECT_FALSE(view);
+    EXPECT_TRUE(exists("Algebra.md"));
+    EXPECT_FALSE(exists("Math.md"));
+}
+
 TEST_F(FileExplorerTest, DeleteAsksAndUsesTheTrashOption)
 {
     tree()->setFocus();

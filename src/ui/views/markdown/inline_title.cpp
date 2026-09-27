@@ -4,6 +4,7 @@
 
 #include <QAbstractTextDocumentLayout>
 #include <QKeyEvent>
+#include <QPointer>
 #include <QMimeData>
 #include <QTextBlock>
 
@@ -119,10 +120,14 @@ void InlineTitle::keyPressEvent(QKeyEvent* e)
 {
     switch (e->key()) {
     case Qt::Key_Return:
-    case Qt::Key_Enter:
+    case Qt::Key_Enter: {
+        // the rename may ask about updating links (a nested event loop) in which this view can go away
+        QPointer<InlineTitle> self(this);
         commit();
-        emit leaveToEditor();
+        if (self)
+            emit leaveToEditor();
         return;
+    }
     case Qt::Key_Escape:
         setTitle(m_title);
         emit leaveToEditor();
