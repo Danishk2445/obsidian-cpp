@@ -5,8 +5,10 @@
 #include "core/vault/vault.h"
 #include "core/vault_session.h"
 #include "render/theme/theme.h"
+#include "ui/overlay/overlay_layer.h"
 #include "ui/shell/empty_view.h"
 #include "ui/shell/main_window.h"
+#include "ui/shell/popout_window.h"
 #include "ui/shell/ribbon.h"
 #include "ui/widgets/icon_button.h"
 #include "ui/workspace/placeholder_views.h"
@@ -22,6 +24,7 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QRandomGenerator>
+#include <QTimer>
 
 #include <cmath>
 
@@ -86,6 +89,23 @@ bool explicitlyHidden(const QWidget* w)
 
 // Obsidian's WorkspaceItem.setDimension(): values outside (0, 100) mean "unset" (flex-grow 1).
 double validDimension(double dim) { return dim > 0 && dim < 100 ? dim : 0; }
+
+// Obsidian's WorkspaceWindow: a new pop-out is at least 600x600 when it gets a size.
+constexpr int kMinPopoutSize = 600;
+const QString kFloatingType = QStringLiteral("floating");
+const QString kWindowType = QStringLiteral("window");
+
+// A modal (or another key-capturing overlay) is open in `top`: window focus doesn't move the keyboard.
+bool hasCapturingOverlay(const QWidget* top)
+{
+    const OverlayLayer* layer = OverlayLayer::of(top);
+    if (!layer || layer->isHidden())
+        return false;
+    for (const QObject* o : layer->children())
+        if (o->isWidgetType() && !static_cast<const QWidget*>(o)->isHidden() && o->property("ocCapturesKeys").toBool())
+            return true;
+    return false;
+}
 } // namespace
 
 QString fileBaseName(const QString& path)
@@ -121,14 +141,25 @@ protected:
             d->endDrag({}, false); // Escape cancels a tab drag (like an HTML drag in Obsidian)
             return true;
         }
+        if (t == QEvent::WindowActivate) {
+            // The main window or a pop-out got the focus: the active leaf follows (Obsidian's onFocus).
+            if (obj->isWidgetType() && static_cast<QWidget*>(obj)->isWindow() && d->widget && !d->destroying)
+                d->onWindowActivated(static_cast<QWidget*>(obj));
+            return false;
+        }
         if (t != QEvent::MouseButtonPress && t != QEvent::FocusIn)
             return false;
         if (!obj->isWidgetType() || !d->widget || d->destroying)
             return false;
         auto* w = static_cast<QWidget*>(obj);
-        if (w->window() != d->widget->window() || !d->widget->isAncestorOf(w))
+        QWidget* area = nullptr; // the widget holding the leaves of w's window
+        if (w->window() == d->widget->window())
+            area = d->widget;
+        else if (WorkspaceSplit* win = d->windowSplit(w->window()))
+            area = win->w;
+        if (!area || !area->isAncestorOf(w))
             return false;
-        for (QWidget* p = w; p && p != d->widget; p = p->parentWidget()) {
+        for (QWidget* p = w; p && p != area; p = p->parentWidget()) {
             if (auto* lw = qobject_cast<LeafWidget*>(p)) {
                 if (lw->leaf() && lw->leaf()->tabs())
                     d->q->setActiveLeaf(lw->leaf(), false);
@@ -318,13 +349,34 @@ bool Workspace::Impl::frameless() const { return window() && window()->isFramele
 
 int Workspace::Impl::topRightReserve() const { return window() ? window()->topRightReserve() : 0; }
 
-bool Workspace::Impl::windowFocused() const
+bool Workspace::Impl::windowFocused() const { return windowFocused(widget); }
+
+bool Workspace::Impl::windowFocused(const QWidget* w) const
 {
-    if (!widget)
-        return false;
-    QWidget* w = widget->window();
-    return w && w->isActiveWindow();
+    const QWidget* top = w ? w->window() : nullptr;
+    return top && top->isActiveWindow();
 }
+
+QList<WorkspaceSplit*> Workspace::Impl::tops() const
+{
+    QList<WorkspaceSplit*> out;
+    for (WorkspaceSplit* s : {root, left, right})
+        if (s)
+            out.push_back(s);
+    out.append(windows);
+    return out;
+}
+
+QList<WorkspaceSplit*> Workspace::Impl::mainAreas() const
+{
+    QList<WorkspaceSplit*> out;
+    if (root)
+        out.push_back(root);
+    out.append(windows);
+    return out;
+}
+
+QWidget* Workspace::Impl::mainTop() const { return widget ? widget->window() : nullptr; }
 
 // ---------------------------------------------------------------------------------------------
 // Workspace::Impl — views
@@ -532,6 +584,8 @@ void Workspace::Impl::removeItem(WorkspaceItem* item)
         } else if (parent->children.isEmpty()) {
             removeItem(parent);
         }
+    } else if (parent && parent->isWindow() && parent->children.isEmpty()) {
+        removeWindow(parent); // Obsidian's WorkspaceWindow.removeChild(): a pop-out closes with its last child
     }
     structureChanged();
 }
@@ -622,12 +676,15 @@ void Workspace::Impl::closeLeaf(WorkspaceLeaf* leaf, bool recordUndo)
     WorkspaceTabs* tabs = leaf->m_tabs;
     const bool wasActive = active == leaf;
     const bool groupSurvives = tabs->leaves.size() > 1;
+    WorkspaceSplit* const window = windowOf(leaf); // compared by address only once the leaf is gone
     if (recordUndo && leaf->m_view && leaf->m_view->viewType() != kEmptyType) {
         ClosedLeaf c;
         c.leafId = leaf->m_id;
         c.parentId = tabs->id;
+        // Obsidian records leaf.getRoot(): a pop-out's leaves have the floating split as their root,
+        // unless the whole window is closing (it is detached first).
         if (WorkspaceSplit* top = topSplit(tabs))
-            c.rootId = top->id;
+            c.rootId = top->isWindow() && top != closingWindow ? floatingId : top->id;
         c.index = int(tabs->leaves.indexOf(leaf));
         c.viewState = leaf->viewState();
         c.eState = leaf->m_view->ephemeralState();
@@ -658,8 +715,10 @@ void Workspace::Impl::closeLeaf(WorkspaceLeaf* leaf, bool recordUndo)
     ensureRootLeaf();
     if (wasActive) {
         WorkspaceLeaf* next = groupSurvives ? tabs->current() : nullptr;
+        if (!next && window && windows.contains(window))
+            next = mostRecentLeaf(window); // stay in the pop-out while it has leaves
         if (!next)
-            next = mostRecentLeaf(root);
+            next = window ? mostRecentMainLeaf() : mostRecentLeaf(root);
         if (next)
             q->setActiveLeaf(next, true);
     }
@@ -790,12 +849,71 @@ WorkspaceLeaf* Workspace::Impl::leafById(const QString& id) const
     if (id.isEmpty())
         return nullptr;
     WorkspaceLeaf* found = nullptr;
-    for (const WorkspaceSplit* s : {root, left, right})
+    for (const WorkspaceSplit* s : tops())
         forEachLeaf(s, [&](WorkspaceLeaf* l) {
             if (!found && l->m_id == id)
                 found = l;
         });
     return found;
+}
+
+WorkspaceSplit* Workspace::Impl::windowOf(const WorkspaceLeaf* leaf) const
+{
+    WorkspaceSplit* top = topSplit(leaf);
+    return top && top->isWindow() ? top : nullptr;
+}
+
+WorkspaceSplit* Workspace::Impl::windowSplit(const QWidget* topLevel) const
+{
+    if (!topLevel)
+        return nullptr;
+    for (WorkspaceSplit* win : windows)
+        if (win->popout && win->popout.data() == topLevel)
+            return win;
+    return nullptr;
+}
+
+WorkspaceSplit* Workspace::Impl::containerOf(const WorkspaceLeaf* leaf) const
+{
+    WorkspaceSplit* win = windowOf(leaf);
+    return win ? win : root;
+}
+
+bool Workspace::Impl::isMainLeaf(const WorkspaceLeaf* leaf) const
+{
+    WorkspaceSplit* top = topSplit(leaf);
+    return top && (top == root || top->isWindow());
+}
+
+WorkspaceLeaf* Workspace::Impl::mostRecentMainLeaf(const WorkspaceSplit* except) const
+{
+    WorkspaceLeaf* first = nullptr;
+    WorkspaceLeaf* best = nullptr;
+    quint64 bestTime = 0;
+    for (const WorkspaceSplit* s : mainAreas()) {
+        if (s == except)
+            continue;
+        WorkspaceLeaf* l = mostRecentLeaf(s);
+        if (!l)
+            continue;
+        if (!first)
+            first = l;
+        const quint64 time = leafData.value(l).activeTime;
+        if (time > 0 && (!best || time > bestTime)) {
+            best = l;
+            bestTime = time;
+        }
+    }
+    return best ? best : first;
+}
+
+QWidget* Workspace::Impl::topOf(const WorkspaceLeaf* leaf) const
+{
+    if (!leaf || !leaf->m_tabs)
+        return nullptr;
+    if (WorkspaceSplit* win = windowOf(leaf))
+        return win->popout;
+    return mainTop();
 }
 
 WorkspaceTabs* Workspace::Impl::tabsById(const WorkspaceItem* under, const QString& id) const
@@ -1060,6 +1178,7 @@ void Workspace::Impl::structureChanged()
     syncWidgets();
     updateTopFlags();
     refreshChrome();
+    updateWindowTitles();
     q->requestSaveLayout();
     emit q->layoutChanged();
 }
@@ -1081,9 +1200,8 @@ void Workspace::Impl::normalizeDimensions()
                 visit(cs);
         }
     };
-    for (WorkspaceSplit* s : {root, left, right})
-        if (s)
-            visit(s);
+    for (WorkspaceSplit* s : tops())
+        visit(s);
 }
 
 void Workspace::Impl::syncWidgets()
@@ -1107,6 +1225,14 @@ void Workspace::Impl::syncWidgets()
         sync(s);
     }
     widget->relayout();
+    // Pop-outs: each window's root split fills its PopoutWindow.
+    for (WorkspaceSplit* win : std::as_const(windows)) {
+        if (!win->popout)
+            continue;
+        if (win->popout->content() != win->w.data())
+            win->popout->setContent(win->w);
+        sync(win);
+    }
 }
 
 void Workspace::Impl::updateTopFlags()
@@ -1115,10 +1241,10 @@ void Workspace::Impl::updateTopFlags()
         return;
     // Obsidian's updateFrameless(): tab groups touching the top edge ("mod-top") use the title bar
     // colors and double as window drag areas; the rightmost one leaves room for the window buttons.
-    QList<WorkspaceTabs*> tops;
+    QList<WorkspaceTabs*> topGroups;
     std::function<void(WorkspaceItem*)> collect = [&](WorkspaceItem* it) {
         if (WorkspaceTabs* t = it->asTabs()) {
-            tops.push_back(t);
+            topGroups.push_back(t);
         } else if (WorkspaceSplit* s = it->asSplit()) {
             if (s->vertical) {
                 for (WorkspaceItem* c : std::as_const(s->children))
@@ -1128,13 +1254,23 @@ void Workspace::Impl::updateTopFlags()
             }
         }
     };
-    for (WorkspaceSplit* s : {root, left, right})
+    for (WorkspaceSplit* s : tops())
         forEachTabs(s, [](WorkspaceTabs* t) {
             t->w->header()->setTop(false);
             t->w->header()->setRightReserve(0);
         });
+    // Pop-outs: the same, with room for the window's own buttons.
+    for (WorkspaceSplit* win : std::as_const(windows)) {
+        topGroups.clear();
+        collect(win);
+        for (WorkspaceTabs* t : std::as_const(topGroups))
+            t->w->header()->setTop(true);
+        if (!topGroups.isEmpty() && win->popout)
+            topGroups.last()->w->header()->setRightReserve(win->popout->topRightReserve());
+    }
+    topGroups.clear();
     collect(root);
-    for (WorkspaceTabs* t : std::as_const(tops))
+    for (WorkspaceTabs* t : std::as_const(topGroups))
         t->w->header()->setTop(true);
     WorkspaceTabs* leftTop = left && !left->children.isEmpty() ? left->children.first()->asTabs() : nullptr;
     WorkspaceTabs* rightTop = right && !right->children.isEmpty() ? right->children.first()->asTabs() : nullptr;
@@ -1142,7 +1278,7 @@ void Workspace::Impl::updateTopFlags()
         leftTop->w->header()->setTop(true);
     if (rightTop)
         rightTop->w->header()->setTop(true);
-    WorkspaceTabs* topRight = rightTop && !right->collapsed ? rightTop : (tops.isEmpty() ? nullptr : tops.last());
+    WorkspaceTabs* topRight = rightTop && !right->collapsed ? rightTop : (topGroups.isEmpty() ? nullptr : topGroups.last());
     if (topRight)
         topRight->w->header()->setRightReserve(topRightReserve());
 }
@@ -1151,7 +1287,7 @@ void Workspace::Impl::refreshChrome()
 {
     if (!widget || destroying)
         return;
-    for (WorkspaceSplit* s : {root, left, right})
+    for (WorkspaceSplit* s : tops())
         forEachTabs(s, [&](WorkspaceTabs* t) {
             t->w->header()->update();
             for (WorkspaceLeaf* l : std::as_const(t->leaves))
@@ -1170,6 +1306,8 @@ void Workspace::Impl::leafTitleChanged(WorkspaceLeaf* leaf)
     }
     if (LeafWidget* lw = leafWidget(leaf); lw && lw->header())
         lw->header()->refresh();
+    if (windowOf(leaf))
+        updateWindowTitles();
     emit leaf->titleChanged();
     q->requestSaveLayout();
 }
@@ -1184,7 +1322,7 @@ void Workspace::Impl::updateActiveFile(TFile* hint)
     if (!l || !l->m_view || !l->m_view->navigation()) {
         l = nullptr;
         quint64 best = 0;
-        for (const WorkspaceSplit* s : {root, left, right})
+        for (const WorkspaceSplit* s : tops())
             forEachLeaf(s, [&](WorkspaceLeaf* c) {
                 const quint64 t = leafData.value(c).activeTime;
                 if (c->m_view && c->m_view->navigation() && t > 0 && (!l || t > best)) {
@@ -1253,7 +1391,7 @@ QJsonObject Workspace::Impl::serializeItem(const WorkspaceItem* item) const
     QJsonArray children;
     if (item->isSplit()) {
         const auto* s = static_cast<const WorkspaceSplit*>(item);
-        o.insert(QStringLiteral("type"), QStringLiteral("split"));
+        o.insert(QStringLiteral("type"), s->isWindow() ? kWindowType : QStringLiteral("split"));
         for (const WorkspaceItem* c : s->children)
             children.append(serializeItem(c));
         o.insert(QStringLiteral("children"), children);
@@ -1262,6 +1400,28 @@ QJsonObject Workspace::Impl::serializeItem(const WorkspaceItem* item) const
             o.insert(QStringLiteral("width"), s->width);
             if (s->collapsed)
                 o.insert(QStringLiteral("collapsed"), true);
+        }
+        if (s->isWindow()) {
+            // Obsidian's WorkspaceWindow.serialize(): the window's normal bounds, maximize and zoom.
+            QRect g = s->geometry;
+            bool hasPosition = s->hasPosition;
+            bool maximize = s->maximize;
+            if (const PopoutWindow* p = s->popout) {
+                g = p->normalGeometryForSave();
+                hasPosition = true;
+                maximize = p->isMaximized();
+            }
+            o.remove(QStringLiteral("dimension"));
+            if (hasPosition) {
+                o.insert(QStringLiteral("x"), g.x());
+                o.insert(QStringLiteral("y"), g.y());
+            }
+            if (g.width() > 0 && g.height() > 0) {
+                o.insert(QStringLiteral("width"), g.width());
+                o.insert(QStringLiteral("height"), g.height());
+            }
+            o.insert(QStringLiteral("maximize"), maximize);
+            o.insert(QStringLiteral("zoom"), s->zoom);
         }
     } else {
         const auto* t = static_cast<const WorkspaceTabs*>(item);
@@ -1294,15 +1454,26 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
         into->leaves.push_back(leaf);
         leaves.push_back({leaf, n.value(QStringLiteral("state")).toObject()});
     };
-    if (type == u"split") {
+    const bool window = role == WorkspaceSplit::Role::Window;
+    if (window ? type == kWindowType : type == u"split") {
         const bool vertical = o.value(QStringLiteral("direction")).toString() != u"horizontal";
         auto* s = new WorkspaceSplit(this, role, vertical);
         s->id = idOf(o);
-        s->dimension = validDimension(o.value(QStringLiteral("dimension")).toDouble(0));
-        s->extra = without(o, {"id", "type", "dimension", "children", "direction", "width", "collapsed"});
+        s->dimension = window ? 0 : validDimension(o.value(QStringLiteral("dimension")).toDouble(0));
+        s->extra = window ? without(o, {"id", "type", "dimension", "children", "direction", "x", "y", "width", "height", "maximize", "zoom"})
+                          : without(o, {"id", "type", "dimension", "children", "direction", "width", "collapsed"});
         if (s->isSidedock()) {
             s->width = std::max(1, int(std::lround(o.value(QStringLiteral("width")).toDouble(kDefaultSideWidth))));
             s->collapsed = o.value(QStringLiteral("collapsed")).toBool();
+        }
+        if (window) {
+            s->hasPosition = o.value(QStringLiteral("x")).isDouble() && o.value(QStringLiteral("y")).isDouble();
+            const int w = int(std::lround(o.value(QStringLiteral("width")).toDouble(0)));
+            const int h = int(std::lround(o.value(QStringLiteral("height")).toDouble(0)));
+            s->geometry = QRect(int(std::lround(o.value(QStringLiteral("x")).toDouble(0))), int(std::lround(o.value(QStringLiteral("y")).toDouble(0))),
+                                std::max(0, w), std::max(0, h));
+            s->maximize = o.value(QStringLiteral("maximize")).toBool();
+            s->zoom = o.value(QStringLiteral("zoom")).toDouble(0);
         }
         const QJsonArray children = o.value(QStringLiteral("children")).toArray();
         for (const QJsonValue& cv : children) {
@@ -1311,7 +1482,7 @@ WorkspaceItem* Workspace::Impl::parseItem(const QJsonObject& o, WorkspaceSplit::
                 s->children.push_back(c);
             }
         }
-        if (role == WorkspaceSplit::Role::Nested && s->children.isEmpty()) {
+        if ((role == WorkspaceSplit::Role::Nested || window) && s->children.isEmpty()) {
             delete s->w.data();
             delete s;
             return nullptr;
@@ -1356,6 +1527,12 @@ void Workspace::Impl::clearLayout()
             deleteTree(*s);
             *s = nullptr;
         }
+    }
+    const QList<WorkspaceSplit*> wins = std::exchange(windows, {});
+    for (WorkspaceSplit* win : wins) {
+        QPointer<PopoutWindow> p = win->popout;
+        deleteTree(win);
+        disposePopout(p);
     }
     active = nullptr;
     activeFilePath.clear();
@@ -1487,7 +1664,7 @@ void Workspace::Impl::onVaultRenamed(TAbstractFile* item, const QString& oldPath
             activeFilePath = newPath;
         auto* file = static_cast<TFile*>(item);
         QList<QPointer<FileView>> views;
-        for (const WorkspaceSplit* s : {root, left, right})
+        for (const WorkspaceSplit* s : tops())
             forEachLeaf(s, [&](WorkspaceLeaf* l) {
                 if (auto* fv = qobject_cast<FileView*>(l->m_view); fv && fv->file() == file)
                     views.push_back(fv);
@@ -1505,7 +1682,7 @@ void Workspace::Impl::onVaultRenamed(TAbstractFile* item, const QString& oldPath
             remap(p);
         remap(activeFilePath);
         // Breadcrumbs of files inside the folder changed.
-        for (const WorkspaceSplit* s : {root, left, right})
+        for (const WorkspaceSplit* s : tops())
             forEachLeaf(s, [&](WorkspaceLeaf* l) {
                 if (auto* fv = qobject_cast<FileView*>(l->m_view); fv && fv->file() && fv->file()->path().startsWith(newPath + QLatin1Char('/')))
                     leafTitleChanged(l);
@@ -1520,7 +1697,7 @@ void Workspace::Impl::onVaultDeleted(TAbstractFile* item)
         return;
     auto* file = static_cast<TFile*>(item);
     QList<QPointer<FileView>> views;
-    for (const WorkspaceSplit* s : {root, left, right})
+    for (const WorkspaceSplit* s : tops())
         forEachLeaf(s, [&](WorkspaceLeaf* l) {
             if (auto* fv = qobject_cast<FileView*>(l->m_view); fv && fv->file() == file)
                 views.push_back(fv);
@@ -1535,6 +1712,193 @@ void Workspace::Impl::onVaultCreated(TAbstractFile* item)
     // Obsidian's recent-file tracker also records newly created files.
     if (item && !item->isFolder() && layoutReady && !destroying)
         recordRecent(item->path());
+}
+
+// ---------------------------------------------------------------------------------------------
+// Workspace::Impl — pop-out windows
+// ---------------------------------------------------------------------------------------------
+
+WorkspaceSplit* Workspace::Impl::openWindow(const QRect& geometry, bool hasPosition)
+{
+    auto* win = new WorkspaceSplit(this, WorkspaceSplit::Role::Window, true);
+    win->id = genId();
+    win->geometry = geometry;
+    win->hasPosition = hasPosition;
+    if (floatingId.isEmpty())
+        floatingId = genId();
+    windows.push_back(win);
+    showWindow(win);
+    return win;
+}
+
+void Workspace::Impl::showWindow(WorkspaceSplit* win)
+{
+    if (!win->popout) {
+        auto* p = new PopoutWindow(window(), frameless());
+        win->popout = p;
+        QObject::connect(p, &PopoutWindow::closeRequested, q, [this, p] {
+            // Closing the main window (quitting) keeps the pop-outs' leaves for the next start.
+            if (quitting || destroying)
+                return;
+            if (WorkspaceSplit* w = windowSplit(p))
+                closeWindow(w);
+        });
+        QObject::connect(p, &PopoutWindow::geometryChanged, q, [this] { q->requestSaveLayout(); });
+        if (win->geometry.width() > 0 && win->geometry.height() > 0)
+            p->resize(win->geometry.size());
+        if (win->hasPosition)
+            p->move(win->geometry.topLeft()); // the window system may ignore it (Wayland)
+        p->setContent(win->w);
+    }
+    updateWindowTitles();
+    if (win->maximize)
+        win->popout->showMaximized();
+    else
+        win->popout->show();
+}
+
+void Workspace::Impl::closeWindow(WorkspaceSplit* win)
+{
+    if (!windows.contains(win) || closingWindow || destroying)
+        return;
+    beginBatch();
+    closingWindow = win;
+    // Obsidian's WorkspaceWindow.close(): the active leaf moves out first, then every leaf is closed
+    // (pinned ones too), each recorded for "Undo close tab".
+    if (active && windowOf(active) == win)
+        if (WorkspaceLeaf* next = mostRecentMainLeaf(win))
+            q->setActiveLeaf(next, false);
+    const QList<WorkspaceLeaf*> leaves = leavesUnder(win);
+    for (const QPointer<WorkspaceLeaf>& l : QList<QPointer<WorkspaceLeaf>>(leaves.begin(), leaves.end()))
+        if (l && l->m_tabs)
+            closeLeaf(l, true);
+    closingWindow = nullptr;
+    if (windows.contains(win))
+        removeWindow(win); // (normally gone with its last leaf)
+    endBatch();
+    updateActiveFile();
+}
+
+void Workspace::Impl::removeWindow(WorkspaceSplit* win)
+{
+    if (!windows.removeOne(win))
+        return;
+    const QList<WorkspaceItem*> rest = std::exchange(win->children, {});
+    for (WorkspaceItem* c : rest) {
+        c->parent = nullptr;
+        deleteTree(c);
+    }
+    QPointer<PopoutWindow> p = win->popout;
+    if (QWidget* w = win->w) {
+        releaseWidget(w);
+        w->hide();
+        w->deleteLater();
+    }
+    delete win;
+    disposePopout(p);
+    structureChanged();
+}
+
+void Workspace::Impl::disposePopout(PopoutWindow* p)
+{
+    if (!p)
+        return;
+    // Deleted later: this may run inside one of its widgets' event handlers (a tab's menu, a drop), or
+    // during a native drag that started in it (deleted once the drag is over).
+    QObject::disconnect(p, nullptr, q, nullptr);
+    p->hide();
+    if (nativeDragging)
+        pendingDisposal.push_back(p);
+    else
+        p->deleteLater();
+}
+
+PopoutWindow* Workspace::Impl::moveToWindow(WorkspaceLeaf* leaf, const QRect& geometry, bool hasPosition)
+{
+    if (!leaf || !leaf->m_tabs || destroying)
+        return nullptr;
+    QRect g = geometry;
+    if (g.width() <= 0 || g.height() <= 0) {
+        // Obsidian's moveLeafToPopout(): as large as the leaf, at least 600x600.
+        const LeafWidget* lw = leafWidget(leaf);
+        const QSize s = lw && lw->isVisible() ? lw->size() : QSize(800, 600);
+        g.setSize(QSize(std::max(s.width(), kMinPopoutSize), std::max(s.height(), kMinPopoutSize)));
+    }
+    beginBatch();
+    WorkspaceSplit* win = openWindow(g, hasPosition);
+    takeLeaf(leaf); // may close the pop-out the leaf came from
+    auto* t = new WorkspaceTabs(this);
+    t->id = genId();
+    insertItem(win, 0, t);
+    insertLeaf(t, 0, leaf);
+    endBatch();
+    return windows.contains(win) ? win->popout.data() : nullptr;
+}
+
+void Workspace::Impl::onWindowActivated(QWidget* top)
+{
+    if (top != mainTop() && !windowSplit(top))
+        return;
+    // Obsidian's WorkspaceContainer.onFocus(): after the click that focused the window had its say,
+    // the active leaf moves into this window unless it's already there (a sidedock counts as the main
+    // window); the keyboard follows unless a modal is open there.
+    QPointer<QWidget> guard = top;
+    QTimer::singleShot(0, q, [this, guard] {
+        if (!guard || destroying || !guard->isActiveWindow())
+            return;
+        WorkspaceSplit* container = guard == mainTop() ? root : windowSplit(guard);
+        if (!container || (active && containerOf(active) == container))
+            return;
+        if (WorkspaceLeaf* leaf = mostRecentLeaf(container))
+            q->setActiveLeaf(leaf, !hasCapturingOverlay(guard));
+    });
+}
+
+void Workspace::Impl::updateWindowTitles()
+{
+    if (destroying)
+        return;
+    const QString vault = q->m_session ? q->m_session->name() : QString();
+    for (WorkspaceSplit* win : std::as_const(windows)) {
+        if (!win->popout)
+            continue;
+        // Obsidian's WorkspaceWindow.updateTitle(): the most recent leaf's title, then the app title.
+        WorkspaceLeaf* l = active && windowOf(active) == win ? active.data() : mostRecentLeaf(win);
+        QStringList parts;
+        if (const QString text = l ? l->displayText().trimmed() : QString(); !text.isEmpty())
+            parts << text;
+        if (!vault.isEmpty())
+            parts << vault;
+        parts << QStringLiteral("Obsidian C++");
+        win->popout->setWindowTitle(parts.join(QStringLiteral(" - ")));
+    }
+}
+
+void Workspace::Impl::focusWindowOf(const WorkspaceLeaf* leaf)
+{
+    // Obsidian's focusLeaf(): the leaf's window comes to the front while the app has the focus.
+    QWidget* top = topOf(leaf);
+    if (!top || !top->isVisible() || top->isActiveWindow())
+        return;
+    QWidget* focused = QApplication::activeWindow();
+    if (!focused || (focused != mainTop() && !windowSplit(focused)))
+        return;
+    if (top->isMinimized())
+        top->showNormal();
+    top->raise();
+    top->activateWindow();
+}
+
+void Workspace::Impl::mainWindowClosing()
+{
+    // Closing the main window closes everything: the pop-outs stay in workspace.json (Obsidian keeps
+    // them when quitting) and go away with the workspace.
+    if (layoutReady)
+        saveNow();
+    quitting = true;
+    for (WorkspaceSplit* win : std::as_const(windows))
+        if (win->popout)
+            win->popout->hide();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1568,16 +1932,15 @@ Workspace::Workspace(VaultSession* session, ViewRegistry* registry, MainWindow* 
         });
     if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance()))
         connect(app, &QGuiApplication::focusWindowChanged, this, [this] { d->refreshChrome(); });
-    // Quitting without closing the window (session end, QApplication::quit()) flushes a pending save.
+    // Quitting without closing the window (session end, QApplication::quit()) flushes a pending save;
+    // the pop-outs keep their leaves (Obsidian keeps them when quitting).
     connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
         if (d->layoutReady && d->saveTimer.isActive())
             d->saveNow();
+        d->quitting = true;
     });
     if (window) {
-        connect(window, &MainWindow::closing, this, [this] {
-            if (d->layoutReady)
-                d->saveNow();
-        });
+        connect(window, &MainWindow::closing, this, [this] { d->mainWindowClosing(); });
         connect(window, &MainWindow::topRightReserveChanged, this, [this] { d->updateTopFlags(); });
     }
     d->connectVault();
@@ -1593,7 +1956,7 @@ Workspace::~Workspace()
     if (d->activationFilter)
         qApp->removeEventFilter(d->activationFilter);
     // Views are closed while the session and the rest of the window are still alive.
-    for (WorkspaceSplit* s : {d->root, d->left, d->right})
+    for (WorkspaceSplit* s : d->tops())
         d->forEachLeaf(s, [](WorkspaceLeaf* l) {
             if (View* v = l->m_view) {
                 QObject::disconnect(v, nullptr, l, nullptr);
@@ -1605,7 +1968,16 @@ Workspace::~Workspace()
     d->vaultBridge = nullptr;
     delete d->overlay.data();
     delete d->widget.data();
-    // Model items no longer own live widgets (deleted with the widget tree above).
+    // The pop-outs go with the workspace (with their split trees, leaf widgets and views).
+    for (WorkspaceSplit* win : std::as_const(d->windows)) {
+        if (PopoutWindow* p = win->popout) {
+            QObject::disconnect(p, nullptr, this, nullptr);
+            delete p;
+        }
+    }
+    for (const QPointer<PopoutWindow>& p : std::as_const(d->pendingDisposal))
+        delete p.data();
+    // Model items no longer own live widgets (deleted with the widget trees above).
     std::function<void(WorkspaceItem*)> drop = [&](WorkspaceItem* item) {
         if (!item)
             return;
@@ -1617,6 +1989,9 @@ Workspace::~Workspace()
     drop(d->root);
     drop(d->left);
     drop(d->right);
+    for (WorkspaceSplit* win : std::as_const(d->windows))
+        drop(win);
+    d->windows.clear();
     delete d;
     d = nullptr;
     // Leaves are QObject children and are deleted by ~QObject.
@@ -1628,9 +2003,9 @@ WorkspaceLeaf* Workspace::activeLeaf() const { return d->active; }
 
 WorkspaceLeaf* Workspace::activeRootLeaf() const
 {
-    if (d->active && d->isRootLeaf(d->active))
+    if (d->active && d->isMainLeaf(d->active))
         return d->active;
-    return d->mostRecentLeaf(d->root);
+    return d->mostRecentMainLeaf();
 }
 
 void Workspace::setActiveLeaf(WorkspaceLeaf* leaf, bool focus)
@@ -1648,10 +2023,14 @@ void Workspace::setActiveLeaf(WorkspaceLeaf* leaf, bool focus)
         t->currentTab = idx;
         t->w->sync();
     }
-    if (focus && leaf->m_view)
-        leaf->m_view->focusContent();
+    if (focus) {
+        d->focusWindowOf(leaf); // a leaf in another window brings that window to the front
+        if (leaf->m_view)
+            leaf->m_view->focusContent();
+    }
     if (old != leaf) {
         d->refreshChrome();
+        d->updateWindowTitles();
         emit activeLeafChanged(leaf);
         requestSaveLayout();
     }
@@ -1661,14 +2040,15 @@ void Workspace::setActiveLeaf(WorkspaceLeaf* leaf, bool focus)
 WorkspaceLeaf* Workspace::getLeaf(NewLeaf mode)
 {
     switch (mode) {
-    case NewLeaf::Tab:
-    case NewLeaf::Window: { // popout windows are not implemented: open a tab instead
+    case NewLeaf::Tab: {
         WorkspaceLeaf* recent = activeRootLeaf();
         WorkspaceTabs* t = recent ? recent->m_tabs : nullptr;
         WorkspaceLeaf* leaf = d->createLeafInGroup(t);
         setActiveLeaf(leaf, false);
         return leaf;
     }
+    case NewLeaf::Window:
+        return openPopoutLeaf();
     case NewLeaf::SplitRight:
         return d->createLeafBySplit(activeRootLeaf(), true, false);
     case NewLeaf::SplitDown:
@@ -1676,19 +2056,21 @@ WorkspaceLeaf* Workspace::getLeaf(NewLeaf mode)
     case NewLeaf::No:
         break;
     }
-    // Obsidian's getUnpinnedLeaf(): the active root leaf when it can navigate, else the most recently
-    // active navigable visible leaf of the root, else a new tab.
+    // Obsidian's getUnpinnedLeaf(): the active leaf of the root split or a pop-out when it can navigate,
+    // else the most recently active navigable visible leaf of its container (the active leaf's pop-out,
+    // else the root split), else a new tab there.
     WorkspaceLeaf* a = d->active;
-    if (a && d->isRootLeaf(a) && d->canNavigate(a))
+    if (a && d->isMainLeaf(a) && d->canNavigate(a))
         return a;
+    WorkspaceSplit* container = a ? d->containerOf(a) : d->root;
     WorkspaceLeaf* best = nullptr;
-    d->forEachTabs(d->root, [&](WorkspaceTabs* t) {
+    d->forEachTabs(container, [&](WorkspaceTabs* t) {
         WorkspaceLeaf* c = t->current();
         if (c && d->canNavigate(c) && (!best || d->leafData.value(c).activeTime > d->leafData.value(best).activeTime))
             best = c;
     });
     if (!best) {
-        WorkspaceLeaf* recent = activeRootLeaf();
+        WorkspaceLeaf* recent = d->mostRecentLeaf(container);
         WorkspaceTabs* t = recent ? recent->m_tabs : nullptr;
         if (!t)
             return nullptr;
@@ -1762,7 +2144,7 @@ QList<WorkspaceLeaf*> Workspace::leavesOfType(const QString& type) const
 
 void Workspace::iterateAllLeaves(const std::function<void(WorkspaceLeaf*)>& fn) const
 {
-    for (const WorkspaceSplit* s : {d->root, d->left, d->right})
+    for (const WorkspaceSplit* s : d->tops()) // root, left, right, then the pop-outs (Obsidian's order)
         d->forEachLeaf(s, fn);
 }
 
@@ -1815,21 +2197,33 @@ void Workspace::undoCloseLeaf()
         return;
     const Impl::ClosedLeaf c = d->closed.takeFirst();
     WorkspaceSplit* top = d->root;
+    // A pop-out's leaves were recorded with the floating split as their root (Obsidian's getRoot()).
+    const bool floating = !d->floatingId.isEmpty() && c.rootId == d->floatingId;
     if (d->left && c.rootId == d->left->id)
         top = d->left;
     else if (d->right && c.rootId == d->right->id)
         top = d->right;
+    WorkspaceTabs* group = nullptr;
+    if (floating) {
+        for (WorkspaceSplit* win : std::as_const(d->windows))
+            if (!group)
+                group = d->tabsById(win, c.parentId);
+    } else {
+        group = d->tabsById(top, c.parentId);
+    }
     WorkspaceLeaf* leaf = nullptr;
     d->beginBatch();
-    if (WorkspaceTabs* t = d->tabsById(top, c.parentId)) {
+    if (WorkspaceTabs* t = group) {
         leaf = d->createLeaf(d->leafById(c.leafId) ? QString() : c.leafId);
         d->insertLeaf(t, std::clamp(c.index, 0, int(t->leaves.size())), leaf);
     } else {
         WorkspaceLeaf* a = d->active;
         if (a && a->m_view && a->m_view->viewType() == kEmptyType)
             leaf = a;
+        else if (floating)
+            leaf = openPopoutLeaf(); // its window is gone: a new one
         else
-            leaf = d->createLeafBySplit(d->mostRecentLeaf(d->root), true, false);
+            leaf = d->createLeafBySplit(d->mostRecentMainLeaf(), true, false);
         if (leaf && leaf->m_id != c.leafId && !d->leafById(c.leafId))
             leaf->m_id = c.leafId;
     }
@@ -1852,6 +2246,18 @@ QJsonObject Workspace::serialize() const
     o.insert(QStringLiteral("left"), d->serializeItem(d->left));
     o.insert(QStringLiteral("right"), d->serializeItem(d->right));
     o.insert(QStringLiteral("left-ribbon"), QJsonObject{{QStringLiteral("hiddenItems"), d->ribbonHiddenItems()}});
+    // Obsidian writes the floating split only while it has windows (a "floating" value that isn't a
+    // floating split is kept as it was, in extraTop).
+    if (!d->windows.isEmpty()) {
+        QJsonObject f = d->floatingExtra;
+        f.insert(QStringLiteral("id"), d->floatingId);
+        f.insert(QStringLiteral("type"), kFloatingType);
+        QJsonArray children;
+        for (const WorkspaceSplit* win : std::as_const(d->windows))
+            children.append(d->serializeItem(win));
+        f.insert(QStringLiteral("children"), children);
+        o.insert(kFloatingType, f);
+    }
     if (d->active)
         o.insert(QStringLiteral("active"), d->active->m_id);
     else
@@ -1897,6 +2303,20 @@ bool Workspace::restore(const QJsonObject& json)
     const QJsonObject rightO = json.value(QStringLiteral("right")).toObject();
     WorkspaceItem* leftItem = leftO.isEmpty() ? nullptr : d->parseItem(leftO, WorkspaceSplit::Role::Left, leaves);
     WorkspaceItem* rightItem = rightO.isEmpty() ? nullptr : d->parseItem(rightO, WorkspaceSplit::Role::Right, leaves);
+    // Pop-outs: the floating split's "window" children (Obsidian drops anything else there, and
+    // windows without leaves).
+    QList<WorkspaceSplit*> windows;
+    const QJsonObject floatingO = json.value(kFloatingType).toObject();
+    const bool hasFloating = floatingO.value(QStringLiteral("type")).toString() == kFloatingType;
+    if (hasFloating) {
+        for (const QJsonValue& cv : floatingO.value(QStringLiteral("children")).toArray()) {
+            const QJsonObject wo = cv.toObject();
+            if (wo.value(QStringLiteral("type")).toString() != kWindowType)
+                continue;
+            if (WorkspaceItem* item = d->parseItem(wo, WorkspaceSplit::Role::Window, leaves))
+                windows.push_back(item->asSplit());
+        }
+    }
 
     if (d->drag.active)
         d->endDrag({}, false);
@@ -1912,9 +2332,16 @@ bool Workspace::restore(const QJsonObject& json)
         d->right->collapsed = true; // like Obsidian when the layout has no right sidedock
     for (WorkspaceSplit* s : {d->root, d->left, d->right})
         s->w->setParent(d->widget);
+    d->windows = windows;
+    d->floatingId = hasFloating ? floatingO.value(QStringLiteral("id")).toString() : QString();
+    if (d->floatingId.isEmpty())
+        d->floatingId = Impl::genId();
+    d->floatingExtra = hasFloating ? without(floatingO, {"id", "type", "children"}) : QJsonObject();
     for (auto& [leaf, state] : leaves)
         d->setViewState(leaf, state, {}, false);
     d->ensureRootLeaf();
+    for (WorkspaceSplit* win : std::as_const(windows))
+        d->showWindow(win);
 
     d->ribbonHidden = json.value(QStringLiteral("left-ribbon")).toObject().value(QStringLiteral("hiddenItems")).toObject();
     d->applyRibbonHidden();
@@ -1923,6 +2350,8 @@ bool Workspace::restore(const QJsonObject& json)
         if (v.isString() && !d->lastOpenFiles.contains(v.toString()))
             d->lastOpenFiles.push_back(v.toString());
     d->extraTop = without(json, {"main", "left", "right", "left-ribbon", "active", "lastOpenFiles"});
+    if (hasFloating)
+        d->extraTop.remove(kFloatingType);
     d->endBatch();
 
     WorkspaceLeaf* act = d->leafById(json.value(QStringLiteral("active")).toString());
@@ -2066,6 +2495,68 @@ void Workspace::togglePinActiveLeaf()
     WorkspaceLeaf* a = d->active;
     if (a && a->m_view && a->m_view->viewType() != kEmptyType)
         a->setPinned(!a->isPinned());
+}
+
+// ---- pop-out windows --------------------------------------------------------------------------
+
+WorkspaceLeaf* Workspace::openPopoutLeaf(const QRect& geometry)
+{
+    if (d->destroying)
+        return nullptr;
+    // Obsidian's openPopoutLeaf(): a new window with a tab group holding an empty leaf.
+    d->beginBatch();
+    WorkspaceSplit* win = d->openWindow(geometry, geometry.isValid());
+    auto* t = new WorkspaceTabs(d);
+    t->id = Impl::genId();
+    d->insertItem(win, 0, t);
+    WorkspaceLeaf* leaf = d->createLeaf();
+    d->insertLeaf(t, 0, leaf);
+    d->endBatch();
+    setActiveLeaf(leaf, false);
+    return leaf;
+}
+
+PopoutWindow* Workspace::moveLeafToPopout(WorkspaceLeaf* leaf, const QRect& geometry)
+{
+    const bool wasActive = leaf && d->active == leaf;
+    PopoutWindow* p = d->moveToWindow(leaf, geometry, geometry.isValid());
+    if (p && wasActive)
+        setActiveLeaf(leaf, true); // the view moved: its window takes the focus
+    return p;
+}
+
+QList<PopoutWindow*> Workspace::popoutWindows() const
+{
+    QList<PopoutWindow*> out;
+    for (const WorkspaceSplit* win : std::as_const(d->windows))
+        if (win->popout)
+            out.push_back(win->popout);
+    return out;
+}
+
+PopoutWindow* Workspace::popoutOf(const WorkspaceLeaf* leaf) const
+{
+    WorkspaceSplit* win = d->windowOf(leaf);
+    return win ? win->popout.data() : nullptr;
+}
+
+QList<WorkspaceLeaf*> Workspace::containerLeaves(const WorkspaceLeaf* leaf) const
+{
+    return d->leavesUnder(leaf ? d->containerOf(leaf) : d->root);
+}
+
+WorkspaceLeaf* Workspace::mostRecentLeafIn(const PopoutWindow* window) const
+{
+    if (!window)
+        return d->mostRecentLeaf(d->root);
+    WorkspaceSplit* win = d->windowSplit(window);
+    return win ? d->mostRecentLeaf(win) : nullptr;
+}
+
+void Workspace::closePopout(PopoutWindow* window)
+{
+    if (WorkspaceSplit* win = d->windowSplit(window))
+        d->closeWindow(win);
 }
 
 } // namespace oc

@@ -45,7 +45,7 @@ Workspace* workspaceOf(QWidget* w)
     for (QWidget* p = w; p; p = p->parentWidget()) {
         if (auto* v = qobject_cast<View*>(p); v && v->workspace())
             return v->workspace();
-        if (auto* mw = qobject_cast<MainWindow*>(p); mw && mw->workspace())
+        if (auto* mw = p->isWindow() ? MainWindow::of(p) : nullptr; mw && mw->workspace())
             return mw->workspace();
     }
     return nullptr;

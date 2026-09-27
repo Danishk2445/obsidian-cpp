@@ -30,9 +30,17 @@ public:
     VaultSession* session() const { return m_session; }
     Ribbon* ribbon() const { return m_ribbon; }
     StatusBar* statusBar() const { return m_statusBar; }
-    OverlayLayer* overlay() const { return m_overlay; }
-    NoticeManager* notices() const { return m_notices; }
+    // Modals, prompts and notices open in the focused window, like Obsidian's activeWindow: while one of
+    // this window's pop-outs (PopoutWindow) is active these return the pop-out's layer / notices.
+    // ownOverlay() / ownNotices(): always this window's.
+    OverlayLayer* overlay() const;
+    NoticeManager* notices() const;
+    OverlayLayer* ownOverlay() const { return m_overlay; }
+    NoticeManager* ownNotices() const { return m_notices; }
     IconButton* rightSidebarToggle() const { return m_rightToggle; }
+
+    // The main window `w` belongs to: its window, or the main window of the pop-out it is in.
+    static MainWindow* of(const QWidget* w);
 
     // Places the workspace next to the ribbon. The window owns it and destroys it before anything else
     // (so views are closed while the session is still alive).

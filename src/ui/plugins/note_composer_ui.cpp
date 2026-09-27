@@ -46,7 +46,7 @@ plugins::NoteComposerOptions options(VaultSession* s)
 
 MainWindow* windowOf(QWidget* w)
 {
-    return w ? qobject_cast<MainWindow*>(w->window()) : nullptr;
+    return w ? MainWindow::of(w) : nullptr;
 }
 
 TFile* activeMarkdownFile(MainWindow* w)

@@ -525,7 +525,7 @@ TEST_F(FileExplorerTest, ContextMenusMatchObsidian)
     QMenu file;
     explorer()->populateContextMenu(&file, m_vault->item("Code.md"));
     EXPECT_EQ(actionTexts(&file),
-              (QStringList{"Open in new tab", "Open to the right", "|", "Make a copy", "Move file to...", "|",
+              (QStringList{"Open in new tab", "Open to the right", "Open in new window", "|", "Make a copy", "Move file to...", "|",
                            "Copy path >(as Obsidian URL,from vault folder,from system root)", "|", "Open in default app", "Show in system explorer",
                            "|", "Rename...", "Delete"}));
     QMenu folder;

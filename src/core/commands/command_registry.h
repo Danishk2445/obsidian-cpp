@@ -92,7 +92,8 @@ class HotkeyDispatcher : public QObject {
 public:
     explicit HotkeyDispatcher(CommandRegistry* registry, QObject* parent = nullptr);
     void setEnabled(bool on) { m_enabled = on; }
-    // Only key events for widgets inside this top-level window are dispatched.
+    // Only key events for widgets inside this top-level window are dispatched, or inside a window whose
+    // dynamic property "ocOwnerWindow" (QObject*) is this window (its pop-out windows).
     void setWindow(QObject* window) { m_window = window; }
 
 protected:

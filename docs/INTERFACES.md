@@ -165,3 +165,31 @@ Interfaces other modules/agents build against. Change deliberately and update al
   unresolvedLinks / backlinks but have no `fileCache`); `EditorView::setBackgroundColor`; `NestedRenderer::linkHitAt`;
   file drags from the file explorer are offered to any widget under the pointer that has the invokable
   `bool ocFileDrag(QStringList paths, QPoint globalPos, bool drop)` (the canvas) before the workspace's split targets.
+
+## Pop-out windows (additive)
+- `Workspace` (src/ui/workspace/workspace.h), additive: `openPopoutLeaf(geometry)` (= `getLeaf(NewLeaf::Window)`),
+  `moveLeafToPopout(leaf, geometry)`, `popoutWindows()`, `popoutOf(leaf)`, `containerLeaves(leaf)` (Obsidian's
+  `getContainer()`: the leaf's pop-out, else the root split), `mostRecentLeafIn(window)` (null = the root split),
+  `closePopout(window)`. workspace.json gains Obsidian's `"floating": {"id", "type": "floating", "children":
+  [{"type": "window", "direction", "children", "x", "y", "width", "height", "maximize", "zoom"}]}` (written while
+  there are windows; unknown keys kept; a `"floating"` value that isn't a floating split round-trips untouched).
+  Behaviour now covering pop-outs: `iterateAllLeaves()` (root, left, right, then the windows), `activeRootLeaf()`
+  (Obsidian's `getMostRecentLeaf()`: root split or a pop-out), `getLeaf(No)` (Obsidian's `getUnpinnedLeaf()`: stays
+  in the active leaf's window), `setActiveLeaf(leaf, true)` raises the leaf's window, the window that gets the focus
+  makes its most recent leaf active, `undoCloseLeaf()` (a tab closed in a pop-out reopens there, or in a new
+  window). A pop-out closes with its last leaf; closing it closes its leaves (pinned too, recorded for undo);
+  closing the main window keeps them in workspace.json. `iterateRootLeaves()` stays root-only.
+- `PopoutWindow` (src/ui/shell/popout_window.h): the pop-out top level (no ribbon / sidedocks / status bar; frameless
+  like the main window: the top tab header row is the title bar, window buttons top-right), its own
+  `overlay()` / `notices()`; parentless, with the dynamic property `"ocOwnerWindow"` = its MainWindow (QObject*).
+  Created and destroyed by the workspace only.
+- Windows helpers: `MainWindow::of(widget)` (the main window of a widget in it or in one of its pop-outs — use it
+  instead of `qobject_cast<MainWindow*>(w->window())`); `MainWindow::overlay()` / `notices()` now return the focused
+  pop-out's (Obsidian's activeWindow), `ownOverlay()` / `ownNotices()` the main window's own;
+  `OverlayLayer::of(widget)` (the layer of the widget's window: anchor popups there) and
+  `OverlayLayer::focused(layer)`; `NoticeManager::of(layer)`. `HotkeyDispatcher` also dispatches for windows whose
+  `"ocOwnerWindow"` is its window.
+- Tab drags: across windows by global position; released outside every window → a new pop-out there. On Wayland
+  (no global positions) a tab leaving its window continues as a native `QDrag` (MIME
+  `application/x-obsidian-cpp-leaf`) accepted by an event filter on each window's QWindow.
+- Scenario verb `screenshot-popout [n] <png>` (src/app/scenario_runner.h).
