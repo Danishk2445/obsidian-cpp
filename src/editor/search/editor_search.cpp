@@ -111,6 +111,7 @@ bool EditorSearch::show(std::optional<SearchMatch> m)
         m_anchorTo = m->to;
         m_current = m;
         setHighlights({*m});
+        m_view->unfoldAround(m->from, m->to); // a match inside a fold unfolds it (CodeMirror's search + foldState)
         m_view->scrollToPos(m->from, true);
     } else {
         m_current.reset();

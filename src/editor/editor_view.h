@@ -180,6 +180,9 @@ public:
     bool toggleFoldLine(int line);
     bool foldAtSelection();   // fold the region starting at a cursor's line (Ctrl+Shift+[)
     bool unfoldAtSelection(); // unfold folds starting at the cursors' lines (Ctrl+Shift+])
+    // Unfolds every fold hiding part of [from, to] (CodeMirror's foldState: a selection placed inside a folded
+    // range unfolds it; search matches, go-to-position). Returns whether anything unfolded.
+    bool unfoldAround(qsizetype from, qsizetype to);
     void foldAll();           // every foldable region, nested ones included (Ctrl+Alt+[)
     void unfoldAll();         // (Ctrl+Alt+])
     bool foldMore();          // fold the innermost unfolded region around the selection

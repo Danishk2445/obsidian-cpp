@@ -74,6 +74,12 @@ Interfaces other modules/agents build against. Change deliberately and update al
   `QThreadPool::start()` / a queued `invokeMethod(ctx, fn)` from a worker. The system Qt isn't instrumented, so
   ThreadSanitizer can't see those hand-offs (tsan preset: `ctest --preset tsan`, suppressions in tools/tsan.supp);
   posted functions check their objects with a QPointer made on the GUI thread.
+- Focus handlers: never open a modal (nested event loop) or delete widgets from a FocusOut/FocusIn handler — Qt's
+  `QWidget::setFocus()` isn't re-entrant and continues with the widgets afterwards; queue the work instead
+  (InlineTitle commits its rename that way). `QApplication::focusChanged(old, now)` handlers must not use `old`: it
+  may have been deleted by its FocusOut handler.
+- `EditorView::unfoldAround(from, to)`: a programmatic jump into a fold unfolds it (CodeMirror's foldState); search
+  matches use it. Folded lines share a layout without a QTextLayout — DocLayout code must check `ul->text`.
 - `FileView` (view.h) now has an explicit constructor: it forgets `m_file` when the vault deletes it (after the
   workspace's own handler), so a view pending `deleteLater()`, a preview or an embed never reads a freed TFile.
 

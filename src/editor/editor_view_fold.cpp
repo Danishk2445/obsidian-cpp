@@ -176,6 +176,23 @@ bool EditorView::foldAtSelection()
     return false;
 }
 
+bool EditorView::unfoldAround(qsizetype from, qsizetype to)
+{
+    if (!m_doc || m_folds.isEmpty())
+        return false;
+    const Text& t = m_doc->text();
+    const int a = t.lineAt(std::clamp<qsizetype>(std::min(from, to), 0, t.length()));
+    const int b = t.lineAt(std::clamp<qsizetype>(std::max(from, to), 0, t.length()));
+    QList<int> starts;
+    for (const FoldRange& f : std::as_const(m_folds))
+        if (f.line < b && f.lastLine >= a && f.lastLine > f.line && std::max(a, f.line + 1) <= std::min(b, f.lastLine))
+            starts << f.line; // hides some of lines a..b
+    bool any = false;
+    for (int line : std::as_const(starts))
+        any |= unfoldLine(line);
+    return any;
+}
+
 bool EditorView::unfoldAtSelection()
 {
     if (!m_doc)

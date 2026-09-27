@@ -147,7 +147,10 @@ void InlineTitle::keyPressEvent(QKeyEvent* e)
 void InlineTitle::focusOutEvent(QFocusEvent* e)
 {
     QTextEdit::focusOutEvent(e);
-    commit();
+    // Not from inside Qt's focus change: the rename can ask about updating links (a nested event loop) in which
+    // the note may close, and QWidget::setFocus() then goes on with deleted widgets. Queued, it still runs before
+    // anything deleteLater()'d afterwards (closing the tab that took the focus).
+    QMetaObject::invokeMethod(this, &InlineTitle::commit, Qt::QueuedConnection);
 }
 
 void InlineTitle::insertFromMimeData(const QMimeData* source)

@@ -893,12 +893,16 @@ PropertiesWidget::PropertiesWidget(QWidget* parent)
     sp.setHeightForWidth(true);
     setSizePolicy(sp);
     m_errorBox->hide();
-    m_focusConn = connect(qApp, &QApplication::focusChanged, this, [this](QWidget* old, QWidget* now) {
-        if ((old && isAncestorOf(old)) || (now && isAncestorOf(now))) {
+    // Never looks at `old`: Qt emits focusChanged after the old widget's FocusOut, and a FocusOut handler may have
+    // deleted it (an inline-title rename whose link prompt closes the note).
+    m_focusConn = connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* now) {
+        const bool inside = now && isAncestorOf(now);
+        if (inside || m_focusInside) {
             update();
             for (PropertyRow* r : std::as_const(m_rows))
                 r->update();
         }
+        m_focusInside = inside;
     });
     if (auto* tm = ThemeManager::instance())
         connect(tm, &ThemeManager::themeChanged, this, [this] {

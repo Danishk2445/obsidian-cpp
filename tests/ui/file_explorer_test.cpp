@@ -579,6 +579,40 @@ TEST_F(FileExplorerTest, RenamingFromTheTitleSurvivesTheViewDyingDuringTheLinkPr
     EXPECT_FALSE(exists("Math.md"));
 }
 
+// Monkey seed 12002: the title rename also runs on focus-out, inside Qt's focus change; the note closing during the
+// link prompt left Qt emitting focusChanged(<deleted title>, ...), which another note's properties read.
+TEST_F(FileExplorerTest, TitleRenameOnFocusOutSurvivesTheViewDying)
+{
+    m_ws->openFile(m_vault->file("Welcome.md"));
+    QApplication::processEvents();
+    QPointer<MarkdownView> other = qobject_cast<MarkdownView*>(m_ws->activeRootLeaf()->view());
+    ASSERT_TRUE(other);
+    m_ws->openFile(m_vault->file("Math.md"), Workspace::NewLeaf::SplitRight); // Welcome.md links [[Math]]
+    QApplication::processEvents();
+    auto* mv = qobject_cast<MarkdownView*>(m_ws->activeRootLeaf()->view());
+    ASSERT_TRUE(mv && mv != other);
+    QPointer<MarkdownView> view(mv);
+    WorkspaceLeaf* leaf = m_ws->activeRootLeaf();
+    bool asked = false;
+    m_fm->setConfirmLinkUpdate([&](int, int) {
+        asked = true;
+        leaf->detach();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        return FileManager::LinkUpdateChoice::DoNotUpdate;
+    });
+    InlineTitle* title = mv->inlineTitle();
+    title->beginRename(true);
+    QTest::keyClicks(title, "Algebra");
+    other->editor()->setFocus(); // focus-out commits the rename
+    QApplication::processEvents();
+    EXPECT_TRUE(asked);
+    EXPECT_FALSE(view);
+    ASSERT_TRUE(other);
+    EXPECT_TRUE(exists("Algebra.md"));
+    other->editor()->setFocus();
+    QApplication::processEvents();
+}
+
 TEST_F(FileExplorerTest, DeleteAsksAndUsesTheTrashOption)
 {
     tree()->setFocus();

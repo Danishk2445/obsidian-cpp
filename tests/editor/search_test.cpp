@@ -162,6 +162,22 @@ TEST_F(EditorSearchTest, QuerySearchesFromTheSelectionEndAndLeavesSelectionAlone
     EXPECT_EQ(view->selection().main().to(), 19);
 }
 
+// Monkey seed 12002: a match inside a folded section scrolled to a folded line, whose shared layout has no text
+// layout (null QTextLayout in DocLayout::caretRect). Like CodeMirror, showing the match unfolds the section.
+TEST_F(EditorSearchTest, AMatchInsideAFoldUnfoldsIt)
+{
+    open("# Head\nbefore\nneedle here\n# Next\nafter");
+    ASSERT_TRUE(view->foldLine(0));
+    ASSERT_TRUE(view->isFoldedAt(0));
+    EXPECT_TRUE(view->layout().caretRect(doc->text().lineStart(2), 1).isValid()); // folded lines don't crash either
+    EditorSearch s(view.get());
+    ASSERT_TRUE(s.setQuery(Q("needle")));
+    EXPECT_EQ(*s.current(), (SearchMatch{14, 20}));
+    EXPECT_FALSE(view->isFoldedAt(0));
+    ASSERT_TRUE(view->foldLine(0));
+    EXPECT_TRUE(view->layout().rangeRects(0, doc->text().length()).size() >= 2); // selection rects skip folded lines
+}
+
 TEST_F(EditorSearchTest, NoMatchAndEmptyQuery)
 {
     open("abc");

@@ -814,7 +814,7 @@ QRectF DocLayout::caretRect(qsizetype pos, int assoc)
     const Unit& u = m_units[size_t(ui)];
     const double top = m_heights.top(ui);
     const LineMetrics& normal = m_styles->line(StyleId::Normal);
-    if (u.block || !u.layout)
+    if (u.block || !u.layout || !u.layout->text) // (a folded line shares a layout without text)
         return QRectF(0, top, 1, normal.ascent + normal.descent);
     const UnitLayout* ul = u.layout.get();
     const int col = int(pos - m_text.lineStart(u.firstLine));
@@ -848,7 +848,7 @@ qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int
         lineCountHere = int(ul->lines.size());
     }
     const int targetVl = li + direction;
-    if (!u.block && targetVl >= 0 && targetVl < lineCountHere) {
+    if (!u.block && u.layout && u.layout->text && targetVl >= 0 && targetVl < lineCountHere) {
         const UnitLayout* ul = u.layout.get();
         const QTextLine ql = ul->text->lineAt(targetVl);
         int d = ql.xToCursor(goalX, QTextLine::CursorBetweenCharacters);
@@ -875,6 +875,8 @@ qsizetype DocLayout::verticalMove(qsizetype pos, qreal goalX, int direction, int
         return m_text.lineStart(l);
     }
     const UnitLayout* tl = t.layout.get();
+    if (!tl || !tl->text)
+        return m_text.lineStart(t.firstLine);
     const int tv = direction > 0 ? 0 : int(tl->lines.size()) - 1;
     const QTextLine ql = tl->text->lineAt(tv);
     int d = ql.xToCursor(goalX, QTextLine::CursorBetweenCharacters);
@@ -932,7 +934,7 @@ QList<QRectF> DocLayout::rangeRects(qsizetype from, qsizetype to)
         }
         const UnitLayout* ul = u.layout.get();
         line = u.firstLine + u.lineCount - 1; // a text run: all of its lines at once
-        if (!ul)
+        if (!ul || !ul->text) // folded away
             continue;
         const qsizetype ls = m_text.lineStart(u.firstLine);
         const int a = ul->block.docToDisp(int(std::max(from, ls) - ls));

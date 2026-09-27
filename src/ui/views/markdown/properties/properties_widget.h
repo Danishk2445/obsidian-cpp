@@ -209,6 +209,7 @@ private:
     bool m_collapsed = false;
     QMetaObject::Connection m_typesConn;
     QMetaObject::Connection m_focusConn;
+    bool m_focusInside = false; // the focus widget is one of ours (see m_focusConn)
     QPointer<QObject> m_typesOwner;
 };
 
