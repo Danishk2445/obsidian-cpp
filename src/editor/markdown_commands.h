@@ -25,8 +25,12 @@ bool newlineAndContinueMarkup(EditorView& view);
 bool indentListItem(EditorView& view, bool more);
 // Backspace right after a list/quote marker removes the marker. Returns true if handled.
 bool deleteMarkupBackward(EditorView& view);
-// Typed-char helpers for auto-pairing; returns true if handled.
+// Typed-char helpers for auto-pairing; returns true if handled. A backtick pairs like Obsidian's: "`|`" between
+// whitespace, steps over an auto-inserted closer, and a third one after "``" at the start of a line's content
+// closes a code block on the next line ("```|" + "\n```", keeping the line's quote/list indentation).
 bool autoPairInput(EditorView& view, const QString& text);
+// Backspace between an auto-pairable opener and its closer ("(|)", "`|`", ...) deletes both. Returns true if handled.
+bool deletePairBackward(EditorView& view);
 
 // Formatting toggles (wrap/unwrap the selection or the word at the cursor).
 void toggleWrap(EditorView& view, const QString& open, const QString& close);

@@ -1,5 +1,8 @@
 #include "ui/shell/empty_view.h"
 
+#include "core/commands/command_registry.h"
+#include "core/vault/vault.h"
+#include "core/vault_session.h"
 #include "render/theme/theme.h"
 #include "ui/workspace/workspace.h"
 
@@ -7,6 +10,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace oc {
@@ -83,8 +87,8 @@ EmptyView::EmptyView(WorkspaceLeaf* leaf, QWidget* parent)
     m_actionList->setSpacing(0);
     v->addLayout(m_actionList);
     // Obsidian 1.13: "Create new note", "Go to file" (non-empty vaults) and "Close".
-    addAction(tr("Create new note (%1)").arg(QStringLiteral("Ctrl + N")), [this] { emit actionTriggered(QStringLiteral("file-explorer:new-file")); });
-    addAction(tr("Go to file (%1)").arg(QStringLiteral("Ctrl + O")), [this] { emit actionTriggered(QStringLiteral("switcher:open")); });
+    addAction(tr("Create new note (%1)").arg(QStringLiteral("Ctrl + N")), [this] { runCommand(QStringLiteral("file-explorer:new-file")); });
+    m_goToFile = addAction(tr("Go to file (%1)").arg(QStringLiteral("Ctrl + O")), [this] { runCommand(QStringLiteral("switcher:open")); });
     addAction(tr("Close"), [this] {
         if (WorkspaceLeaf* l = this->leaf())
             l->detach();
@@ -96,6 +100,25 @@ EmptyView::EmptyView(WorkspaceLeaf* leaf, QWidget* parent)
 }
 
 QString EmptyView::displayText() const { return tr("New tab"); }
+
+void EmptyView::onOpen()
+{
+    // "Go to file" only when the vault has something in it (Obsidian's vault.isEmpty(): nothing but the root).
+    const Vault* vault = session() ? session()->vault() : nullptr;
+    if (m_goToFile && vault)
+        m_goToFile->setHidden(vault->fileCount() == 0 && vault->folders().isEmpty());
+}
+
+void EmptyView::runCommand(const QString& id)
+{
+    emit actionTriggered(id);
+    // Like Obsidian's executeCommandById. Queued: the command may replace this view (the new note opens in
+    // this empty tab) while the clicked label is still in its mouse handler.
+    VaultSession* s = session();
+    QPointer<CommandRegistry> commands = s ? s->commands() : nullptr;
+    if (commands)
+        QTimer::singleShot(0, commands, [commands, id] { commands->execute(id); });
+}
 
 void EmptyView::resizeEvent(QResizeEvent* e)
 {

@@ -207,6 +207,107 @@ bool deleteMarkupBackward(EditorView& view)
     return true;
 }
 
+namespace {
+// CodeMirror's CharCategory.Space: whitespace, a line break, or nothing (document edges).
+bool spaceCategory(QChar c) { return c.isNull() || c.isSpace(); }
+
+// The auto-pairable tokens enabled by the settings, and each one's closer.
+QString pairOpeners()
+{
+    QString s;
+    if (settings().autoPairBrackets)
+        s += QStringLiteral("([{'\"");
+    if (settings().autoPairMarkdown)
+        s += QStringLiteral("*_`");
+    return s;
+}
+QChar pairCloser(QChar open)
+{
+    switch (open.unicode()) {
+    case '(': return u')';
+    case '[': return u']';
+    case '{': return u'}';
+    default: return open;
+    }
+}
+
+// A typed backtick (Obsidian's closeBrackets with "`" and "```" in its brackets). Returns true if handled.
+bool autoPairBacktick(EditorView& view, const Document& doc, qsizetype pos)
+{
+    const Text& t = doc.text();
+    const QChar next = t.charAt(pos);
+    const QChar prev = pos > 0 ? t.charAt(pos - 1) : QChar();
+    if (next == u'`') {
+        if (!view.isAutoCloser(pos))
+            return false;
+        const bool triple = t.slice(pos, pos + 3) == QStringLiteral("```");
+        view.removeAutoCloser(pos);
+        view.setCursorPosition(pos + (triple ? 3 : 1));
+        return true;
+    }
+    const int line = t.lineAt(pos);
+    const qsizetype ls = t.lineStart(line);
+    // "``" + "`" where a fence can open: the closing fence goes on the next line, with the line's quote
+    // markers / indentation and blanks the width of its list marker. Not inside a code block (that's its closing
+    // fence being typed) and not with text after the cursor.
+    static const QRegularExpression fencePrefix(QStringLiteral("^([>\\s]*)(([*+-] |(\\d+)([.)] ))(?:\\[(.)\\] )?)?$"));
+    if (pos - 2 >= ls && t.slice(pos - 2, pos) == QStringLiteral("``") && t.slice(pos, t.lineEnd(line)).trimmed().isEmpty()
+        && !inCodeBlock(doc, line)) {
+        const QRegularExpressionMatch m = fencePrefix.match(t.slice(ls, pos - 2));
+        if (m.hasMatch()) {
+            const QString prefix = m.captured(1) + QString(m.capturedLength(3), QLatin1Char(' '));
+            Transaction tr;
+            tr.changes = ChangeSet::of({{pos, pos, QStringLiteral("`\n") + prefix + QStringLiteral("```")}}, t.length());
+            tr.selection = Selection::cursor(pos + 1);
+            tr.userEvent = QStringLiteral("input.type");
+            view.dispatch(tr);
+            return true;
+        }
+    }
+    // A lone backtick between whitespace pairs.
+    if (spaceCategory(next) && prev != u'`' && spaceCategory(prev)) {
+        Transaction tr;
+        tr.changes = ChangeSet::of({{pos, pos, QStringLiteral("``")}}, t.length());
+        tr.selection = Selection::cursor(pos + 1);
+        tr.userEvent = QStringLiteral("input.type");
+        view.dispatch(tr);
+        view.addAutoCloser(pos + 1);
+        return true;
+    }
+    return false;
+}
+} // namespace
+
+bool deletePairBackward(EditorView& view)
+{
+    Document* doc = view.document();
+    if (!doc || view.isReadOnly())
+        return false;
+    const QString openers = pairOpeners();
+    if (openers.isEmpty())
+        return false;
+    const Text& t = doc->text();
+    const Selection sel = view.selection();
+    QList<ChangeSpec> specs;
+    for (const SelRange& r : sel.ranges()) {
+        if (!r.empty() || r.head == 0)
+            return false;
+        const QChar open = t.charAt(r.head - 1);
+        if (!openers.contains(open) || t.charAt(r.head) != pairCloser(open))
+            return false;
+        specs.push_back({r.head - 1, r.head + 1, QString()});
+    }
+    Transaction tr;
+    tr.changes = ChangeSet::of(specs, t.length());
+    QList<SelRange> after;
+    for (const SelRange& r : sel.ranges())
+        after.push_back(SelRange::cursor(tr.changes.mapPos(r.head - 1, -1)));
+    tr.selection = Selection::create(after, sel.mainIndex());
+    tr.userEvent = QStringLiteral("delete.backward");
+    view.dispatch(tr);
+    return true;
+}
+
 bool autoPairInput(EditorView& view, const QString& text)
 {
     Document* doc = view.document();
@@ -242,6 +343,8 @@ bool autoPairInput(EditorView& view, const QString& text)
     if (sel.size() != 1 || !sel.main().empty())
         return false;
     const qsizetype pos = sel.main().head;
+    if (mdSym && c == u'`')
+        return autoPairBacktick(view, *doc, pos);
     const QChar next = t.charAt(pos);
     const QChar prev = pos > 0 ? t.charAt(pos - 1) : QChar();
     // Type over an auto-inserted closer.

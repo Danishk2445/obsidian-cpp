@@ -101,6 +101,7 @@ void EditorView::setDocument(std::shared_ptr<Document> doc)
         disconnect(m_roConn);
     }
     m_doc = std::move(doc);
+    m_autoClosers.clear();
     const bool hadFolds = !m_folds.isEmpty();
     m_folds.clear();
     m_hoverLine = -1;
@@ -1051,10 +1052,38 @@ void EditorView::onDocumentChanged(const DocUpdate& u)
         if (updateActiveIndent(mapped))
             ensureVisibleLayout();
     }
+    if (!m_autoClosers.isEmpty()) {
+        QList<qsizetype> kept; // a closer whose character was deleted is gone
+        for (const qsizetype p : std::as_const(m_autoClosers))
+            if (const qsizetype a = u.tr.changes.mapPos(p, 1); u.tr.changes.mapPos(p + 1, -1) == a + 1)
+                kept.push_back(a);
+        m_autoClosers = kept;
+        m_autoCloserLine = u.tr.changes.mapPos(m_autoCloserLine, -1);
+        dropAutoClosersOffLine(u.after);
+    }
     viewport()->update();
     restartBlink();
     emit selectionChanged();
     emitCursor();
+}
+
+void EditorView::addAutoCloser(qsizetype pos)
+{
+    if (!m_doc)
+        return;
+    const Text& t = m_doc->text();
+    const qsizetype line = t.lineStart(t.lineAt(m_sel.main().head));
+    if (line != m_autoCloserLine)
+        m_autoClosers.clear();
+    m_autoCloserLine = line;
+    if (!m_autoClosers.contains(pos))
+        m_autoClosers.push_back(pos);
+}
+
+void EditorView::dropAutoClosersOffLine(const Text& text)
+{
+    if (!m_autoClosers.isEmpty() && text.lineStart(text.lineAt(m_sel.main().head)) != m_autoCloserLine)
+        m_autoClosers.clear();
 }
 
 void EditorView::onSyntaxProgress(const md::TreeUpdate& u)
@@ -1105,6 +1134,7 @@ void EditorView::setSelection(const Selection& sel, bool scroll, bool userEvent)
         return;
     const Selection old = m_sel;
     m_sel = skipFolds(sel.clamped(m_doc->text().length()), old);
+    dropAutoClosersOffLine(m_doc->text());
     if (m_sel == old && !scroll)
         return;
     if (userEvent)
@@ -1710,7 +1740,7 @@ void EditorView::keyPressEvent(QKeyEvent* e)
 
     switch (e->key()) {
     case Qt::Key_Backspace:
-        if (!ctrl && !alt && mdcmd::deleteMarkupBackward(*this))
+        if (!ctrl && !alt && (mdcmd::deleteMarkupBackward(*this) || mdcmd::deletePairBackward(*this)))
             return;
         deleteBackward(ctrl || alt);
         return;

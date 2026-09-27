@@ -12,6 +12,7 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QJsonArray>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
@@ -304,6 +305,63 @@ TEST_F(FileExplorerTest, NewNoteOpensForRenaming)
     findAction(&menu, "New note")->trigger();
     QApplication::processEvents();
     EXPECT_TRUE(exists("Projects/Untitled.md"));
+}
+
+TEST_F(FileExplorerTest, EmptyTabActionsRunTheirCommands)
+{
+    auto* empty = qobject_cast<EmptyView*>(m_ws->activeRootLeaf()->view());
+    ASSERT_NE(empty, nullptr);
+    const int leaves = rootLeafCount();
+    QLabel* create = nullptr;
+    for (QLabel* l : empty->findChildren<QLabel*>())
+        if (l->text().startsWith(QStringLiteral("Create new note")))
+            create = l;
+    ASSERT_NE(create, nullptr);
+    const QPointF at = QRectF(create->rect()).center();
+    QMouseEvent release(QEvent::MouseButtonRelease, at, create->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(create, &release);
+    QApplication::processEvents();
+    ASSERT_TRUE(exists("Untitled.md"));
+    ASSERT_NE(activeRootFile(), nullptr);
+    EXPECT_EQ(activeRootFile()->path(), "Untitled.md");
+    EXPECT_EQ(rootLeafCount(), leaves); // opened in the empty tab
+}
+
+class EmptyVaultTest : public ExplorerFixture {
+protected:
+    void prepareVault(const QString& root) override
+    {
+        QDir(root).removeRecursively();
+        QDir().mkpath(root);
+    }
+};
+
+// A new vault: the empty tab offers "Create new note" (no "Go to file" while there's nothing to go to) and clicking
+// it creates the note in that tab.
+TEST_F(EmptyVaultTest, CreateNewNoteFromTheEmptyTab)
+{
+    auto* empty = qobject_cast<EmptyView*>(m_ws->activeRootLeaf()->view());
+    ASSERT_NE(empty, nullptr);
+    EXPECT_EQ(empty->actionTexts(), QStringList({"Create new note (Ctrl + N)", "Close"}));
+    QLabel* create = nullptr;
+    for (QLabel* l : empty->findChildren<QLabel*>())
+        if (l->text().startsWith(QStringLiteral("Create new note")))
+            create = l;
+    ASSERT_NE(create, nullptr);
+    const QPointF at = QRectF(create->rect()).center();
+    QMouseEvent release(QEvent::MouseButtonRelease, at, create->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(create, &release);
+    QApplication::processEvents();
+    ASSERT_TRUE(exists("Untitled.md"));
+    ASSERT_NE(activeRootFile(), nullptr);
+    EXPECT_EQ(activeRootFile()->path(), "Untitled.md");
+    EXPECT_EQ(rootLeafCount(), 1);
+    // now there is something to go to
+    WorkspaceLeaf* tab = m_ws->getLeaf(Workspace::NewLeaf::Tab);
+    ASSERT_NE(tab, nullptr);
+    auto* next = qobject_cast<EmptyView*>(tab->view());
+    ASSERT_NE(next, nullptr);
+    EXPECT_EQ(next->actionTexts(), QStringList({"Create new note (Ctrl + N)", "Go to file (Ctrl + O)", "Close"}));
 }
 
 TEST_F(FileExplorerTest, NewFolderIsRenamedInTheTree)

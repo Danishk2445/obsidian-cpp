@@ -126,6 +126,81 @@ private slots:
         QCOMPARE(fx4.view->cursorPosition(), 2);
     }
 
+    void backticksPairAndCloseCodeBlocks()
+    {
+        // ``` on an empty line: "`|`", then over the closer, then the closing fence on the next line
+        auto fx = open("", 0);
+        QTest::keyClicks(fx.view.get(), "`");
+        QCOMPARE(fx.text(), QStringLiteral("``"));
+        QCOMPARE(fx.view->cursorPosition(), 1);
+        QTest::keyClicks(fx.view.get(), "``");
+        QCOMPARE(fx.text(), QStringLiteral("```\n```"));
+        QCOMPARE(fx.view->cursorPosition(), 3); // on the opening fence, ready for the language
+        QTest::keyClicks(fx.view.get(), "js");
+        QTest::keyClick(fx.view.get(), Qt::Key_Return);
+        QTest::keyClicks(fx.view.get(), "x");
+        QCOMPARE(fx.text(), QStringLiteral("```js\nx\n```"));
+        // inline code types over its own closer
+        auto fx2 = open("see ", 4);
+        QTest::keyClicks(fx2.view.get(), "`code`.");
+        QCOMPARE(fx2.text(), QStringLiteral("see `code`."));
+        // ...but not over a backtick that was already there, and not after a word
+        auto fx3 = open("a `b`", 4);
+        QTest::keyClicks(fx3.view.get(), "`");
+        QCOMPARE(fx3.text(), QStringLiteral("a `b``"));
+        auto fx4 = open("word", 4);
+        QTest::keyClicks(fx4.view.get(), "`");
+        QCOMPARE(fx4.text(), QStringLiteral("word`"));
+        // the closer is forgotten once the cursor leaves its line
+        auto fx5 = open("x\n", 2);
+        QTest::keyClicks(fx5.view.get(), "`");
+        fx5.view->setCursorPosition(0);
+        fx5.view->setCursorPosition(3);
+        QTest::keyClicks(fx5.view.get(), "`");
+        QCOMPARE(fx5.text(), QStringLiteral("x\n```"));
+        // list items and quotes: the closing fence lines up with the content
+        auto fx6 = open("- ", 2);
+        QTest::keyClicks(fx6.view.get(), "```");
+        QCOMPARE(fx6.text(), QStringLiteral("- ```\n  ```"));
+        auto fx7 = open("- a\n\t1. ", 8);
+        QTest::keyClicks(fx7.view.get(), "```");
+        QCOMPARE(fx7.text(), QStringLiteral("- a\n\t1. ```\n\t   ```"));
+        auto fx8 = open("> ", 2);
+        QTest::keyClicks(fx8.view.get(), "```");
+        QCOMPARE(fx8.text(), QStringLiteral("> ```\n> ```"));
+        // typing the closing fence of an open code block adds nothing
+        auto fx9 = open("```\nx\n", 6);
+        QTest::keyClicks(fx9.view.get(), "```");
+        QCOMPARE(fx9.text(), QStringLiteral("```\nx\n```"));
+        // mid-line ``` is inline code, not a block
+        auto fx10 = open("run ", 4);
+        QTest::keyClicks(fx10.view.get(), "```");
+        QCOMPARE(fx10.text(), QStringLiteral("run ```"));
+        // off: nothing pairs
+        mdcmd::settings().autoPairMarkdown = false;
+        auto fx11 = open("", 0);
+        QTest::keyClicks(fx11.view.get(), "```");
+        QCOMPARE(fx11.text(), QStringLiteral("```"));
+        mdcmd::settings().autoPairMarkdown = true;
+    }
+
+    void backspaceDeletesAnEmptyPair()
+    {
+        auto fx = open("x ", 2);
+        QTest::keyClicks(fx.view.get(), "`");
+        QTest::keyClick(fx.view.get(), Qt::Key_Backspace);
+        QCOMPARE(fx.text(), QStringLiteral("x "));
+        QTest::keyClicks(fx.view.get(), "(");
+        QCOMPARE(fx.text(), QStringLiteral("x ()"));
+        QTest::keyClick(fx.view.get(), Qt::Key_Backspace);
+        QCOMPARE(fx.text(), QStringLiteral("x "));
+        auto fx2 = open("(a)", 2);
+        QTest::keyClick(fx2.view.get(), Qt::Key_Backspace);
+        QCOMPARE(fx2.text(), QStringLiteral("()")); // only right between the two
+        QTest::keyClick(fx2.view.get(), Qt::Key_Backspace);
+        QCOMPARE(fx2.text(), QString());
+    }
+
     void formattingToggles()
     {
         auto fx = open("bold me", 0);

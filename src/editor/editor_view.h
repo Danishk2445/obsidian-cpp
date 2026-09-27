@@ -183,6 +183,12 @@ public:
     // Unfolds every fold hiding part of [from, to] (CodeMirror's foldState: a selection placed inside a folded
     // range unfolds it; search matches, go-to-position). Returns whether anything unfolded.
     bool unfoldAround(qsizetype from, qsizetype to);
+    // Closers inserted by auto-pairing (mdcmd::autoPairInput; CodeMirror's closeBrackets state): positions of the
+    // auto-inserted closing characters, mapped through edits and forgotten once the main cursor leaves their line.
+    // Typing the same character right before one steps over it instead of inserting.
+    void addAutoCloser(qsizetype pos);
+    bool isAutoCloser(qsizetype pos) const { return m_autoClosers.contains(pos); }
+    void removeAutoCloser(qsizetype pos) { m_autoClosers.removeAll(pos); }
     void foldAll();           // every foldable region, nested ones included (Ctrl+Alt+[)
     void unfoldAll();         // (Ctrl+Alt+])
     bool foldMore();          // fold the innermost unfolded region around the selection
@@ -262,6 +268,9 @@ private:
     DocLayout m_layout;
     Selection m_sel;
     Selection m_revealed; // selection the live preview reveal state currently reflects
+    QList<qsizetype> m_autoClosers;  // addAutoCloser
+    qsizetype m_autoCloserLine = -1; // start of the line they're on
+    void dropAutoClosersOffLine(const Text& text);
     Mode m_mode = Mode::Source;
     bool m_readOnly = false;
     bool m_readable = true;

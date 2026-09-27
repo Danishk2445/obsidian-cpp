@@ -134,6 +134,14 @@ Open parity questions:
 - ✅ Editor commands with Obsidian's ids: checklist toggle / cycle (Obsidian's state machine, numbered items kept),
   insert footnote (`[^n]` + definition at the end), insert tag, readable line length / line numbers /
   spellcheck toggles (global, like Obsidian's plain callbacks), open link under cursor in a new split.
+- ✅ Auto-pairing (autoPairBrackets / autoPairMarkdown, Obsidian's closeBrackets): a backtick between whitespace pairs
+  (`` `|` ``), steps over the closer it inserted (tracked through edits until the cursor leaves the line), and a third
+  one after `` `` `` at the start of a line's content closes a code block on the next line (`` ```| `` + `` ``` ``,
+  keeping quote markers / indentation and the list marker's width); Backspace between an opener and its closer
+  deletes both. Divergences: the fence isn't added inside a code block (typing its closing fence), mid-line or before
+  other text; `*` / `_` still only wrap selections (Obsidian also pairs them between whitespace).
+- ✅ Empty tab: "Create new note" / "Go to file" run their commands (the note opens in that tab); "Go to file" is
+  hidden while the vault is empty.
 - ✅ Workspace commands: close others / close tab group / close others in tab group, copy URL, delete file, show
   trash (local trash only), toggle ribbon, toggle default new-pane mode, toggle light / dark, open help (F1), show
   debug info (modal with "Copy to clipboard").

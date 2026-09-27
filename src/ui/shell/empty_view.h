@@ -2,6 +2,8 @@
 
 #include "ui/workspace/view.h"
 
+#include <QPointer>
+
 #include <functional>
 
 class QLabel;
@@ -19,12 +21,14 @@ public:
     QString viewType() const override { return QStringLiteral("empty"); }
     QString displayText() const override;
     QString icon() const override { return QStringLiteral("file"); }
+    void onOpen() override;
 
     // The texts of the visible actions, top to bottom (tests / accessibility).
     QStringList actionTexts() const;
 
 signals:
-    // Obsidian command ids: "file-explorer:new-file", "switcher:open". "Close" detaches the leaf itself.
+    // Obsidian command ids: "file-explorer:new-file", "switcher:open" (the view also runs them through the
+    // session's CommandRegistry). "Close" detaches the leaf itself.
     void actionTriggered(const QString& commandId);
 
 protected:
@@ -36,11 +40,13 @@ protected:
     QLabel* addAction(const QString& text, std::function<void()> onClick);
 
 private:
+    void runCommand(const QString& id);
     void restyle();
     QLabel* m_title;
     QLabel* m_description;
     QVBoxLayout* m_actionList;
     QList<QLabel*> m_actions;
+    QPointer<QLabel> m_goToFile;
 };
 
 } // namespace oc

@@ -80,6 +80,9 @@ Interfaces other modules/agents build against. Change deliberately and update al
   may have been deleted by its FocusOut handler.
 - `EditorView::unfoldAround(from, to)`: a programmatic jump into a fold unfolds it (CodeMirror's foldState); search
   matches use it. Folded lines share a layout without a QTextLayout — DocLayout code must check `ul->text`.
+- `EditorView::addAutoCloser(pos)` / `isAutoCloser` / `removeAutoCloser` (additive): closers inserted by auto-pairing
+  (CodeMirror's closeBrackets state), mapped through edits and dropped when the main cursor leaves their line;
+  `mdcmd::autoPairInput` steps over only these. `mdcmd::deletePairBackward`: Backspace inside an empty pair.
 - `FileView` (view.h) now has an explicit constructor: it forgets `m_file` when the vault deletes it (after the
   workspace's own handler), so a view pending `deleteLater()`, a preview or an embed never reads a freed TFile.
 
