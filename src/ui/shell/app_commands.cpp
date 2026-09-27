@@ -253,6 +253,15 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             ws()->duplicateLeaf(l, Workspace::NewLeaf::SplitDown);
         return true;
     }));
+    // Obsidian: the active leaf's tab group, unless it is in a sidebar (a pop-out's groups stack too).
+    r.add(cmd("workspace:toggle-stacked-tabs", QObject::tr("Toggle stacked tabs"), "layers", [ws](bool checking) {
+        WorkspaceLeaf* a = ws() ? ws()->activeLeaf() : nullptr;
+        if (!a || !a->tabs() || a->isInSidedock())
+            return false;
+        if (!checking)
+            ws()->setStacked(a, !ws()->isStacked(a));
+        return true;
+    }));
     // Obsidian's activeWindow.close(): the focused window, a pop-out (its tabs close) or the main window.
     r.add(cmd("workspace:close-window", QObject::tr("Close window"), "x", [w](bool checking) {
         if (!w)
@@ -296,6 +305,16 @@ void registerAppCommands(CommandRegistry& r, MainWindow* window)
             return false;
         if (!checking)
             ws()->moveLeafToPopout(a);
+        return true;
+    }));
+    // Obsidian's window:toggle-always-on-top: the focused pop-out only (never the main window), unless it
+    // is maximized. No menu shows it. (Wayland compositors ignore the hint, see PopoutWindow.)
+    r.add(cmd("window:toggle-always-on-top", QObject::tr("Toggle window always on top"), "", [w](bool checking) {
+        auto* popout = qobject_cast<PopoutWindow*>(QApplication::activeWindow());
+        if (!w || !popout || popout->mainWindow() != w || popout->isMaximized())
+            return false;
+        if (!checking)
+            popout->setAlwaysOnTop(!popout->isAlwaysOnTop());
         return true;
     }));
     r.add(cmd("workspace:edit-file-title", QObject::tr("Rename file"), "edit-3", [ws](bool checking) {

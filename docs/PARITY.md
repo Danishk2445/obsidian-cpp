@@ -168,7 +168,21 @@ Open parity questions:
   tab drags between windows, out of every window = a new window at the drop point; closing a pop-out closes its
   tabs (pinned too; undo reopens them), closing the main window keeps them for the next start. Wayland: no
   window positions (saved as Qt reports them), tabs leave a window as a native drag.
-- ⬜ Stacked tabs, always-on-top, per-window zoom (round-tripped only).
+- ✅ Stacked tabs (workspace:toggle-stacked-tabs, "Stack tabs" / "Unstack tabs" in a tab group's tab list; root
+  split and pop-outs, not the sidebars; workspace.json "stacked"): the header row keeps "+" and the tab list; each
+  tab is a 40px spine (close / pin, icon, title reading top to bottom; --tab-stacked-* tokens, outline + shadow)
+  before its 700px pane (clamped like Obsidian's updateSlidingTabs) in a horizontally scrolling strip (12px scroll
+  bar, horizontal / Shift wheel); spines and panes are sticky (spines at both edges, panes slide over each other),
+  covered panes are hidden; a new current tab (click, commands, "+", undo close, drops) scrolls into view, smoothly
+  (clicking the current tab's spine reveals it too; Obsidian only scrolls when the tab changes). Drops: between
+  spines in the strip, left / right splits only from the header row, bottom third splits down; spines drag, close,
+  middle-click, unpin and open the tab menu. A root emptied of its tabs gets a group stacked like the last emptied
+  group (Obsidian's lastTabGroupStacked). Not mirrored: RTL layout (row-reverse), phones (no stacking there).
+- ✅ Always on top (window:toggle-always-on-top, "Toggle window always on top"): the focused, non-maximized pop-out
+  only, no menu entries, not saved (like Obsidian); Qt's WindowStaysOnTopHint changed on the live window. Wayland:
+  xdg-shell has no keep-above request, so KWin and other compositors ignore it for pop-outs (the command still flips
+  the flag); X11 / XWayland honour it.
+- ⬜ Per-window zoom (round-tripped only).
 
 ## Settings (M7)
 - ✅ Modal: Obsidian 1.13's sidebar layout (search, Options / Core plugins / Community plugins groups), setting

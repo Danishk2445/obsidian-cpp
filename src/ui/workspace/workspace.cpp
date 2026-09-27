@@ -545,6 +545,7 @@ void Workspace::Impl::takeLeaf(WorkspaceLeaf* leaf)
     tabs->leaves.removeAt(idx);
     leaf->m_tabs = nullptr;
     if (tabs->leaves.isEmpty()) {
+        lastTabGroupStacked = tabs->stacked; // Obsidian's WorkspaceTabs.removeChild()
         removeItem(tabs);
     } else if (cur == leaf) {
         tabs->currentTab = std::min(idx, int(tabs->leaves.size()) - 1);
@@ -663,6 +664,7 @@ void Workspace::Impl::ensureRootLeaf()
     }
     auto* t = new WorkspaceTabs(this);
     t->id = genId();
+    t->stacked = lastTabGroupStacked; // Obsidian's updateLayout(): stacked if the last emptied group was
     insertItem(root, 0, t);
     insertLeaf(t, 0, createLeaf());
     endBatch();
@@ -938,6 +940,20 @@ void Workspace::Impl::selectTab(WorkspaceTabs* tabs, int index)
         return;
     tabs->currentTab = index;
     tabs->w->sync();
+    refreshChrome();
+    q->requestSaveLayout();
+    emit q->layoutChanged();
+}
+
+void Workspace::Impl::setStacked(WorkspaceTabs* tabs, bool stacked)
+{
+    if (!tabs || tabs->stacked == stacked || destroying)
+        return;
+    // Obsidian's setStacked(): the group re-lays out and scrolls its current tab into view (sync()); a
+    // sidedock group keeps the flag but shows ordinary sidebar tabs.
+    tabs->stacked = stacked;
+    if (tabs->w)
+        tabs->w->sync();
     refreshChrome();
     q->requestSaveLayout();
     emit q->layoutChanged();
@@ -1289,7 +1305,7 @@ void Workspace::Impl::refreshChrome()
         return;
     for (WorkspaceSplit* s : tops())
         forEachTabs(s, [&](WorkspaceTabs* t) {
-            t->w->header()->update();
+            t->w->updateTabs();
             for (WorkspaceLeaf* l : std::as_const(t->leaves))
                 if (LeafWidget* lw = leafWidget(l); lw && lw->header())
                     lw->header()->refresh();
@@ -1302,7 +1318,7 @@ void Workspace::Impl::leafTitleChanged(WorkspaceLeaf* leaf)
         return;
     if (leaf->m_tabs) {
         leaf->m_tabs->w->header()->relayout();
-        leaf->m_tabs->w->header()->update();
+        leaf->m_tabs->w->updateTabs();
     }
     if (LeafWidget* lw = leafWidget(leaf); lw && lw->header())
         lw->header()->refresh();
@@ -2153,6 +2169,16 @@ void Workspace::setShowViewHeader(bool on)
 }
 
 bool Workspace::showViewHeader() const { return d->showViewHeader; }
+
+bool Workspace::isStacked(const WorkspaceLeaf* leaf) const { return leaf && leaf->m_tabs && leaf->m_tabs->stacked; }
+
+bool Workspace::setStacked(WorkspaceLeaf* leaf, bool stacked)
+{
+    if (!leaf || !leaf->m_tabs || leaf->isInSidedock())
+        return false;
+    d->setStacked(leaf->m_tabs, stacked);
+    return true;
+}
 
 QList<WorkspaceLeaf*> Workspace::leavesOfType(const QString& type) const
 {
