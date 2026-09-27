@@ -228,7 +228,8 @@ Open parity questions:
   tab-size --list-indent, --list-spacing above and below (not above a continuation line); the marker token (marker +
   following whitespace, `font-variant-numeric: tabular-nums` — Inter's hyphen is tabular too) has padding-inline-start
   --list-indent-editing (0.75em) in Live Preview, 0 in Source; a bullet is the transparent "-" with a 0.3em disc
-  centred in it (the "-" shows while the selection touches the token); ordered markers stay text; a task's "- " and
+  centred in it (the "-" shows while the selection touches the token; a caret at the marker's column is drawn after
+  the padding, the fold chevron before it); ordered markers stay text; a task's "- " and
   "[ ]" become the checkbox label (-0.25em + --checkbox-margin-inline-start 0.85em, a 1em box, 0.25em after,
   vertical-align middle, top -0.1em), an ordered task keeps its number; the revealed "[ ]" is monospace and muted;
   only "x" / "X" tasks are struck through. With guides on, a continuation line's last spacing unit gets
