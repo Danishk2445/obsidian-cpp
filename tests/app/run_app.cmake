@@ -1,8 +1,15 @@
 # Runs obsidian-cpp headless on a fresh copy of a fixture vault with isolated XDG dirs (never the user's config).
-#   cmake -DAPP=<binary> -DFIXTURE=<vault dir> -DWORK=<scratch dir> -DSCRIPT=<scenario file> "-DARGS=<extra;args>" -P run_app.cmake
+#   cmake -DAPP=<binary> -DFIXTURE=<vault dir> -DWORK=<scratch dir> -DSCRIPT=<scenario file> "-DARGS=<extra;args>"
+#         [-DCONFIG=<dir of vault config files (app.json, ...)>] -P run_app.cmake
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 file(COPY "${FIXTURE}/" DESTINATION "${WORK}/vault")
+if(CONFIG)
+    # --no-register: the vault's config id is the first 16 hex digits of SHA-1(normalized vault path)
+    string(SHA1 hash "${WORK}/vault")
+    string(SUBSTRING "${hash}" 0 16 id)
+    file(COPY "${CONFIG}/" DESTINATION "${WORK}/xdg/config/obsidian-cpp/vaults/${id}")
+endif()
 set(ENV{XDG_CONFIG_HOME} "${WORK}/xdg/config")
 set(ENV{XDG_DATA_HOME} "${WORK}/xdg/data")
 set(ENV{XDG_CACHE_HOME} "${WORK}/xdg/cache")
