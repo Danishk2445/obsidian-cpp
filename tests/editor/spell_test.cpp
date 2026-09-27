@@ -69,6 +69,12 @@ TEST(Spell, FlagsAndSkips)
     EXPECT_TRUE(flagged("`helo` [[wrld]] #tagg https://x.io/helo $wrld$ %%helo%% <spn> wrld2 NASAA ^blkid").isEmpty());
     EXPECT_EQ(flagged("[shown helo](http://x.y/wrld)"), QStringList{"helo"}); // link text is checked, the target isn't
     EXPECT_TRUE(flagged("```\nhelo wrld\n```", 1).isEmpty()); // fenced code
+    // '_' emphasis and snake_case: the parts are words of their own
+    EXPECT_TRUE(flagged("_italic too_, __strong words__, snake_case").isEmpty());
+    EXPECT_EQ(flagged("_helo_ wrld_there"), (QStringList{"helo", "wrld"}));
+    // only Latin-script words are checked against the en-US dictionary
+    EXPECT_EQ(flagged("привет مرحبا שלום こんにちは 你好世界 helo"), QStringList{"helo"});
+    EXPECT_EQ(flagged("don't it’s helo's"), QStringList{"helo's"});
     // the word at the cursor while typing
     EXPECT_EQ(flagged("helo wrld", 0, 9), QStringList{"helo"});
     EXPECT_EQ(flagged("helo wrld", 0, 4), QStringList{"wrld"});
