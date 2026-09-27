@@ -200,7 +200,7 @@ void EditorView::setStrictLineBreaks(bool on)
     }
 }
 
-bool EditorView::updateActiveIndent(const indent::ActiveRange& previous)
+bool EditorView::updateActiveIndent(indent::ActiveRange previous)
 {
     indent::ActiveRange now;
     if (m_doc && m_indentGuides && m_mode != Mode::Reading)

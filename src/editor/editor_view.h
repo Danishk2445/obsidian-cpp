@@ -237,7 +237,7 @@ private:
     // Recomputes the active indentation guide's range for the main selection (once per selection / document
     // change) and re-decorates the lines whose guide changed (true if any). `previous`: the old range in current
     // coordinates.
-    bool updateActiveIndent(const indent::ActiveRange& previous);
+    bool updateActiveIndent(indent::ActiveRange previous); // (by value: callers pass m_activeIndent)
     void emitCursor();
     void updatePrimarySelection();
     qsizetype clusterBoundary(qsizetype pos, int dir) const;

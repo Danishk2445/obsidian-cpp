@@ -43,6 +43,7 @@ oc_add_test(core_note_plugins_test SOURCES core/note_plugins_test.cpp DEPS oc_co
 oc_add_test(editor_pdf_test SOURCES editor/pdf_export_test.cpp DEPS oc_editor GUI)
 oc_add_test(editor_html_test SOURCES editor/html_render_test.cpp DEPS oc_editor Qt6::Pdf GUI)
 oc_add_test(editor_footnotes_test SOURCES editor/footnotes_test.cpp DEPS oc_editor Qt6::Pdf Qt6::Test GUI)
+oc_add_test(editor_indent_guides_test SOURCES editor/indent_guides_test.cpp DEPS oc_editor Qt6::Pdf Qt6::Test GUI)
 oc_add_test(perf_html_test SOURCES perf/html_perf_test.cpp DEPS oc_editor Qt6::Test GUI LABELS perf)
 oc_add_test(perf_footnote_test SOURCES perf/footnote_perf_test.cpp DEPS oc_editor Qt6::Test GUI LABELS perf)
 oc_add_test(editor_search_test SOURCES editor/search_test.cpp DEPS oc_editor Qt6::Test GUI)

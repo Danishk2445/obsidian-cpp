@@ -126,6 +126,8 @@ QList<HostedEmbeds::Found> HostedEmbeds::collect(double y0, double y1) const
         // Only units the view already measured: measuring here would move content above the viewport.
         if (!layout.isLaidOut(line) || layout.isInBlock(line))
             continue;
+        if (layout.unitStart(line) != line)
+            continue; // the rest of a text run (its widgets were collected on its first line, columns from there)
         const DocLayout::UnitLayout* ul = layout.layoutFor(line);
         if (!ul || ul->deco.hidden)
             continue;

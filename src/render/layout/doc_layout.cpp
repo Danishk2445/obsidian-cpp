@@ -132,6 +132,8 @@ void DocLayout::buildUnits(int fromLine, int toLine, std::vector<Unit>& out)
     for (const BlockRange& b : blocks) {
         if (b.fromLine < line || b.toLine <= b.fromLine || (!b.widget && !(b.textRun && b.toLine - b.fromLine > 1)))
             continue;
+        if (b.textRun && b.toLine > m_text.lineCount())
+            continue; // (the decorator's document is ahead of the layout's text, e.g. before setText())
         // A block (or text run) touching folded lines is shown as plain lines (its hidden part stays hidden).
         if (anyHidden(b.fromLine, b.toLine))
             continue;
